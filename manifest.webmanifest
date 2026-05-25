@@ -1,0 +1,9 @@
+{
+  "name": "유통기한 매니저",
+  "short_name": "기한매니저",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f5f2eb",
+  "theme_color": "#1f7a5a",
+  "lang": "ko-KR"
+}

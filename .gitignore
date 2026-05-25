@@ -1,0 +1,17 @@
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+mobile/node_modules/
+
+# Expo / build output
+.expo/
+mobile/.expo/
+dist/
+mobile/dist/
+mobile/dist-test/
+
+# OS / editor
+.DS_Store
+Thumbs.db

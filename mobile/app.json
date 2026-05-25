@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "유통기한 매니저",
+    "slug": "fresh-keeper-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "assets/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1f7a5a"
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "영수증과 상품 사진을 불러오기 위해 사진 접근 권한이 필요합니다.",
+          "cameraPermission": "상품 사진과 영수증을 촬영하기 위해 카메라 권한이 필요합니다."
+        }
+      ]
+    ]
+  }
+}

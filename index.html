@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1f7a5a" />
+    <title>유통기한 매니저</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Fresh Keeper</p>
+          <h1>유통기한 매니저</h1>
+        </div>
+        <button class="icon-button" id="notificationButton" type="button" aria-label="알림 켜기" title="알림 켜기">
+          <span aria-hidden="true">!</span>
+        </button>
+      </header>
+
+      <main>
+        <section class="summary-grid" aria-label="요약">
+          <article class="summary-tile urgent">
+            <span>임박</span>
+            <strong id="urgentCount">0</strong>
+          </article>
+          <article class="summary-tile">
+            <span>전체</span>
+            <strong id="totalCount">0</strong>
+          </article>
+          <article class="summary-tile">
+            <span>오늘</span>
+            <strong id="todayCount">0</strong>
+          </article>
+        </section>
+
+        <section class="section-block">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Add item</p>
+              <h2>상품 등록</h2>
+            </div>
+            <div class="segmented" role="tablist" aria-label="등록 방식">
+              <button class="segment active" type="button" data-mode="manual">수동</button>
+              <button class="segment" type="button" data-mode="receipt">영수증</button>
+              <button class="segment" type="button" data-mode="photo">사진</button>
+            </div>
+          </div>
+
+          <form class="entry-form" id="manualForm" data-panel="manual">
+            <label>
+              상품명
+              <input id="itemName" name="name" type="text" placeholder="예: 서울우유, 계란, 딸기" autocomplete="off" required />
+            </label>
+            <div class="form-row">
+              <label>
+                카테고리
+                <select id="itemCategory" name="category"></select>
+              </label>
+              <label>
+                보관
+                <select id="itemStorage" name="storage">
+                  <option>냉장</option>
+                  <option>냉동</option>
+                  <option>실온</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                기준
+                <select id="itemExpiryType" name="expiryType">
+                  <option>유통기한</option>
+                  <option>소비기한</option>
+                </select>
+              </label>
+              <label>
+                날짜
+                <input id="itemExpiry" name="expiry" type="date" required />
+              </label>
+            </div>
+            <button class="primary-button" type="submit">등록하기</button>
+          </form>
+
+          <div class="entry-form hidden" id="receiptPanel" data-panel="receipt">
+            <label>
+              모바일 영수증 이미지
+              <input id="receiptImageInput" type="file" accept="image/*" />
+            </label>
+            <div class="receipt-image-preview" id="receiptImagePreview">영수증 이미지를 선택하거나 샘플을 불러오세요</div>
+            <div class="button-row">
+              <button class="secondary-button" id="loadSampleReceiptButton" type="button">ocr_test.jpg 불러오기</button>
+              <button class="secondary-button" id="fillSampleOcrButton" type="button">샘플 OCR 적용</button>
+            </div>
+            <button class="primary-button" id="runOcrButton" type="button">이미지 OCR 실행</button>
+            <p class="ocr-status" id="ocrStatus" aria-live="polite">이미지를 선택한 뒤 OCR을 실행하세요.</p>
+            <label>
+              영수증 OCR 텍스트
+              <textarea id="receiptText" rows="7" placeholder="OCR 결과를 붙여넣거나 상품명을 줄마다 입력하세요.&#10;예:&#10;서울우유 2,980&#10;계란 30구 7,900"></textarea>
+            </label>
+            <button class="primary-button" id="parseReceiptButton" type="button">목록으로 나누기</button>
+            <div class="draft-list" id="receiptDrafts"></div>
+          </div>
+
+          <div class="entry-form hidden" id="photoPanel" data-panel="photo">
+            <label>
+              상품 사진
+              <input id="photoInput" type="file" accept="image/*" capture="environment" />
+            </label>
+            <div class="photo-preview" id="photoPreview">사진을 선택하면 미리보기가 표시됩니다</div>
+            <label>
+              상품명
+              <input id="photoName" type="text" placeholder="예: 바나나, 샐러드, 삼겹살" autocomplete="off" />
+            </label>
+            <div class="form-row">
+              <label>
+                카테고리
+                <select id="photoCategory"></select>
+              </label>
+              <label>
+                기준
+                <select id="photoExpiryType">
+                  <option>유통기한</option>
+                  <option>소비기한</option>
+                </select>
+              </label>
+              <label>
+                날짜
+                <input id="photoExpiry" type="date" />
+              </label>
+            </div>
+            <button class="primary-button" id="addPhotoItemButton" type="button">사진 상품 등록</button>
+          </div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Inventory</p>
+              <h2>보관 목록</h2>
+            </div>
+            <select id="filterSelect" aria-label="목록 필터">
+              <option value="all">전체</option>
+              <option value="urgent">임박</option>
+              <option value="expired">만료</option>
+              <option value="냉장">냉장</option>
+              <option value="냉동">냉동</option>
+              <option value="실온">실온</option>
+            </select>
+          </div>
+          <div class="item-list" id="itemList"></div>
+          <p class="empty-state" id="emptyState">아직 등록된 상품이 없습니다.</p>
+        </section>
+      </main>
+    </div>
+
+    <template id="draftTemplate">
+      <article class="draft-item">
+        <div>
+          <strong data-draft-name></strong>
+          <span data-draft-category></span>
+        </div>
+        <select data-draft-expiry-type aria-label="기준">
+          <option>유통기한</option>
+          <option>소비기한</option>
+        </select>
+        <input data-draft-expiry type="date" aria-label="날짜" />
+        <button type="button" data-draft-add>추가</button>
+      </article>
+    </template>
+
+    <template id="itemTemplate">
+      <article class="item-card">
+        <div class="item-main">
+          <img data-photo alt="" class="item-photo hidden" />
+          <div>
+            <div class="item-title-row">
+              <strong data-name></strong>
+              <span data-status></span>
+            </div>
+            <p data-meta></p>
+          </div>
+        </div>
+        <div class="item-actions">
+          <button type="button" data-consume>소비</button>
+          <button type="button" data-delete>삭제</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

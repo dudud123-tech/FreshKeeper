@@ -1,7 +1,33 @@
+param(
+  [switch]$Background
+)
+
 $port = 4173
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+if ($Background) {
+  $outLog = Join-Path $root "server.out.log"
+  $errLog = Join-Path $root "server.err.log"
+  Start-Process -FilePath "powershell.exe" `
+    -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath) `
+    -WorkingDirectory $root `
+    -RedirectStandardOutput $outLog `
+    -RedirectStandardError $errLog `
+    -WindowStyle Hidden
+  Write-Host "Server is starting in the background."
+  Write-Host "Open http://localhost:$port/"
+  Write-Host "Logs: $outLog"
+  return
+}
+
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
-$listener.Start()
+try {
+  $listener.Start()
+}
+catch {
+  Write-Host "Port $port is already in use. Try opening http://localhost:$port/ first."
+  throw
+}
 
 Write-Host "Serving $root"
 Write-Host "Open http://localhost:$port/"

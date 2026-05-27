@@ -8,6 +8,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   SafeAreaView,
@@ -28,6 +29,7 @@ const storageTypes = ["냉장", "냉동", "실온"];
 const categoryFilters = ["전체", ...categories];
 const reminderOptions = [0, 1, 2, 3, 5, 7, 14];
 const DEFAULT_EXPIRY_TYPE = "소비기한";
+const APP_BUILD_LABEL = "dev 2026-05-26.8";
 
 function todayIso(offset = 0) {
   const date = new Date();
@@ -115,7 +117,12 @@ export default function App() {
   const [storage, setStorage] = useState(storageTypes[0]);
   const [expiry, setExpiry] = useState(todayIso());
   const [receiptImage, setReceiptImage] = useState("");
-  const [receiptText, setReceiptText] = useState("");
+  const [receiptImageSize, setReceiptImageSize] = useState({ width: 0, height: 0 });
+  const [ocrCoordinateSize, setOcrCoordinateSize] = useState(null);
+  const [receiptImageLayout, setReceiptImageLayout] = useState({ width: 0, height: 0 });
+  const [ocrLines, setOcrLines] = useState([]);
+  const [selectedOcrLineIds, setSelectedOcrLineIds] = useState([]);
+  const [receiptSelectorVisible, setReceiptSelectorVisible] = useState(false);
   const [drafts, setDrafts] = useState([]);
   const [draftForms, setDraftForms] = useState({});
   const [bulkDraftForm, setBulkDraftForm] = useState({ expiry: todayIso(7) });
@@ -137,6 +144,15 @@ export default function App() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!receiptImage) return;
+    Image.getSize(
+      receiptImage,
+      (imageWidth, imageHeight) => setReceiptImageSize({ width: imageWidth, height: imageHeight }),
+      () => undefined
+    );
+  }, [receiptImage]);
 
   useEffect(() => {
     AsyncStorage.getItem(SETTINGS_KEY)
@@ -273,16 +289,47 @@ export default function App() {
     goToPage(1);
   }
 
-  async function createReceiptCandidates(imageUri) {
-    setReceiptImage(imageUri);
-    setReceiptStatus("영수증을 읽고 상품 후보를 만드는 중입니다.");
-    const result = await recognizeReceiptImage(imageUri);
-    setReceiptText(result.text);
-    setReceiptDrafts(parseReceiptLines(result.text));
-    setReceiptStatus("상품 후보를 만들었습니다. 필요한 상품만 추가하세요.");
+  async function createReceiptCandidates(imageAsset) {
+    try {
+      const imageUri = typeof imageAsset === "string" ? imageAsset : imageAsset.uri;
+      setMode("receipt");
+      goToPage(0);
+      setReceiptImage(imageUri);
+      setReceiptImageSize(imageAsset?.width && imageAsset?.height ? { width: imageAsset.width, height: imageAsset.height } : { width: 0, height: 0 });
+      setOcrCoordinateSize(null);
+      setReceiptImageLayout({ width: 0, height: 0 });
+      setOcrLines([]);
+      setSelectedOcrLineIds([]);
+      setReceiptStatus("영수증을 읽고 상품 후보를 만드는 중입니다.");
+      const result = await recognizeReceiptImage(imageUri);
+      const drafts = parseReceiptLines(result.text);
+      const lines = result.lines || [];
+      const coordinateSize = resolveOcrCoordinateSize(result.coordinateSize, imageAsset);
+      setOcrLines(lines);
+      setOcrCoordinateSize(coordinateSize);
+      console.log(
+        "[freshkeeper:image-debug]",
+        JSON.stringify({
+          assetSize: imageAsset?.width && imageAsset?.height ? { width: imageAsset.width, height: imageAsset.height } : null,
+          coordinateSize: result.coordinateSize,
+          resolvedCoordinateSize: coordinateSize
+        })
+      );
+      setSelectedOcrLineIds(lines.filter((line) => isOcrLineInDrafts(line, drafts)).map((line) => line.id));
+      setReceiptDrafts(drafts);
+      setReceiptStatus(
+        drafts.length > 0
+          ? `${result.message || "상품 후보를 만들었습니다."} 이미지에서 필요한 줄을 직접 터치해 후보를 추가할 수도 있습니다.`
+          : "상품 후보를 찾지 못했습니다. 인식된 내용을 직접 수정한 뒤 후보를 만들어 주세요."
+      );
+    } catch (error) {
+      setReceiptStatus("영수증을 읽지 못했습니다. 이미지를 다시 선택하거나 직접 입력해 주세요.");
+    }
   }
 
   async function pickReceiptImage() {
+    setMode("receipt");
+    goToPage(0);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert("권한 필요", "영수증 이미지를 불러오려면 사진 접근 권한이 필요합니다.");
@@ -295,11 +342,13 @@ export default function App() {
     });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
-      await createReceiptCandidates(result.assets[0].uri);
+      await createReceiptCandidates(result.assets[0]);
     }
   }
 
   async function takeReceiptPhoto() {
+    setMode("receipt");
+    goToPage(0);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert("권한 필요", "영수증을 촬영하려면 카메라 권한이 필요합니다.");
@@ -312,13 +361,28 @@ export default function App() {
     });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
-      await createReceiptCandidates(result.assets[0].uri);
+      await createReceiptCandidates(result.assets[0]);
     }
   }
 
-  function parseManualReceiptText() {
-    setReceiptDrafts(parseReceiptLines(receiptText));
-    setReceiptStatus("입력한 내용에서 상품 후보를 만들었습니다.");
+  function toggleOcrLine(line) {
+    const name = draftNameForOcrLine(line);
+    if (!name) return;
+    const isSelected = selectedOcrLineIds.includes(line.id);
+
+    if (isSelected) {
+      setSelectedOcrLineIds((current) => current.filter((id) => id !== line.id));
+      removeDraft(name);
+      return;
+    }
+
+    setSelectedOcrLineIds((current) => [...current, line.id]);
+    setReceiptDrafts([...drafts, name]);
+    setReceiptStatus("선택한 줄을 상품 후보에 추가했습니다.");
+  }
+
+  function frameForOcrLine(line) {
+    return frameForBox(line.box, ocrCoordinateSize || receiptImageSize, receiptImageLayout, 28, 12, 0.5);
   }
 
   function setReceiptDrafts(nextDrafts) {
@@ -483,7 +547,10 @@ export default function App() {
           <View style={styles.header}>
             <View>
               <Text style={styles.eyebrow}>Fresh Keeper</Text>
-              <Text style={styles.title}>소비기한 매니저</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.title}>freshkeeper</Text>
+                <Text style={styles.versionBadge}>{APP_BUILD_LABEL}</Text>
+              </View>
             </View>
             <Text style={styles.pageHint}>{page === 0 ? "상품 등록" : "보관 목록"}</Text>
           </View>
@@ -557,12 +624,44 @@ export default function App() {
                       <PrimaryButton label="영수증 촬영" onPress={takeReceiptPhoto} />
                       <SecondaryButton label="이미지 불러오기" onPress={pickReceiptImage} />
                     </View>
-                    {receiptImage ? <Image source={{ uri: receiptImage }} style={styles.receiptImage} /> : null}
+                    {receiptImage ? (
+                      <View
+                        style={styles.receiptImageWrap}
+                        onLayout={(event) => {
+                          setReceiptImageLayout({
+                            width: event.nativeEvent.layout.width,
+                            height: event.nativeEvent.layout.height
+                          });
+                        }}
+                      >
+                        <Image
+                          source={{ uri: receiptImage }}
+                          style={styles.receiptImage}
+                          onLoad={(event) => {
+                            const source = event.nativeEvent.source;
+                            if (source?.width && source?.height) {
+                              setReceiptImageSize((current) => (current.width && current.height ? current : { width: source.width, height: source.height }));
+                            }
+                          }}
+                        />
+                        {ocrLines.map((line) => {
+                          const frame = frameForOcrLine(line);
+                          if (!frame) return null;
+                          const selected = selectedOcrLineIds.includes(line.id);
+                          return (
+                            <Pressable
+                              key={line.id}
+                              accessibilityLabel={`${line.text} 선택`}
+                              hitSlop={8}
+                              style={[styles.ocrBox, selected ? styles.ocrBoxSelected : styles.ocrBoxUnselected, frame]}
+                              onPress={() => toggleOcrLine(line)}
+                            />
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                    {receiptImage && ocrLines.length > 0 ? <SecondaryButton label="영수증 크게 선택하기" onPress={() => setReceiptSelectorVisible(true)} /> : null}
                     <Text style={styles.status}>{receiptStatus}</Text>
-                    <Field label="인식된 내용">
-                      <TextInput value={receiptText} onChangeText={setReceiptText} multiline style={[styles.input, styles.textarea]} />
-                    </Field>
-                    <SecondaryButton label="텍스트에서 후보 만들기" onPress={parseManualReceiptText} />
                     {drafts.length > 0 ? (
                       <View style={styles.bulkBox}>
                         <Text style={styles.label}>후보 전체 설정</Text>
@@ -730,8 +829,206 @@ export default function App() {
         onClose={() => setCalendar((current) => ({ ...current, visible: false }))}
         onSelect={selectCalendarDate}
       />
+      <ReceiptSelectorModal
+        visible={receiptSelectorVisible}
+        imageUri={receiptImage}
+        imageSize={receiptImageSize}
+        coordinateSize={ocrCoordinateSize || receiptImageSize}
+        lines={ocrLines}
+        selectedIds={selectedOcrLineIds}
+        onToggleLine={toggleOcrLine}
+        onClose={() => setReceiptSelectorVisible(false)}
+      />
     </SafeAreaView>
   );
+}
+
+function ReceiptSelectorModal({ visible, imageUri, imageSize, coordinateSize, lines, selectedIds, onToggleLine, onClose }) {
+  const [layout, setLayout] = useState({ width: 0, height: 0 });
+  const [viewTransform, setViewTransform] = useState({ scale: 1, translateX: 0, translateY: 0 });
+  const gestureStartRef = useRef({
+    distance: 0,
+    scale: 1,
+    translateX: 0,
+    translateY: 0,
+    x: 0,
+    y: 0
+  });
+  const fallbackWidth = layout.width || 360;
+  const imageRatio = imageSize.width && imageSize.height ? imageSize.height / imageSize.width : 1.6;
+  const canvasWidth = fallbackWidth;
+  const canvasHeight = Math.max(520, Math.round(canvasWidth * imageRatio));
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => viewTransform.scale > 1,
+      onMoveShouldSetPanResponder: (event, gestureState) => event.nativeEvent.touches.length >= 2 || Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5,
+      onPanResponderGrant: (event, gestureState) => {
+        const touches = event.nativeEvent.touches;
+        gestureStartRef.current = {
+          distance: distanceBetweenTouches(touches),
+          scale: viewTransform.scale,
+          translateX: viewTransform.translateX,
+          translateY: viewTransform.translateY,
+          x: gestureState.x0,
+          y: gestureState.y0
+        };
+      },
+      onPanResponderMove: (event, gestureState) => {
+        const touches = event.nativeEvent.touches;
+        const start = gestureStartRef.current;
+
+        if (touches.length >= 2 && start.distance > 0) {
+          const nextScale = clamp(start.scale * (distanceBetweenTouches(touches) / start.distance), 1, 4);
+          setViewTransform({
+            scale: nextScale,
+            translateX: start.translateX,
+            translateY: start.translateY
+          });
+          return;
+        }
+
+        if (start.scale > 1) {
+          setViewTransform({
+            scale: start.scale,
+            translateX: start.translateX + gestureState.dx,
+            translateY: start.translateY + gestureState.dy
+          });
+        }
+      },
+      onPanResponderRelease: () => {
+        setViewTransform((current) => {
+          if (current.scale <= 1.02) return { scale: 1, translateX: 0, translateY: 0 };
+          return current;
+        });
+      }
+    })
+  ).current;
+
+  useEffect(() => {
+    if (visible) setViewTransform({ scale: 1, translateX: 0, translateY: 0 });
+  }, [visible, imageUri]);
+
+  function modalFrameForLine(line) {
+    return frameForBox(line.box, coordinateSize, { width: canvasWidth, height: canvasHeight }, 32, 12, 0.5);
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={styles.selectorScreen}>
+        <View style={styles.selectorHeader}>
+          <View>
+            <Text style={styles.eyebrow}>Receipt picker</Text>
+            <Text style={styles.selectorTitle}>영수증에서 줄 선택</Text>
+          </View>
+          <Pressable style={styles.selectorCloseButton} onPress={onClose}>
+            <Text style={styles.selectorCloseText}>닫기</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.selectorHint}>확대 버튼으로 글씨를 키우고, 확대 상태에서는 이미지를 끌어서 이동하세요. 초록색은 후보, 회색은 미선택입니다.</Text>
+        <View style={styles.zoomControls}>
+          <Pressable style={styles.zoomButton} onPress={() => setViewTransform((current) => ({ ...current, scale: clamp(current.scale - 0.4, 1, 4) }))}>
+            <Text style={styles.zoomButtonText}>-</Text>
+          </Pressable>
+          <Pressable style={styles.zoomResetButton} onPress={() => setViewTransform({ scale: 1, translateX: 0, translateY: 0 })}>
+            <Text style={styles.zoomResetText}>{Math.round(viewTransform.scale * 100)}%</Text>
+          </Pressable>
+          <Pressable style={styles.zoomButton} onPress={() => setViewTransform((current) => ({ ...current, scale: clamp(current.scale + 0.4, 1, 4) }))}>
+            <Text style={styles.zoomButtonText}>+</Text>
+          </Pressable>
+        </View>
+        <ScrollView style={styles.selectorScroll} contentContainerStyle={styles.selectorScrollContent} showsVerticalScrollIndicator={false}>
+          <View
+            style={styles.selectorViewport}
+            onLayout={(event) => setLayout({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
+            {...panResponder.panHandlers}
+          >
+            <View
+              style={[
+                styles.selectorCanvas,
+                {
+                  width: canvasWidth,
+                  height: canvasHeight,
+                  transform: [
+                    { translateX: viewTransform.translateX },
+                    { translateY: viewTransform.translateY },
+                    { scale: viewTransform.scale }
+                  ]
+                }
+              ]}
+            >
+              {imageUri ? <Image source={{ uri: imageUri }} style={styles.selectorImage} /> : null}
+              {lines.map((line) => {
+                const frame = modalFrameForLine(line);
+                if (!frame) return null;
+                const selected = selectedIds.includes(line.id);
+                return (
+                  <Pressable key={line.id} hitSlop={8} style={[styles.ocrBox, selected ? styles.ocrBoxSelected : styles.ocrBoxUnselected, frame]} onPress={() => onToggleLine(line)} />
+                );
+              })}
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function frameForBox(box, imageSize, layout, minWidth, minHeight, heightRatio = 1) {
+  if (!box || !imageSize.width || !imageSize.height || !layout.width || !layout.height) return null;
+  const scale = Math.min(layout.width / imageSize.width, layout.height / imageSize.height);
+  const renderedWidth = imageSize.width * scale;
+  const renderedHeight = imageSize.height * scale;
+  const offsetX = (layout.width - renderedWidth) / 2;
+  const offsetY = (layout.height - renderedHeight) / 2;
+  const fullHeight = Math.max(box.height * scale, minHeight);
+  const visualHeight = Math.max(fullHeight * heightRatio, minHeight);
+
+  return {
+    left: offsetX + box.x * scale,
+    top: offsetY + box.y * scale + (fullHeight - visualHeight) / 2,
+    width: Math.max(box.width * scale, minWidth),
+    height: visualHeight
+  };
+}
+
+function resolveOcrCoordinateSize(coordinateSize, imageAsset) {
+  if (!coordinateSize?.width || !imageAsset?.width || !imageAsset?.height) return coordinateSize || null;
+  const widthRatio = coordinateSize.width / imageAsset.width;
+  const heightRatio = coordinateSize.height / imageAsset.height;
+
+  if (widthRatio > 0.75 && widthRatio < 1.25 && heightRatio > 0.55 && heightRatio < 1.25) {
+    return { width: imageAsset.width, height: imageAsset.height };
+  }
+
+  return {
+    width: coordinateSize.width,
+    height: Math.round(imageAsset.height * (coordinateSize.width / imageAsset.width))
+  };
+}
+
+function draftNameForOcrLine(line) {
+  return parseReceiptLines(line.text)[0] || line.text.trim();
+}
+
+function isOcrLineInDrafts(line, drafts) {
+  const draftName = draftNameForOcrLine(line).replace(/\s/g, "");
+  const lineText = line.text.replace(/\s/g, "");
+  return drafts.some((draft) => {
+    const normalizedDraft = draft.replace(/\s/g, "");
+    return normalizedDraft === draftName || lineText.includes(normalizedDraft) || draftName.includes(normalizedDraft);
+  });
+}
+
+function distanceBetweenTouches(touches) {
+  if (!touches || touches.length < 2) return 0;
+  const [first, second] = touches;
+  const dx = first.pageX - second.pageX;
+  const dy = first.pageY - second.pageY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function CalendarModal({ visible, value, onClose, onSelect }) {
@@ -921,6 +1218,23 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: "900"
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  versionBadge: {
+    color: "#14583f",
+    backgroundColor: "#edf7f2",
+    borderWidth: 1,
+    borderColor: "#b9dfcf",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    fontSize: 11,
+    fontWeight: "900"
+  },
   pageHint: {
     marginTop: 4,
     color: "#68716b",
@@ -1096,10 +1410,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10
   },
-  textarea: {
-    minHeight: 132,
-    textAlignVertical: "top"
-  },
   dateButton: {
     minHeight: 50,
     borderWidth: 1,
@@ -1204,12 +1514,170 @@ const styles = StyleSheet.create({
   inlineGroupWide: {
     flex: 1.05
   },
-  receiptImage: {
+  receiptImageWrap: {
     width: "100%",
     height: 280,
     borderRadius: 8,
-    resizeMode: "contain",
-    backgroundColor: "#faf7f0"
+    backgroundColor: "#faf7f0",
+    overflow: "hidden"
+  },
+  receiptImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "contain"
+  },
+  ocrBox: {
+    position: "absolute",
+    borderWidth: 1,
+    borderRadius: 4
+  },
+  ocrBoxUnselected: {
+    borderColor: "#7d857f",
+    backgroundColor: "rgba(104, 113, 107, 0.015)"
+  },
+  ocrBoxSelected: {
+    borderColor: "#1f7a5a",
+    backgroundColor: "rgba(31, 122, 90, 0.045)"
+  },
+  ocrPicker: {
+    gap: 8,
+    marginTop: 4
+  },
+  ocrLineList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7
+  },
+  ocrLineChip: {
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d9cfc0",
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 7
+  },
+  ocrLineChipSelected: {
+    borderColor: "#1f7a5a",
+    backgroundColor: "#edf7f2"
+  },
+  ocrLineText: {
+    color: "#18201c",
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  ocrLineTextSelected: {
+    color: "#14583f"
+  },
+  selectorScreen: {
+    flex: 1,
+    backgroundColor: "#f5f2eb"
+  },
+  selectorHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === "android" ? 24 : 10,
+    paddingBottom: 10
+  },
+  selectorTitle: {
+    color: "#18201c",
+    fontSize: 22,
+    fontWeight: "900"
+  },
+  selectorCloseButton: {
+    minHeight: 38,
+    borderRadius: 8,
+    backgroundColor: "#1f7a5a",
+    justifyContent: "center",
+    paddingHorizontal: 14
+  },
+  selectorCloseText: {
+    color: "#fff",
+    fontWeight: "900"
+  },
+  selectorHint: {
+    color: "#68716b",
+    fontSize: 13,
+    lineHeight: 19,
+    paddingHorizontal: 16,
+    paddingBottom: 10
+  },
+  zoomControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 10
+  },
+  zoomButton: {
+    width: 44,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: "#1f7a5a",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  zoomButtonText: {
+    color: "#fff",
+    fontSize: 24,
+    fontWeight: "900",
+    lineHeight: 26
+  },
+  zoomResetButton: {
+    minWidth: 72,
+    height: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#b9dfcf",
+    backgroundColor: "#edf7f2",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  zoomResetText: {
+    color: "#14583f",
+    fontWeight: "900"
+  },
+  selectorScroll: {
+    flex: 1
+  },
+  selectorScrollContent: {
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingBottom: 14
+  },
+  selectorViewport: {
+    width: "100%",
+    minHeight: 620,
+    alignItems: "center",
+    justifyContent: "flex-start",
+    overflow: "hidden"
+  },
+  selectorCanvas: {
+    backgroundColor: "#faf7f0",
+    borderRadius: 8,
+    overflow: "hidden"
+  },
+  selectorImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "contain"
+  },
+  selectorLinePanel: {
+    borderTopWidth: 1,
+    borderColor: "#e2ddd3",
+    backgroundColor: "#fff",
+    padding: 12,
+    gap: 8
+  },
+  selectorLineList: {
+    gap: 7,
+    paddingRight: 12
   },
   draftList: {
     gap: 10

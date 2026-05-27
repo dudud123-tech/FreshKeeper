@@ -1,46 +1,249 @@
+const MAX_CANDIDATES = 20;
+const MIN_SCORE = 3;
+
+const noiseWords = [
+  "대표",
+  "대표자",
+  "사업자",
+  "주소",
+  "전화",
+  "tel",
+  "매장",
+  "영수증",
+  "교환",
+  "환불",
+  "고객",
+  "센터",
+  "문의",
+  "포인트",
+  "멤버",
+  "적립",
+  "쿠폰",
+  "면세",
+  "과세",
+  "부가세",
+  "합계",
+  "소계",
+  "총액",
+  "결제",
+  "승인",
+  "카드",
+  "현금",
+  "잔돈",
+  "거스름",
+  "할인",
+  "봉투",
+  "바코드",
+  "barcode",
+  "pos",
+  "reg",
+  "vat",
+  "costco",
+  "whole sale",
+  "wholesale",
+  "다이소",
+  "이마트",
+  "홈플러스",
+  "롯데마트",
+  "청바지",
+  "의류",
+  "양말",
+  "수건",
+  "문구",
+  "완구",
+  "건전지",
+  "충전기",
+  "케이블",
+  "화장품",
+  "샴푸",
+  "린스",
+  "세제"
+];
+
+const foodHints = [
+  "우유",
+  "두유",
+  "요거트",
+  "요구르트",
+  "치즈",
+  "버터",
+  "크림",
+  "계란",
+  "달걀",
+  "고기",
+  "한우",
+  "소고기",
+  "쇠고기",
+  "돼지",
+  "돈육",
+  "닭",
+  "생선",
+  "연어",
+  "참치",
+  "고등어",
+  "사과",
+  "바나나",
+  "딸기",
+  "토마토",
+  "상추",
+  "양파",
+  "감자",
+  "고구마",
+  "당근",
+  "오이",
+  "샐러드",
+  "라면",
+  "햇반",
+  "김치",
+  "두부",
+  "소스",
+  "참기름",
+  "통조림",
+  "스팸",
+  "어묵",
+  "물",
+  "커피",
+  "주스",
+  "콜라",
+  "사이다",
+  "음료",
+  "과자",
+  "초콜릿",
+  "쿠키",
+  "빵",
+  "케이크",
+  "젤리",
+  "프로즌",
+  "냉동",
+  "만두",
+  "피자"
+];
+
 export function parseReceiptLines(text) {
-  const seen = new Set();
-  return text
+  const lines = text
     .split(/\n+/)
-    .map(cleanReceiptLine)
-    .filter((line) => line.length >= 2)
-    .filter((line) => {
-      const seenKey = line.replace(/\s/g, "").replace(/[ㄱ-ㅎㅏ-ㅣ]/g, "").replace(/\d/g, "").toLowerCase();
-      if (seen.has(seenKey)) return false;
-      seen.add(seenKey);
-      return true;
-    })
-    .slice(0, 20);
+    .map((line, index) => ({ index, raw: line, normalized: normalizeLine(line) }))
+    .filter((line) => line.normalized);
+
+  const scored = lines
+    .map((line, index, allLines) => scoreLine(line, index, allLines.length))
+    .filter((candidate) => candidate.score >= MIN_SCORE)
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+
+  return dedupeCandidates(scored)
+    .sort((a, b) => a.index - b.index)
+    .map((candidate) => candidate.name)
+    .slice(0, MAX_CANDIDATES);
 }
 
-function cleanReceiptLine(line) {
-  const blockedWords = /(COSTCO|WHOLESALE|코스트코|대표자|대구시|판매|합계|소계|면세|과세|부가세|거래|구매|승인|카드|잔돈|쿠폰|상품 수|REG|PM|VAT|번호)/i;
-  let cleaned = line
-    .replace(/[|｜]/g, " ")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+function scoreLine(line, visualIndex, totalLines) {
+  const original = line.normalized;
+  const compact = original.replace(/\s/g, "");
+  const cleaned = cleanProductName(original);
+  let score = 0;
 
-  cleaned = cleaned
+  if (!cleaned) return { ...line, name: "", score: -10 };
+  if (isNoiseLine(original) || isNoiseLine(cleaned)) score -= 8;
+  if (hasPricePattern(original)) score += 4;
+  if (hasQuantityPattern(original)) score += 1;
+  if (foodHints.some((word) => compact.toLowerCase().includes(word.toLowerCase()))) score += 3;
+  if (/[가-힣]/.test(cleaned)) score += 2;
+  if (/[A-Za-z]/.test(cleaned)) score += 1;
+  if (cleaned.length >= 3 && cleaned.length <= 28) score += 2;
+  if (cleaned.length > 36) score -= 3;
+  if (isMostlyDigits(cleaned)) score -= 8;
+  if (isCodeLike(cleaned)) score -= 6;
+  if (/^\d/.test(cleaned)) score -= 4;
+  if (/RC$/i.test(cleaned.replace(/\s/g, ""))) score -= 2;
+  if (visualIndex < Math.max(2, totalLines * 0.08)) score -= 1;
+  if (isAfterPaymentArea(original)) score -= 6;
+
+  return {
+    ...line,
+    name: cleaned,
+    score
+  };
+}
+
+function dedupeCandidates(candidates) {
+  const seen = new Set();
+  const results = [];
+
+  for (const candidate of candidates) {
+    const key = candidate.name
+      .replace(/\s/g, "")
+      .replace(/[ㄱ-ㅎㅏ-ㅣ]/g, "")
+      .replace(/\d+(g|G|ml|ML|개|입|ea|EA|x|X)?/g, "")
+      .toLowerCase();
+
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    results.push(candidate);
+  }
+
+  return results;
+}
+
+function cleanProductName(line) {
+  let cleaned = normalizeLine(line)
+    .replace(/^\[[0-9A-Z-]+\]\s*/i, "")
+    .replace(/\[[0-9A-Z-]+\]/gi, "")
+    .replace(/\b\d{8,}\b/g, "")
+    .replace(/\s+\d{1,3}(?:,\d{3})+(?:\s+\d+)?(?:\s+\d{1,3}(?:,\d{3})+)?\s*$/g, "")
+    .replace(/\s+\d+\s*[xX]\s*\d{1,3}(?:,\d{3})+\s*$/g, "")
+    .replace(/\s+\d{1,3}(?:,\d{3})+\s*원?\s*$/g, "")
+    .replace(/\s+\d+\s*원\s*$/g, "")
     .replace(/(?<=[가-힣])\s+(?=[가-힣])/g, "")
     .replace(/(?<=[가-힣])\s+(?=\d)/g, "")
-    .replace(/(?<=\d)\s+(?=[가-힣A-Za-z])/g, "");
-
-  if (!cleaned || blockedWords.test(cleaned)) return "";
-  if (/^\d/.test(cleaned)) return "";
-  if (/^\*?\s*CPN$/i.test(cleaned)) return "";
-  if (/^[A-Z0-9\s]{6,}$/i.test(cleaned) && !/[가-힣]/.test(cleaned)) return "";
-  if (/\d{1,3}\s*,?\d{3}/.test(cleaned)) return "";
-  if (/RC$/i.test(cleaned.replace(/\s/g, ""))) return "";
-
-  cleaned = cleaned
-    .replace(/\b\d{5,}\b/g, "")
-    .replace(/\b\d{1,4}\b(?!\s*(개|g|G|ea|EA|x|X))/g, "")
+    .replace(/(?<=\d)\s+(?=[가-힣A-Za-z])/g, "")
     .replace(/\b[0-9A-Z]{1,2}\b$/i, "")
     .replace(/[ㄱ-ㅎㅏ-ㅣ]+$/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 
+  cleaned = cleaned.replace(/^\*+/, "").replace(/\*+$/, "").trim();
   if (!/[가-힣A-Za-z]/.test(cleaned)) return "";
-  return cleaned.length >= 2 ? cleaned : "";
+  return cleaned;
+}
+
+function normalizeLine(line) {
+  return line
+    .replace(/[|｜]/g, " ")
+    .replace(/[^\p{L}\p{N}\s.,:/()[\]\-*]/gu, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function hasPricePattern(line) {
+  return /\d{1,3}(?:,\d{3})+/.test(line) || /\d+\s*원/.test(line);
+}
+
+function hasQuantityPattern(line) {
+  return /\d+\s*(개|입|봉|팩|g|G|kg|KG|ml|ML|L|ea|EA|x|X)/.test(line);
+}
+
+function isNoiseLine(line) {
+  const lowered = line.toLowerCase().replace(/\s/g, "");
+  return (
+    noiseWords.some((word) => lowered.includes(word.toLowerCase().replace(/\s/g, ""))) ||
+    /^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}/.test(line) ||
+    /^\d{2}:\d{2}/.test(line) ||
+    /^[\d\s,.:()[\]\-]+$/.test(line)
+  );
+}
+
+function isAfterPaymentArea(line) {
+  return /(합계|결제|승인|카드|현금|잔돈|거스름|부가\s*세|과세|면세)/i.test(line);
+}
+
+function isMostlyDigits(line) {
+  const compact = line.replace(/\s/g, "");
+  if (!compact) return true;
+  const digits = compact.replace(/\D/g, "").length;
+  return digits / compact.length > 0.6;
+}
+
+function isCodeLike(line) {
+  const compact = line.replace(/\s/g, "");
+  return /^[A-Z0-9-]{4,}$/i.test(compact) && !/[가-힣]/.test(compact);
 }

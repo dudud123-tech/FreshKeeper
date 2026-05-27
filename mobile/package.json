@@ -5,13 +5,20 @@
   "main": "expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "start:dev": "expo start --dev-client",
+    "android": "expo run:android",
+    "android:dev": "expo run:android",
+    "build:android:dev": "eas build --platform android --profile development",
+    "build:android:preview": "eas build --platform android --profile preview",
+    "prebuild:android": "expo prebuild --platform android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-ml-kit/text-recognition": "^2.0.0",
     "expo": "~54.0.0",
+    "expo-dev-client": "~6.0.21",
     "expo-image-picker": "~17.0.11",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
@@ -21,6 +28,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
-    "babel-preset-expo": "~54.0.10"
+    "babel-preset-expo": "~54.0.10",
+    "eas-cli": "^19.0.8"
   }
 }

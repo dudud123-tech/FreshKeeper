@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "유통기한 매니저",
+    "name": "freshkeeper",
     "slug": "fresh-keeper-mobile",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -12,9 +12,13 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.wooyoung43.freshkeeper",
       "adaptiveIcon": {
         "backgroundColor": "#1f7a5a"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       [
@@ -24,6 +28,12 @@
           "cameraPermission": "상품 사진과 영수증을 촬영하기 위해 카메라 권한이 필요합니다."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "30fa3401-3b45-4c97-a6c8-8200230862cb"
+      }
+    },
+    "owner": "wooyoung43"
   }
 }

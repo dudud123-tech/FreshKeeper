@@ -1,10 +1,16 @@
 {
   "expo": {
-    "name": "freshkeeper",
+    "name": "오늘까지야",
     "slug": "fresh-keeper-mobile",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f5f2eb"
+    },
     "assetBundlePatterns": [
       "assets/*"
     ],
@@ -14,13 +20,22 @@
     "android": {
       "package": "com.wooyoung43.freshkeeper",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1f7a5a"
       },
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM"
       ]
     },
     "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#1f7a5a"
+        }
+      ],
       [
         "expo-image-picker",
         {

@@ -7,7 +7,6 @@ export async function recognizeReceiptImage(imageUri) {
     const script = textRecognitionModule.TextRecognitionScript?.KOREAN || "Korean";
     const result = await TextRecognition.recognize(imageUri, script);
     const lines = normalizeRecognitionLines(result);
-    logRecognitionDebug(result, lines);
     const text = normalizeRecognitionText(result);
 
     if (!text) {
@@ -126,32 +125,6 @@ function normalizeBox(line) {
   return null;
 }
 
-function logRecognitionDebug(result, lines) {
-  try {
-    const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
-    const firstBlock = blocks[0];
-    const firstLine = firstBlock?.lines?.[0] || firstBlock || result?.lines?.[0];
-    console.log(
-      "[freshkeeper:ocr-debug]",
-      JSON.stringify(
-        {
-          resultKeys: result ? Object.keys(result) : [],
-          blockCount: blocks.length,
-          firstBlockKeys: firstBlock ? Object.keys(firstBlock) : [],
-          firstLineKeys: firstLine ? Object.keys(firstLine) : [],
-          firstLineRaw: simplifyForLog(firstLine),
-          normalizedFirstLines: lines.slice(0, 5),
-          estimatedCoordinateSize: estimateCoordinateSize(lines)
-        },
-        null,
-        2
-      )
-    );
-  } catch (error) {
-    console.log("[freshkeeper:ocr-debug-error]", error?.message || String(error));
-  }
-}
-
 function estimateCoordinateSize(lines) {
   const boxes = lines.map((line) => line.box).filter(Boolean);
   if (!boxes.length) return null;
@@ -159,15 +132,6 @@ function estimateCoordinateSize(lines) {
   const height = Math.max(...boxes.map((box) => box.y + box.height));
   if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
   return { width, height };
-}
-
-function simplifyForLog(value) {
-  if (!value || typeof value !== "object") return value;
-  const output = {};
-  ["text", "value", "inferText", "frame", "boundingBox", "bounds", "rect", "cornerPoints", "points"].forEach((key) => {
-    if (value[key] !== undefined) output[key] = value[key];
-  });
-  return output;
 }
 
 function numberOr(...values) {

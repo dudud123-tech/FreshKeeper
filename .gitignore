@@ -4,6 +4,7 @@
 # Dependencies
 node_modules/
 mobile/node_modules/
+cloudflare/worker/node_modules/
 
 # Expo / build output
 .expo/
@@ -11,7 +12,10 @@ mobile/.expo/
 dist/
 mobile/dist/
 mobile/dist-test/
+cloudflare/worker/.wrangler/
 
 # OS / editor
 .DS_Store
 Thumbs.db
+.idea/
+mobile/.idea/

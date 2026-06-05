@@ -1,0 +1,16 @@
+{
+  "name": "freshkeeper-ocr-feedback-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create freshkeeper-ocr-feedback",
+    "db:migrate:local": "wrangler d1 migrations apply freshkeeper-ocr-feedback --local",
+    "db:migrate:remote": "wrangler d1 migrations apply freshkeeper-ocr-feedback --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

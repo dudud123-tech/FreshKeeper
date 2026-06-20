@@ -42,6 +42,22 @@ const AI_CANDIDATE_NOISE_WORDS = [
   "\uD658\uBD88",
   "\uAD50\uD658",
   "\uC815\uC0C1\uC0C1\uD488",
+  "상품명",
+  "단가",
+  "수량",
+  "금액",
+  "단가수량금액",
+  "총품목수량",
+  "총판매상품수",
+  "발행일",
+  "할부거래",
+  "약관보기",
+  "차량번호",
+  "출차",
+  "일시불",
+  "브랜드매장",
+  "매장고지",
+  "물참조",
   "\uBAA8\uBC14\uC77C",
   "\uBC1C\uD589",
   "\uC810\uD3EC",
@@ -286,7 +302,58 @@ async function requestGeminiCandidates(env, model, prompt, lines, localCandidate
     };
   }
 
-  const response = await fetch(
+  let response = await fetchGeminiDirect(env, model, prompt);
+  if (isRetryableGeminiError(response.status)) {
+    await delay(900);
+    response = await fetchGeminiDirect(env, model, prompt);
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      error: `gemini_${response.status}`,
+      detail: safeString(await response.text(), 500)
+    };
+  }
+
+  const geminiJson = await response.json();
+  const text = geminiJson?.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+  const parsed = parseCandidateJson(text);
+  return { ok: true, candidates: normalizeAiCandidates(parsed?.candidates, lines, localCandidates), provider: "gemini", model };
+}
+
+async function requestGeminiProxyCandidates(env, model, prompt, lines, localCandidates) {
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (env.GEMINI_PROXY_TOKEN) {
+      headers.Authorization = `Bearer ${env.GEMINI_PROXY_TOKEN}`;
+    }
+
+    const fallbackModel = safeString(env.GEMINI_FALLBACK_MODEL, 80) || DEFAULT_GEMINI_FALLBACK_MODEL;
+    let usedModel = model;
+    let result = await readGeminiProxyResult(env, usedModel, prompt, headers, lines, localCandidates);
+    if (!result.ok && isRetryableGeminiError(result.status, result.error)) {
+      await delay(900);
+      result = await readGeminiProxyResult(env, usedModel, prompt, headers, lines, localCandidates);
+    }
+    if (!result.ok && isRetryableGeminiError(result.status, result.error) && fallbackModel && fallbackModel !== usedModel) {
+      usedModel = fallbackModel;
+      result = await readGeminiProxyResult(env, usedModel, prompt, headers, lines, localCandidates);
+    }
+    return result.ok ? { ...result, model: usedModel } : result;
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      error: "gemini_proxy_failed",
+      detail: safeString(error?.message, 500)
+    };
+  }
+}
+
+function fetchGeminiDirect(env, model, prompt) {
+  return fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
     {
       method: "POST",
@@ -301,74 +368,36 @@ async function requestGeminiCandidates(env, model, prompt, lines, localCandidate
       })
     }
   );
+}
 
+async function readGeminiProxyResult(env, model, prompt, headers, lines, localCandidates) {
+  const response = await fetchGeminiProxy(env, model, prompt, headers);
   if (!response.ok) {
     return {
       ok: false,
       status: response.status,
-      error: `gemini_${response.status}`,
+      error: `gemini_proxy_${response.status}`,
       detail: safeString(await response.text(), 500)
     };
   }
 
-  const geminiJson = await response.json();
-  const text = geminiJson?.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
-  const parsed = parseCandidateJson(text);
-  return { ok: true, candidates: normalizeAiCandidates(parsed?.candidates, lines, localCandidates) };
-}
-
-async function requestGeminiProxyCandidates(env, model, prompt, lines, localCandidates) {
-  try {
-    const headers = { "Content-Type": "application/json" };
-    if (env.GEMINI_PROXY_TOKEN) {
-      headers.Authorization = `Bearer ${env.GEMINI_PROXY_TOKEN}`;
-    }
-
-    const fallbackModel = safeString(env.GEMINI_FALLBACK_MODEL, 80) || DEFAULT_GEMINI_FALLBACK_MODEL;
-    let usedModel = model;
-    let response = await fetchGeminiProxy(env, usedModel, prompt, headers);
-    if ((response.status === 429 || response.status === 503) && fallbackModel && fallbackModel !== usedModel) {
-      usedModel = fallbackModel;
-      response = await fetchGeminiProxy(env, usedModel, prompt, headers);
-    }
-    if (response.status === 429 || response.status === 503) {
-      await delay(900);
-      response = await fetchGeminiProxy(env, usedModel, prompt, headers);
-    }
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        status: response.status,
-        error: `gemini_proxy_${response.status}`,
-        detail: safeString(await response.text(), 500)
-      };
-    }
-
-    const proxyJson = await response.json();
-    if (proxyJson?.ok === false) {
-      return {
-        ok: false,
-        status: safeNumber(proxyJson?.status) || response.status,
-        error: safeString(proxyJson?.error, 80) || "gemini_proxy_error",
-        detail: safeString(proxyJson?.detail, 500)
-      };
-    }
-    const parsed = Array.isArray(proxyJson?.candidates) ? proxyJson : parseCandidateJson(proxyJson?.text);
-    return {
-      ok: true,
-      candidates: normalizeAiCandidates(parsed?.candidates, lines, localCandidates),
-      provider: "gemini-proxy",
-      model: usedModel
-    };
-  } catch (error) {
+  const proxyJson = await response.json();
+  if (proxyJson?.ok === false) {
     return {
       ok: false,
-      status: 502,
-      error: "gemini_proxy_failed",
-      detail: safeString(error?.message, 500)
+      status: safeNumber(proxyJson?.status) || response.status,
+      error: safeString(proxyJson?.error, 80) || "gemini_proxy_error",
+      detail: safeString(proxyJson?.detail, 500)
     };
   }
+
+  const parsed = Array.isArray(proxyJson?.candidates) ? proxyJson : parseCandidateJson(proxyJson?.text);
+  return {
+    ok: true,
+    candidates: normalizeAiCandidates(parsed?.candidates, lines, localCandidates),
+    provider: "gemini-proxy",
+    model
+  };
 }
 
 function fetchGeminiProxy(env, model, prompt, headers) {
@@ -382,6 +411,11 @@ function fetchGeminiProxy(env, model, prompt, headers) {
       responseSchema: candidateResponseSchema()
     })
   });
+}
+
+function isRetryableGeminiError(status, error = "") {
+  const statusNumber = safeNumber(status);
+  return statusNumber === 429 || statusNumber === 503 || /(^|_)(429|503)(_|$)/.test(String(error || ""));
 }
 
 function delay(ms) {
@@ -671,12 +705,24 @@ async function handleOcrFeedback(request, env) {
   const createdAt = new Date().toISOString();
   const selectedCount = normalized.lines.filter((line) => line.selected).length;
   const rejectedCount = normalized.lines.length - selectedCount;
+  const selectedNames = normalized.selectedNames;
+  const ruleCandidateNames = normalized.ruleCandidateNames;
+  const selectedNameSet = new Set(selectedNames.map((name) => maskSensitiveText(name).slice(0, MAX_TEXT_LENGTH)));
+  const userExcludedNames = [];
+  const userExcludedSet = new Set();
+
+  for (const candidateName of ruleCandidateNames) {
+    const name = maskSensitiveText(candidateName).slice(0, MAX_TEXT_LENGTH);
+    if (!name || selectedNameSet.has(name) || userExcludedSet.has(name)) continue;
+    userExcludedSet.add(name);
+    userExcludedNames.push(name);
+  }
 
   const statements = [
     env.DB.prepare(
       `INSERT INTO receipt_feedback
-        (id, created_at, app_version, parser_version, device_locale, store_hint, line_count, selected_count, rejected_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (id, created_at, app_version, parser_version, device_locale, store_hint, ai_request_id, line_count, selected_count, rejected_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       receiptId,
       createdAt,
@@ -684,6 +730,7 @@ async function handleOcrFeedback(request, env) {
       normalized.parserVersion,
       normalized.deviceLocale,
       normalized.storeHint,
+      normalized.aiRequestId,
       normalized.lines.length,
       selectedCount,
       rejectedCount
@@ -712,6 +759,51 @@ async function handleOcrFeedback(request, env) {
     );
   }
 
+  for (let index = 0; index < selectedNames.length; index += 1) {
+    const name = maskSensitiveText(selectedNames[index]).slice(0, MAX_TEXT_LENGTH);
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO receipt_feedback_selected_items
+          (id, receipt_id, item_index, name_masked, name_hash)
+         VALUES (?, ?, ?, ?, ?)`
+      ).bind(crypto.randomUUID(), receiptId, index, name, await sha256(name))
+    );
+  }
+
+  const canStoreRuleCandidates = ruleCandidateNames.length > 0
+    ? await tableExists(env.DB, "receipt_feedback_rule_candidates")
+    : false;
+
+  if (canStoreRuleCandidates) {
+    for (let index = 0; index < ruleCandidateNames.length; index += 1) {
+      const name = maskSensitiveText(ruleCandidateNames[index]).slice(0, MAX_TEXT_LENGTH);
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO receipt_feedback_rule_candidates
+            (id, receipt_id, candidate_index, name_masked, name_hash)
+           VALUES (?, ?, ?, ?, ?)`
+        ).bind(crypto.randomUUID(), receiptId, index, name, await sha256(name))
+      );
+    }
+  }
+
+  const canStoreUserExcludedItems = userExcludedNames.length > 0
+    ? await tableExists(env.DB, "receipt_feedback_user_excluded_items")
+    : false;
+
+  if (canStoreUserExcludedItems) {
+    for (let index = 0; index < userExcludedNames.length; index += 1) {
+      const name = userExcludedNames[index];
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO receipt_feedback_user_excluded_items
+            (id, receipt_id, candidate_index, name_masked, name_hash)
+           VALUES (?, ?, ?, ?, ?)`
+        ).bind(crypto.randomUUID(), receiptId, index, name, await sha256(name))
+      );
+    }
+  }
+
   await env.DB.batch(statements);
 
   return json({
@@ -719,7 +811,12 @@ async function handleOcrFeedback(request, env) {
     receiptId,
     lineCount: normalized.lines.length,
     selectedCount,
-    rejectedCount
+    rejectedCount,
+    selectedItemCount: selectedNames.length,
+    ruleCandidateCount: canStoreRuleCandidates ? ruleCandidateNames.length : 0,
+    ruleCandidateIgnoredCount: canStoreRuleCandidates ? 0 : ruleCandidateNames.length,
+    userExcludedItemCount: canStoreUserExcludedItems ? userExcludedNames.length : 0,
+    userExcludedIgnoredCount: canStoreUserExcludedItems ? 0 : userExcludedNames.length
   });
 }
 
@@ -731,6 +828,13 @@ function normalizePayload(payload) {
     parserVersion: safeString(payload?.parserVersion, 80),
     deviceLocale: safeString(payload?.deviceLocale, 40),
     storeHint: safeString(payload?.storeHint, 80),
+    aiRequestId: safeString(payload?.aiRequestId, 80),
+    selectedNames: Array.isArray(payload?.selectedNames)
+      ? payload.selectedNames.map((name) => safeString(name, MAX_TEXT_LENGTH)).filter(Boolean).slice(0, 50)
+      : [],
+    ruleCandidateNames: Array.isArray(payload?.ruleCandidateNames)
+      ? payload.ruleCandidateNames.map((name) => safeString(name, MAX_TEXT_LENGTH)).filter(Boolean).slice(0, 50)
+      : [],
     lines: lines.slice(0, MAX_LINES).map((line, index) => ({
       index,
       text: safeString(line?.text, MAX_TEXT_LENGTH),
@@ -738,6 +842,14 @@ function normalizePayload(payload) {
       box: normalizeBox(line?.box)
     })).filter((line) => line.text.length > 0)
   };
+}
+
+async function tableExists(db, tableName) {
+  const row = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .bind(tableName)
+    .first();
+  return Boolean(row);
 }
 
 function normalizeCandidateLines(lines) {
@@ -838,7 +950,7 @@ function isLikelyAiProductName(name) {
   if (/^[\d\s,.:()[\]\-T]+$/i.test(name)) return false;
   if (/\b(irc|cpn|pos|vat|member|ewholesale)\b/i.test(name)) return false;
   if (/^\d{4,}/.test(compact) && !hasAllowHint) return false;
-  if (/(할인|쿠폰|에누리|적립|합계|소계|부가세|과세|면세|승인|카드|포인트)/.test(compact)) return false;
+  if (/(할인|쿠폰|에누리|적립|합계|소계|부가세|과세|면세|승인|카드|포인트|발행일|할부거래|약관보기|차량번호|출차|브랜드매장|매장고지|물참조|균일가\d*원)/.test(compact)) return false;
   if (isReceiptLabel(compact)) return false;
   if (AI_CANDIDATE_NOISE_WORDS.some((word) => lower.includes(word.toLowerCase()))) return false;
 
@@ -898,7 +1010,7 @@ function isLikelyProductEvidenceLine(text) {
   if (/^\d+$/.test(compact)) return false;
   if (isReceiptLabel(compact)) return false;
   if (AI_CANDIDATE_NOISE_WORDS.some((word) => compact.includes(normalizeEvidenceText(word)))) return false;
-  if (/(할인|쿠폰|에누리|적립|합계|소계|부가세|과세|면세|승인|카드|포인트)/.test(compact)) return false;
+  if (/(할인|쿠폰|에누리|적립|합계|소계|부가세|과세|면세|승인|카드|포인트|발행일|할부거래|약관보기|차량번호|출차|브랜드매장|매장고지|물참조|균일가\d*원)/.test(compact)) return false;
   return /[\uAC00-\uD7A3]/.test(compact);
 }
 
@@ -913,6 +1025,14 @@ function isReceiptLabel(compactText) {
     "수량",
     "금액",
     "결제대상금액",
+    "단가수량금액",
+    "총판매상품수",
+    "할부거래계약서약관보기",
+    "앱에차량번호등록시출차가편리합니다",
+    "일부브랜드매장제외매장고지물참조",
+    "정상상품에한함30일이내신선7일",
+    "sco760005",
+    "cpn",
     "금회발생포인트",
     "링품세계",
     "과세물",

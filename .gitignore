@@ -19,3 +19,13 @@ cloudflare/worker/.wrangler/
 Thumbs.db
 .idea/
 mobile/.idea/
+
+# Local secrets
+mobile/tools/인증키.txt
+
+# Downloaded model/source artifacts for local experiments
+mobile/tools/dbnet-lab/models/
+mobile/android/app/src/main/assets/index.android.bundle
+
+# Local note editor state
+FreshKeeper/.obsidian/

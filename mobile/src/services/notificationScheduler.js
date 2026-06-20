@@ -21,13 +21,27 @@ function notificationSummaryForDate(items, reminderDays, baseDate) {
   return items.reduce(
     (acc, item) => {
       const days = daysUntilFrom(item, baseDate);
-      if (days < 0) acc.expired += 1;
-      if (days >= 0 && days <= reminderDays) acc.urgent += 1;
+      if (days < 0) {
+        acc.expired += 1;
+        acc.items.push({ ...item, days, rank: 0 });
+      }
+      if (days >= 0 && days <= reminderDays) {
+        acc.urgent += 1;
+        acc.items.push({ ...item, days, rank: days === 0 ? 1 : 2 });
+      }
       if (days === 0) acc.today += 1;
       return acc;
     },
-    { urgent: 0, today: 0, expired: 0 }
+    { urgent: 0, today: 0, expired: 0, items: [] }
   );
+}
+
+function notificationTitle(summary) {
+  const sortedItems = [...summary.items].sort((a, b) => a.rank - b.rank || a.days - b.days);
+  const primaryName = sortedItems[0]?.name?.trim();
+  const extraCount = Math.max(sortedItems.length - 1, 0);
+  if (!primaryName) return summary.expired > 0 ? "만료 상품을 확인하세요" : "임박 상품을 확인하세요";
+  return `${primaryName}${extraCount > 0 ? ` 외 ${extraCount}건` : ""} 확인하세요`;
 }
 
 function notificationBody(summary) {
@@ -36,7 +50,7 @@ function notificationBody(summary) {
   if (summary.today > 0) parts.push(`오늘까지 ${summary.today}개`);
   const upcoming = Math.max(summary.urgent - summary.today, 0);
   if (upcoming > 0) parts.push(`임박 ${upcoming}개`);
-  return parts.length > 0 ? parts.join(", ") : "오늘 확인할 임박/만료 상품이 없습니다.";
+  return parts.length > 0 ? `${parts.join(", ")}가 있어요.` : "오늘 확인할 임박/만료 상품이 없습니다.";
 }
 
 async function prepareNotifications() {
@@ -84,7 +98,7 @@ export async function scheduleExpiryNotifications(items, reminderDays, settings)
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: summary.expired > 0 ? "만료 상품을 확인하세요" : "임박 상품을 확인하세요",
+        title: notificationTitle(summary),
         body: notificationBody(summary),
         priority: Notifications.AndroidNotificationPriority.MAX,
         sound: "default",

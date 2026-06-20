@@ -4,11 +4,14 @@ import { Alert, Image } from "react-native";
 import { recognizeReceiptImage } from "../ocr";
 import { parseReceiptLines } from "../receiptParser";
 import { buildOcrFeedbackPayload, feedbackFingerprint, sendOcrFeedback } from "../services/ocrFeedbackApi";
-import { requestAiReceiptCandidates as requestAiReceiptCandidatesBase } from "../services/receiptAiApi";
-import { todayIso } from "../utils/date";
-import { buildOcrCoordinateOptions, draftNameForOcrLine, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
+import { extractCommerceProductImages } from "../utils/commerceImageExtractor";
+import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
+import { buildOcrCoordinateOptions, chooseBestOcrCoordinateOption, draftNameForOcrLine, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
+import { detectReceiptAiTextLineBoxes } from "../utils/receiptAiTextDetector";
+import { normalizeReceiptImageForOcr } from "../utils/receiptImageNormalizer";
+import { alignOcrLinesWithDetectedBoxes, detectReceiptTextLineBoxes, groupDetectedBoxesIntoRows } from "../utils/receiptTextLineDetector";
 
-export const DEFAULT_FEEDBACK_SETTINGS = { enabled: false };
+export const DEFAULT_FEEDBACK_SETTINGS = { enabled: true };
 
 export function normalizeFeedbackSettings(value) {
   return { ...DEFAULT_FEEDBACK_SETTINGS, ...(value || {}) };
@@ -22,13 +25,12 @@ export function useReceiptFlow({
   setItems,
   setMode,
   goToPage,
-  chargeAiUsage,
-  refundAiUsage,
-  showAiCreditRequired,
+  addPage = 0,
+  inventoryPage = 1,
   setLatestRegisteredId,
   setTotalHighlighted
 }) {
-  const [receiptExtractionMode, setReceiptExtractionMode] = useState("fast");
+  const [receiptSourceType, setReceiptSourceType] = useState("receipt");
   const [receiptImage, setReceiptImage] = useState("");
   const [receiptImageSize, setReceiptImageSize] = useState({ width: 0, height: 0 });
   const [ocrCoordinateSize, setOcrCoordinateSize] = useState(null);
@@ -36,16 +38,17 @@ export function useReceiptFlow({
   const [ocrCoordinateModeIndex, setOcrCoordinateModeIndex] = useState(0);
   const [receiptImageLayout, setReceiptImageLayout] = useState({ width: 0, height: 0 });
   const [ocrLines, setOcrLines] = useState([]);
+  const [commerceCropBoxes, setCommerceCropBoxes] = useState([]);
   const [selectedOcrLineIds, setSelectedOcrLineIds] = useState([]);
   const [receiptSelectorVisible, setReceiptSelectorVisible] = useState(false);
   const [drafts, setDrafts] = useState([]);
-  const [aiReceiptLoading, setAiReceiptLoading] = useState(false);
-  const [aiReceiptInfo, setAiReceiptInfo] = useState(null);
+  const [initialDrafts, setInitialDrafts] = useState([]);
+  const [excludedDrafts, setExcludedDrafts] = useState([]);
   const [draftForms, setDraftForms] = useState({});
-  const [bulkDraftForm, setBulkDraftForm] = useState({ expiry: todayIso(7) });
-  const [receiptStatus, setReceiptStatus] = useState("영수증을 촬영하거나 이미지를 불러오면 상품 후보를 자동으로 만듭니다.");
+  const [bulkDraftForm, setBulkDraftForm] = useState({ expiry: suggestedExpiryDate("", "기타", "냉장") });
+  const [receiptStatus, setReceiptStatus] = useState("영수증을 촬영하거나 주문내역 캡처를 불러오면 상품 후보를 자동으로 만듭니다.");
   const [feedbackSettings, setFeedbackSettings] = useState(DEFAULT_FEEDBACK_SETTINGS);
-  const [feedbackStatus, setFeedbackStatus] = useState("학습 개선 데이터 전송 꺼짐");
+  const [feedbackStatus, setFeedbackStatus] = useState("학습 개선 데이터 자동 전송 켜짐");
   const [feedbackUploadKey, setFeedbackUploadKey] = useState("");
   const feedbackUploadInFlightRef = useRef(false);
 
@@ -62,17 +65,18 @@ export function useReceiptFlow({
     );
   }, [receiptImage]);
 
-  async function requestAiReceiptCandidates({ lines, localCandidates }) {
-    return requestAiReceiptCandidatesBase({ lines, localCandidates, appVersion });
-  }
-
-  async function createReceiptCandidates(imageAsset) {
+  async function createReceiptCandidates(imageAsset, options = {}) {
     try {
-      const imageUri = typeof imageAsset === "string" ? imageAsset : imageAsset.uri;
+      const sourceType = options.sourceType || "receipt";
+      const originalImageUri = typeof imageAsset === "string" ? imageAsset : imageAsset.uri;
       const assetSize = imageAsset?.width && imageAsset?.height ? { width: imageAsset.width, height: imageAsset.height } : { width: 0, height: 0 };
-      const displaySize = await getImageDisplaySize(imageUri, assetSize);
+      const normalizedImage = await normalizeReceiptImageForOcr(originalImageUri, sourceType);
+      const imageUri = normalizedImage.imageUri || originalImageUri;
+      const normalizedSize = normalizedImage.size?.width && normalizedImage.size?.height ? normalizedImage.size : null;
+      const displaySize = await getImageDisplaySize(imageUri, normalizedSize || assetSize);
+      setReceiptSourceType(sourceType);
       setMode("receipt");
-      goToPage(0);
+      goToPage(addPage);
       setReceiptImage(imageUri);
       setReceiptImageSize(displaySize);
       setOcrCoordinateSize(null);
@@ -80,112 +84,118 @@ export function useReceiptFlow({
       setOcrCoordinateModeIndex(0);
       setReceiptImageLayout({ width: 0, height: 0 });
       setOcrLines([]);
+      setCommerceCropBoxes([]);
       setSelectedOcrLineIds([]);
-      setAiReceiptLoading(receiptExtractionMode === "ai");
-      setAiReceiptInfo(null);
+      setInitialDrafts([]);
+      setExcludedDrafts([]);
       setFeedbackUploadKey("");
       feedbackUploadInFlightRef.current = false;
-      setReceiptStatus("영수증을 읽고 상품 후보를 만드는 중입니다.");
-      const result = await recognizeReceiptImage(imageUri);
+      setReceiptStatus(
+        sourceType === "coupang"
+          ? "쿠팡 주문내역 캡처에서 상품 후보를 찾는 중입니다."
+          : normalizedImage.normalized
+            ? "종이 영수증을 반듯하게 보정한 뒤 상품 후보를 찾는 중입니다."
+            : "이미지를 읽고 상품 후보를 만드는 중입니다."
+      );
+      const result = await recognizeReceiptImage(imageUri, displaySize);
       const ruleDrafts = parseReceiptLines(result.text);
-      const lines = result.lines || [];
+      let lines = result.lines || [];
       let nextDrafts = ruleDrafts;
-      let aiAssistUsed = false;
-      let aiAssistFailed = false;
 
-      if (receiptExtractionMode === "ai" && lines.length > 0) {
-        const aiCharge = chargeAiUsage();
-        if (!aiCharge.allowed) {
-          aiAssistFailed = true;
-          setAiReceiptInfo({
-            ok: false,
-            provider: "local-rules",
-            model: "",
-            fallbackFrom: "no_ai_credit",
-            error: "AI usage credit required",
-            candidates: [],
-            localCandidateCount: ruleDrafts.length,
-            ocrLineCount: lines.length
-          });
-          showAiCreditRequired();
-          setAiReceiptLoading(false);
-        } else {
-          try {
-            setReceiptStatus("OCR 결과를 AI가 한 번 더 정리하는 중입니다.");
-            const aiResult = await requestAiReceiptCandidates({ lines, localCandidates: ruleDrafts });
-            setAiReceiptInfo({
-              ...aiResult.meta,
-              candidates: aiResult.candidates,
-              localCandidateCount: ruleDrafts.length,
-              ocrLineCount: lines.length
-            });
-            if (aiResult.names.length > 0) {
-              nextDrafts = aiResult.names;
-              aiAssistUsed = true;
-            }
-          } catch {
-            aiAssistFailed = true;
-            refundAiUsage(aiCharge.source);
-            setAiReceiptInfo({
-              ok: false,
-              provider: "local-rules",
-              model: "",
-              fallbackFrom: "request_failed",
-              error: "AI 요청 실패",
-              candidates: [],
-              localCandidateCount: ruleDrafts.length,
-              ocrLineCount: lines.length
-            });
-            nextDrafts = ruleDrafts;
-          } finally {
-            setAiReceiptLoading(false);
-          }
-        }
-      } else {
-        setAiReceiptLoading(false);
+      if (sourceType === "receipt") {
+        const aiTextBoxes = await detectReceiptAiTextLineBoxes(imageUri);
+        const detectedTextBoxes = aiTextBoxes.length ? aiTextBoxes : await detectReceiptTextLineBoxes(imageUri);
+        const detectedRowBoxes = aiTextBoxes.length ? groupDetectedBoxesIntoRows(aiTextBoxes) : detectedTextBoxes;
+        console.log("[freshkeeper:ocr-box-source]", {
+          sourceType,
+          normalized: Boolean(normalizedImage.normalized),
+          dbnetCount: aiTextBoxes.length,
+          fallbackSource: aiTextBoxes.length ? "dbnet-text-line" : "opencv-text-line",
+          detectedCount: detectedTextBoxes.length,
+          detectedRowCount: detectedRowBoxes.length,
+          ocrLineCount: lines.length
+        });
+        lines = alignOcrLinesWithDetectedBoxes(lines, detectedTextBoxes, aiTextBoxes.length ? "dbnet-text-line" : "opencv-text-line");
       }
 
-      const coordinateOptions = buildOcrCoordinateOptions(result.coordinateSize, displaySize, assetSize);
-      const coordinateSize = coordinateOptions[0]?.size || displaySize;
+      const coordinateAssetSize = normalizedImage.normalized ? null : assetSize;
+      const coordinateOptions = buildOcrCoordinateOptions(result.coordinateSize, displaySize, coordinateAssetSize);
+      const bestCoordinate = chooseBestOcrCoordinateOption(coordinateOptions, lines, nextDrafts);
+      const coordinateModeIndex = bestCoordinate.index || 0;
+      const coordinateSize = coordinateOptions[coordinateModeIndex]?.size || coordinateOptions[0]?.size || displaySize;
       setOcrLines(lines);
       setOcrCoordinateSize(coordinateSize);
       setOcrCoordinateOptions(coordinateOptions);
-      setOcrCoordinateModeIndex(0);
+      setOcrCoordinateModeIndex(coordinateModeIndex);
       setSelectedOcrLineIds(lines.filter((line) => isOcrLineInDrafts(line, nextDrafts)).map((line) => line.id));
-      setReceiptDrafts(nextDrafts);
+      const commerceImageResult = await extractCommerceProductImages({
+        imageUri,
+        imageSize: displaySize,
+        coordinateSize,
+        lines,
+        draftNames: nextDrafts
+      });
+      if (commerceImageResult.draftNames?.length) {
+        nextDrafts = commerceImageResult.draftNames;
+      }
+      if (commerceImageResult.selectedLineIds?.length) {
+        setSelectedOcrLineIds(commerceImageResult.selectedLineIds);
+      }
+      setCommerceCropBoxes(commerceImageResult.cropBoxes || []);
+      setReceiptDrafts(nextDrafts, commerceImageResult.imageMap || {});
+      const sourceLabel = sourceType === "coupang" ? "쿠팡 주문내역" : "이미지";
+      const localResultMessage = sourceType === "coupang" ? `${sourceLabel}에서 상품 후보를 만들었습니다.` : result.message || `${sourceLabel}에서 상품 후보를 만들었습니다.`;
       setReceiptStatus(
         nextDrafts.length > 0
-          ? `${aiAssistUsed ? "AI가 상품 후보를 보강했습니다." : result.message || "상품 후보를 만들었습니다."}${aiAssistFailed ? " AI 보조를 잠시 사용할 수 없어 기본 방식으로 처리했습니다." : ""} 이미지에서 필요한 줄을 직접 터치해 후보를 추가할 수도 있습니다.`
-          : "상품 후보를 찾지 못했습니다. 인식된 내용에서 직접 수정하거나 후보를 만들어 주세요."
+          ? `${localResultMessage} 결과가 어색하면 직접 줄을 고를 수 있습니다.`
+          : "상품 후보를 찾지 못했습니다. 직접 줄을 고르거나 다시 선택해 주세요."
       );
     } catch {
-      setAiReceiptLoading(false);
-      setReceiptStatus("영수증을 읽지 못했습니다. 이미지를 다시 선택하거나 직접 입력해 주세요.");
+      setReceiptStatus("이미지를 읽지 못했습니다. 이미지를 다시 선택하거나 직접 입력해 주세요.");
     }
   }
 
   async function pickReceiptImage() {
     setMode("receipt");
-    goToPage(0);
+    goToPage(addPage);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("권한 필요", "영수증 이미지를 불러오려면 사진 접근 권한이 필요합니다.");
+      Alert.alert("권한 필요", "이미지나 캡처를 불러오려면 사진 접근 권한이 필요합니다.");
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
       quality: 0.9
     });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
-      await createReceiptCandidates(result.assets[0]);
+      const asset = result.assets[0];
+      Alert.alert("어떤 이미지인가요?", "영수증뿐 아니라 쿠팡 주문내역 캡처도 상품 후보로 만들 수 있습니다.", [
+        {
+          text: "취소",
+          style: "cancel"
+        },
+        {
+          text: "영수증",
+          onPress: () => createReceiptCandidates(asset, { sourceType: "receipt" })
+        },
+        {
+          text: "쿠팡 주문내역",
+          onPress: () => createReceiptCandidates(asset, { sourceType: "coupang" })
+        },
+        {
+          text: "자동 판단",
+          onPress: () => createReceiptCandidates(asset, { sourceType: "auto" })
+        }
+      ], { cancelable: true });
     }
   }
 
   async function takeReceiptPhoto() {
     setMode("receipt");
-    goToPage(0);
+    goToPage(addPage);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert("권한 필요", "영수증을 촬영하려면 카메라 권한이 필요합니다.");
@@ -198,7 +208,7 @@ export function useReceiptFlow({
     });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
-      await createReceiptCandidates(result.assets[0]);
+      await createReceiptCandidates(result.assets[0], { sourceType: "receipt" });
     }
   }
 
@@ -218,36 +228,64 @@ export function useReceiptFlow({
     setReceiptStatus("선택한 줄을 상품 후보에 추가했습니다.");
   }
 
+  function toggleCommerceCropBox(cropBox) {
+    const line = ocrLines.find((ocrLine) => ocrLine.id === cropBox.lineId);
+    const draftName = cropBox.draftName || (line ? draftNameForOcrLine(line) : "");
+    if (!draftName) return;
+    const isSelected = cropBox.lineId ? selectedOcrLineIds.includes(cropBox.lineId) : drafts.includes(draftName);
+
+    if (isSelected) {
+      if (cropBox.lineId) setSelectedOcrLineIds((current) => current.filter((id) => id !== cropBox.lineId));
+      removeDraft(draftName);
+      return;
+    }
+
+    if (cropBox.lineId) {
+      setSelectedOcrLineIds((current) => (current.includes(cropBox.lineId) ? current : [...current, cropBox.lineId]));
+    }
+    setReceiptDrafts([...drafts, draftName], cropBox.imageUri ? { [draftName]: cropBox.imageUri } : {});
+    setReceiptStatus("사진과 상품명을 함께 후보에 추가했습니다.");
+  }
+
   function frameForOcrLine(line) {
     return frameForBox(line.box, activeOcrCoordinateSize, receiptImageLayout, 28, 12, 0.5);
   }
 
-  function setReceiptDrafts(nextDrafts) {
+  function frameForCommerceCropBox(cropBox) {
+    return frameForBox(cropBox.box, activeOcrCoordinateSize, receiptImageLayout, 28, 28, 1);
+  }
+
+  function defaultDraftForm(draftName, overrides = {}) {
+    const category = overrides.category || suggestCategory(draftName);
+    const storage = overrides.storage || suggestedStorage(draftName, category, "냉장");
+    return {
+      category,
+      storage,
+      expiryType: defaultExpiryType,
+      expiry: suggestedExpiryDate(draftName, category, storage),
+      ...overrides
+    };
+  }
+
+  function setReceiptDrafts(nextDrafts, imageMap = {}) {
     const uniqueDrafts = Array.from(new Set(nextDrafts));
     setDrafts(uniqueDrafts);
-    setBulkDraftForm({ expiry: todayIso(7) });
+    setInitialDrafts(uniqueDrafts);
+    setExcludedDrafts((current) => current.filter((draftName) => uniqueDrafts.includes(draftName)));
+    setBulkDraftForm({
+      expiry: uniqueDrafts[0] ? defaultDraftForm(uniqueDrafts[0]).expiry : suggestedExpiryDate("", "기타", "냉장")
+    });
     setDraftForms((current) => {
       const nextForms = {};
       uniqueDrafts.forEach((draft) => {
-        nextForms[draft] =
-          current[draft] || {
-            category: suggestCategory(draft),
-            storage: "냉장",
-            expiryType: defaultExpiryType,
-            expiry: todayIso(7)
-          };
+        nextForms[draft] = current[draft] || defaultDraftForm(draft, imageMap[draft] ? { imageUri: imageMap[draft] } : {});
       });
       return nextForms;
     });
   }
 
   function addDraft(draftName) {
-    const draftForm = draftForms[draftName] || {
-      category: suggestCategory(draftName),
-      storage: "냉장",
-      expiryType: defaultExpiryType,
-      expiry: todayIso(7)
-    };
+    const draftForm = draftForms[draftName] || defaultDraftForm(draftName);
     const itemId = `${Date.now()}-${Math.random()}`;
     const added = addItem({
       id: itemId,
@@ -257,37 +295,61 @@ export function useReceiptFlow({
     if (!added) return;
     setLatestRegisteredId(itemId);
     setDrafts((current) => current.filter((draft) => draft !== draftName));
+    setExcludedDrafts((current) => current.filter((draft) => draft !== draftName));
     setDraftForms((current) => {
       const nextForms = { ...current };
       delete nextForms[draftName];
       return nextForms;
     });
     setTotalHighlighted(true);
-    uploadCurrentOcrFeedback("auto");
+    uploadCurrentOcrFeedback("auto", [draftName], [draftName]);
   }
 
   function addAllDrafts() {
     if (!drafts.length) return;
-    const nextItems = drafts.map((draftName) => ({
-      id: `${Date.now()}-${draftName}-${Math.random()}`,
-      createdAt: new Date().toISOString(),
-      name: draftName,
-      category: draftForms[draftName]?.category || suggestCategory(draftName),
-      storage: draftForms[draftName]?.storage || "냉장",
-      expiryType: defaultExpiryType,
-      expiry: draftForms[draftName]?.expiry || bulkDraftForm.expiry
-    }));
+    const finalDrafts = drafts.filter((draftName) => !excludedDrafts.includes(draftName) && isDraftAllowedByOcrSelection(draftName));
+    if (!finalDrafts.length) {
+      setReceiptStatus("등록할 상품 후보가 없습니다. 필요한 상품을 다시 선택해 주세요.");
+      return;
+    }
+    const nextItems = finalDrafts.map((draftName) => {
+      const draftForm = draftForms[draftName] || defaultDraftForm(draftName);
+      return {
+        id: `${Date.now()}-${draftName}-${Math.random()}`,
+        createdAt: new Date().toISOString(),
+        name: draftName,
+        category: draftForm.category,
+        storage: draftForm.storage,
+        expiryType: defaultExpiryType,
+        expiry: draftForm.expiry || bulkDraftForm.expiry,
+        imageUri: draftForm.imageUri || ""
+      };
+    });
     setItems((current) => [...nextItems, ...current]);
     setLatestRegisteredId(nextItems[0]?.id || "");
     setDrafts([]);
+    setExcludedDrafts([]);
     setDraftForms({});
     setTotalHighlighted(true);
-    goToPage(1);
-    uploadCurrentOcrFeedback("auto");
+    goToPage(inventoryPage);
+    uploadCurrentOcrFeedback("auto", finalDrafts, initialDrafts.length ? initialDrafts : drafts);
+    setInitialDrafts([]);
+  }
+
+  function isDraftAllowedByOcrSelection(draftName) {
+    const relatedLines = ocrLines.filter((line) => isOcrLineInDrafts(line, [draftName]));
+    if (!relatedLines.length) return selectedOcrLineIds.length === 0;
+    return relatedLines.some((line) => selectedOcrLineIds.includes(line.id));
   }
 
   function removeDraft(draftName) {
     setDrafts((current) => current.filter((draft) => draft !== draftName));
+    setExcludedDrafts((current) => current.filter((draft) => draft !== draftName));
+    setSelectedOcrLineIds((current) => {
+      const relatedLineIds = ocrLines.filter((line) => draftNameForOcrLine(line) === draftName).map((line) => line.id);
+      if (!relatedLineIds.length) return current;
+      return current.filter((id) => !relatedLineIds.includes(id));
+    });
     setDraftForms((current) => {
       const nextForms = { ...current };
       delete nextForms[draftName];
@@ -299,14 +361,19 @@ export function useReceiptFlow({
     setDraftForms((current) => ({
       ...current,
       [draftName]: {
-        category: suggestCategory(draftName),
-        storage: "냉장",
-        expiryType: defaultExpiryType,
-        expiry: todayIso(7),
-        ...current[draftName],
+        ...defaultDraftForm(draftName, current[draftName]),
         ...updates
       }
     }));
+  }
+
+  function toggleDraftExcluded(draftName) {
+    setExcludedDrafts((current) => {
+      if (current.includes(draftName)) {
+        return current.filter((draft) => draft !== draftName);
+      }
+      return [...current, draftName];
+    });
   }
 
   function applyBulkDraftForm(updates) {
@@ -316,11 +383,7 @@ export function useReceiptFlow({
       const nextForms = { ...current };
       drafts.forEach((draftName) => {
         nextForms[draftName] = {
-          category: suggestCategory(draftName),
-          storage: "냉장",
-          expiryType: defaultExpiryType,
-          expiry: todayIso(7),
-          ...nextForms[draftName],
+          ...defaultDraftForm(draftName, nextForms[draftName]),
           ...updates
         };
       });
@@ -328,7 +391,7 @@ export function useReceiptFlow({
     });
   }
 
-  async function uploadCurrentOcrFeedback(source = "manual") {
+  async function uploadCurrentOcrFeedback(source = "manual", selectedNamesOverride = null, ruleCandidateNamesOverride = null) {
     if (!ocrLines.length) return;
     if (!feedbackSettings.enabled && source !== "manual") return;
     if (feedbackUploadInFlightRef.current) {
@@ -336,7 +399,16 @@ export function useReceiptFlow({
       return;
     }
 
-    const payload = buildOcrFeedbackPayload({ appVersion, lines: ocrLines, selectedIds: selectedOcrLineIds });
+    const payload = buildOcrFeedbackPayload({
+      appVersion,
+      lines: ocrLines,
+      selectedIds: selectedOcrLineIds,
+      selectedNames: Array.isArray(selectedNamesOverride) ? selectedNamesOverride : drafts,
+      ruleCandidateNames: Array.isArray(ruleCandidateNamesOverride)
+        ? ruleCandidateNamesOverride
+        : (initialDrafts.length ? initialDrafts : drafts),
+      aiRequestId: ""
+    });
     const uploadKey = feedbackFingerprint(payload);
     if (uploadKey === feedbackUploadKey) {
       setFeedbackStatus("이미 전송한 선택 결과입니다.");
@@ -357,8 +429,7 @@ export function useReceiptFlow({
   }
 
   return {
-    receiptExtractionMode,
-    setReceiptExtractionMode,
+    receiptSourceType,
     receiptImage,
     receiptImageSize,
     activeOcrCoordinateSize,
@@ -368,12 +439,12 @@ export function useReceiptFlow({
     setReceiptImageLayout,
     setReceiptImageSize,
     ocrLines,
+    commerceCropBoxes,
     selectedOcrLineIds,
     receiptSelectorVisible,
     setReceiptSelectorVisible,
     drafts,
-    aiReceiptLoading,
-    aiReceiptInfo,
+    excludedDrafts,
     draftForms,
     bulkDraftForm,
     receiptStatus,
@@ -381,13 +452,17 @@ export function useReceiptFlow({
     setFeedbackSettings,
     feedbackStatus,
     normalizeFeedbackSettings,
+    createReceiptCandidates,
     takeReceiptPhoto,
     pickReceiptImage,
     frameForOcrLine,
+    frameForCommerceCropBox,
     toggleOcrLine,
+    toggleCommerceCropBox,
     applyBulkDraftForm,
     addAllDrafts,
     removeDraft,
+    toggleDraftExcluded,
     updateDraftForm,
     addDraft,
     uploadCurrentOcrFeedback

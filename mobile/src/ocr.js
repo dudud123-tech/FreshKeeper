@@ -1,6 +1,6 @@
 import { sampleReceiptText } from "./sampleReceipt";
 
-export async function recognizeReceiptImage(imageUri) {
+export async function recognizeReceiptImage(imageUri, imageSize = null) {
   try {
     const textRecognitionModule = await import("@react-native-ml-kit/text-recognition");
     const TextRecognition = textRecognitionModule.default || textRecognitionModule;
@@ -21,7 +21,7 @@ export async function recognizeReceiptImage(imageUri) {
       mode: "real",
       text,
       lines,
-      coordinateSize: estimateCoordinateSize(lines),
+      coordinateSize: normalizedImageSize(imageSize) || estimateCoordinateSize(lines),
       message: "영수증에서 상품 후보를 만들었습니다."
     };
   } catch (error) {
@@ -43,6 +43,13 @@ export async function recognizeReceiptImage(imageUri) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizedImageSize(imageSize) {
+  const width = Number(imageSize?.width);
+  const height = Number(imageSize?.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  return { width, height };
 }
 
 function normalizeRecognitionText(result) {

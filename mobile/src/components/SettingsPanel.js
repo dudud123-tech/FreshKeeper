@@ -1,12 +1,12 @@
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 const settingsTabs = [
-  { id: "plan", label: "플랜" },
-  { id: "alert", label: "알림" },
-  { id: "share", label: "공유" },
-  { id: "ai", label: "AI" }
+  { id: "plan", label: "이용권", icon: require("../../assets/settings/setting-plan.png") },
+  { id: "alert", label: "알림", icon: require("../../assets/settings/setting-alert.png") },
+  { id: "share", label: "가족", icon: require("../../assets/settings/setting-share.png") },
+  { id: "ai", label: "스마트", icon: require("../../assets/settings/setting-ai.png") }
 ];
-const reminderOptions = [0, 1, 2, 3, 4, 5];
+const reminderOptions = [0, 1, 2, 3, 4, 5, 6, 7];
 const notificationHourOptions = Array.from({ length: 24 }, (_, index) => index);
 const notificationMinuteOptions = Array.from({ length: 60 }, (_, index) => index);
 
@@ -44,17 +44,30 @@ export default function SettingsPanel({
 }) {
   return (
     <View style={styles.settingsBox}>
-      <View style={styles.settingsSidebar}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.settingsTopTabs}
+      >
         {settingsTabs.map((tab) => (
           <Pressable
             key={tab.id}
             style={[styles.settingsTabButton, settingsTab === tab.id && styles.settingsTabButtonActive]}
             onPress={() => setSettingsTab(tab.id)}
           >
-            <Text style={[styles.settingsTabText, settingsTab === tab.id && styles.settingsTabTextActive]}>{tab.label}</Text>
+            <Image
+              source={tab.icon}
+              resizeMode="contain"
+              style={[styles.settingsTabIcon, settingsTab === tab.id && styles.settingsTabIconActive]}
+            />
+            <Text
+              style={[styles.settingsTabText, settingsTab === tab.id && styles.settingsTabTextActive]}
+            >
+              {tab.label}
+            </Text>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
 
       <View style={[styles.planBox, settingsTab !== "plan" && styles.hiddenSettingSection]}>
         <View style={styles.planHeaderRow}>
@@ -255,71 +268,74 @@ function TimeSelect({ label, value, options, formatValue, onChange }) {
 const styles = StyleSheet.create({
   settingsBox: {
     marginTop: 0,
-    marginLeft: -14,
-    marginRight: -14,
-    paddingVertical: 0,
-    paddingRight: 24,
-    paddingLeft: 104,
+    marginLeft: 0,
+    marginRight: 0,
+    paddingVertical: 2,
+    paddingHorizontal: 0,
     borderRadius: 8,
     backgroundColor: "transparent",
     position: "relative",
     minHeight: 360
   },
-  settingsSidebar: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 76,
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-    borderRightWidth: 1,
-    borderRightColor: "#e2ddd3",
-    backgroundColor: "#fff",
-    gap: 0,
-    overflow: "hidden"
+  settingsTopTabs: {
+    gap: 9,
+    paddingTop: 2,
+    paddingBottom: 28
   },
   settingsTabButton: {
-    minHeight: 56,
-    borderRadius: 0,
+    width: 78,
+    height: 82,
+    minHeight: 82,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 4,
+    gap: 7,
+    paddingHorizontal: 6,
+    paddingVertical: 10,
     backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee8df"
+    borderWidth: 1,
+    borderColor: "#e6ebe8"
   },
   settingsTabButtonActive: {
-    backgroundColor: "#1f7a5a"
+    backgroundColor: "#fff",
+    borderColor: "#1f7a5a"
+  },
+  settingsTabIcon: {
+    width: 40,
+    height: 40,
+    opacity: 0.78
+  },
+  settingsTabIconActive: {
+    opacity: 1
   },
   settingsTabText: {
-    color: "#65716a",
+    color: "#545d58",
     fontSize: 13,
     fontWeight: "900"
   },
   settingsTabTextActive: {
-    color: "#fff"
+    color: "#1f7a5a"
   },
   hiddenSettingSection: {
     display: "none"
   },
   settingDescription: {
-    color: "#68716b",
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 2
+    color: "#606a64",
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 4
   },
   settingGroupTitle: {
     color: "#14583f",
-    fontSize: 16,
+    fontSize: 28,
     fontWeight: "900",
-    marginBottom: 8
+    marginBottom: 24
   },
   label: {
-    color: "#68716b",
-    fontSize: 13,
+    color: "#18201c",
+    fontSize: 17,
     fontWeight: "900",
-    marginBottom: 8
+    marginBottom: 6
   },
   appVersionText: {
     color: "#8a938d",
@@ -334,10 +350,11 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   dailyAlertBox: {
-    marginTop: 12,
-    borderRadius: 8,
-    backgroundColor: "#f4fbf8",
-    padding: 10
+    marginTop: 24,
+    borderRadius: 22,
+    backgroundColor: "#f3fbf8",
+    padding: 18,
+    borderWidth: 0
   },
   dailyAlertBoxActive: {
     borderColor: "#b9dfcf",
@@ -354,7 +371,7 @@ const styles = StyleSheet.create({
   },
   dailyAlertTitle: {
     color: "#18201c",
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: "900"
   },
   toggleSwitch: {
@@ -380,16 +397,19 @@ const styles = StyleSheet.create({
   choiceWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8
+    gap: 10,
+    marginTop: 18
   },
   choice: {
-    minHeight: 38,
-    borderRadius: 8,
+    minHeight: 44,
+    width: "22.7%",
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#d9cfc0",
-    backgroundColor: "#f7f3eb",
+    borderColor: "#e1e6e3",
+    backgroundColor: "#fff",
     justifyContent: "center",
-    paddingHorizontal: 12
+    alignItems: "center",
+    paddingHorizontal: 14
   },
   choiceActive: {
     backgroundColor: "#1f7a5a",
@@ -403,11 +423,13 @@ const styles = StyleSheet.create({
     color: "#fff"
   },
   aiCreditBox: {
-    marginTop: 12,
-    borderRadius: 8,
-    backgroundColor: "#f7f3eb",
-    padding: 10,
-    gap: 8
+    marginTop: 0,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#e6ebe8"
   },
   aiCreditHeader: {
     flexDirection: "row",
@@ -432,9 +454,9 @@ const styles = StyleSheet.create({
   },
   aiCreditStat: {
     flex: 1,
-    borderRadius: 8,
-    backgroundColor: "#f7f3eb",
-    padding: 8
+    borderRadius: 14,
+    backgroundColor: "#f5f8f6",
+    padding: 10
   },
   aiCreditLabel: {
     color: "#6c7771",
@@ -462,7 +484,7 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   planBox: {
-    paddingTop: 14,
+    paddingTop: 2,
     paddingBottom: 10,
     gap: 8
   },
@@ -480,7 +502,7 @@ const styles = StyleSheet.create({
   },
   planTitle: {
     color: "#102019",
-    fontSize: 20,
+    fontSize: 28,
     fontWeight: "900"
   },
   planRow: {
@@ -490,18 +512,23 @@ const styles = StyleSheet.create({
   },
   planChip: {
     color: "#14583f",
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "900",
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#d7cfc1",
+    borderColor: "#dde5e1",
     backgroundColor: "#fff",
-    paddingHorizontal: 10,
-    paddingVertical: 7
+    paddingHorizontal: 12,
+    paddingVertical: 8
   },
   shareBox: {
-    marginTop: 12,
-    gap: 10
+    marginTop: 0,
+    gap: 12,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e6ebe8",
+    padding: 16
   },
   shareCopy: {
     gap: 2
@@ -520,8 +547,13 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   familySyncBox: {
-    marginTop: 12,
-    gap: 10
+    marginTop: 14,
+    gap: 12,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e6ebe8",
+    padding: 16
   },
   familyCodeInput: {
     minHeight: 44,
@@ -584,24 +616,29 @@ const styles = StyleSheet.create({
   },
   timePickerRow: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 12
+    gap: 0,
+    marginTop: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#e3e8e5",
+    backgroundColor: "#fff",
+    overflow: "hidden"
   },
   timeSelect: {
     flex: 1,
-    gap: 6
+    gap: 8,
+    padding: 14
   },
   timeSelectLabel: {
-    color: "#68716b",
-    fontSize: 12,
+    color: "#18201c",
+    fontSize: 14,
     fontWeight: "900"
   },
   timeSelectControls: {
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#d9e9e2",
-    backgroundColor: "#fff",
+    minHeight: 50,
+    borderRadius: 15,
+    borderWidth: 0,
+    backgroundColor: "#f6f8f7",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -620,7 +657,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#edf7f2"
   },
   timeStepButtonDisabled: {
-    backgroundColor: "#f5f2eb"
+    backgroundColor: "#f4f6f5"
   },
   timeStepText: {
     color: "#14583f",

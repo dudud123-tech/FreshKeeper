@@ -1,23 +1,21 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useRef, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
+  AppState,
   BackHandler,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
+  DeviceEventEmitter,
+  NativeModules,
   ScrollView,
-  StyleSheet,
-  Text,
   useWindowDimensions,
   View
 } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { categories, suggestCategory } from "./src/categories";
 import AddItemPage from "./src/components/AddItemPage";
+import AppShell, { appShellStyles } from "./src/components/AppShell";
 import CalendarModal from "./src/components/CalendarModal";
-import { PageNavButton, SummaryTile } from "./src/components/CommonControls";
+import HomePage from "./src/components/HomePage";
 import InventoryList from "./src/components/InventoryList";
 import LaunchScreen from "./src/components/LaunchScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
@@ -25,10 +23,9 @@ import SettingsPanel from "./src/components/SettingsPanel";
 import { useAiUsage } from "./src/hooks/useAiUsage";
 import { useExpiryNotifications } from "./src/hooks/useExpiryNotifications";
 import { useFamilySync } from "./src/hooks/useFamilySync";
+import { useInventory } from "./src/hooks/useInventory";
 import { useReceiptFlow } from "./src/hooks/useReceiptFlow";
 import {
-  clamp,
-  daysUntil,
   todayIso,
 } from "./src/utils/date";
 
@@ -38,7 +35,12 @@ const storageTypes = ["냉장", "냉동", "실온"];
 const categoryFilters = ["전체", ...categories];
 const sortOptions = ["소비기한순", "등록일순"];
 const DEFAULT_EXPIRY_TYPE = "소비기한";
-const APP_BUILD_LABEL = "dev 2026-06-04.1";
+const APP_BUILD_LABEL = "dev 2026-06-07.1";
+const PAGE_HOME = 0;
+const PAGE_ADD = 1;
+const PAGE_INVENTORY = 2;
+const SharedImage = NativeModules.SharedImage;
+
 export default function App() {
   const { width } = useWindowDimensions();
   const viewportHeight = useWindowDimensions().height;
@@ -47,21 +49,57 @@ export default function App() {
   const inventoryViewportHeightRef = useRef(0);
   const itemLayoutMapRef = useRef({});
   const calendarCallbackRef = useRef(null);
-  const [items, setItems] = useState([]);
   const [page, setPage] = useState(0);
-  const [mode, setMode] = useState("manual");
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState(categories[0]);
-  const [storage, setStorage] = useState(storageTypes[0]);
-  const [expiry, setExpiry] = useState(todayIso());
-  const [editingId, setEditingId] = useState("");
-  const [editForm, setEditForm] = useState(null);
-  const [categoryFilter, setCategoryFilter] = useState("전체");
-  const [sortMode, setSortMode] = useState(sortOptions[0]);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [focusItemId, setFocusItemId] = useState("");
+  const [pagerEnabled, setPagerEnabled] = useState(true);
   const [calendar, setCalendar] = useState({ visible: false, value: todayIso() });
   const [reminderDays, setReminderDays] = useState(3);
+  const {
+    items,
+    setItems,
+    mode,
+    setMode,
+    name,
+    setName,
+    manualImageUri,
+    setManualImageUri,
+    category,
+    setCategory,
+    storage,
+    setStorage,
+    expiry,
+    setExpiry,
+    editingId,
+    editForm,
+    setEditForm,
+    categoryFilter,
+    setCategoryFilter,
+    sortMode,
+    setSortMode,
+    statusFilter,
+    setStatusFilter,
+    focusItemId,
+    setFocusItemId,
+    sortedItems,
+    summary,
+    addItem,
+    submitManual,
+    pickManualImage,
+    takeManualImagePhoto,
+    removeItem,
+    startEdit,
+    cancelEdit,
+    saveEdit
+  } = useInventory({
+    defaultExpiryType: DEFAULT_EXPIRY_TYPE,
+    storageTypes,
+    sortOptions,
+    reminderDays,
+    onManualSubmit: () => goToPage(PAGE_INVENTORY),
+    onStartEditScroll: (itemId) => {
+      setTimeout(() => scrollItemToCenter(itemId), 120);
+      setTimeout(() => scrollItemToCenter(itemId), 420);
+    }
+  });
   const {
     aiUsageSettings,
     setAiUsageSettings,
@@ -74,33 +112,26 @@ export default function App() {
     aiAdCreditLimit,
     aiDailyAdLimit,
     normalizeAiUsageSettings,
-    chargeAiUsage,
-    refundAiUsage,
-    showAiCreditRequired,
     simulateRewardedAd
   } = useAiUsage();
   const [settingsTab, setSettingsTab] = useState("plan");
   const [settingsReady, setSettingsReady] = useState(false);
-  const [totalHighlighted, setTotalHighlighted] = useState(false);
+  const [, setTotalHighlighted] = useState(false);
   const [latestRegisteredId, setLatestRegisteredId] = useState("");
   const {
-    receiptExtractionMode,
-    setReceiptExtractionMode,
+    receiptSourceType,
     receiptImage,
     receiptImageSize,
     activeOcrCoordinateSize,
-    ocrCoordinateOptions,
-    ocrCoordinateModeIndex,
-    setOcrCoordinateModeIndex,
     setReceiptImageLayout,
     setReceiptImageSize,
     ocrLines,
+    commerceCropBoxes,
     selectedOcrLineIds,
     receiptSelectorVisible,
     setReceiptSelectorVisible,
     drafts,
-    aiReceiptLoading,
-    aiReceiptInfo,
+    excludedDrafts,
     draftForms,
     bulkDraftForm,
     receiptStatus,
@@ -108,13 +139,17 @@ export default function App() {
     setFeedbackSettings,
     feedbackStatus,
     normalizeFeedbackSettings,
+    createReceiptCandidates,
     takeReceiptPhoto,
     pickReceiptImage,
     frameForOcrLine,
+    frameForCommerceCropBox,
     toggleOcrLine,
+    toggleCommerceCropBox,
     applyBulkDraftForm,
     addAllDrafts,
     removeDraft,
+    toggleDraftExcluded,
     updateDraftForm,
     addDraft,
     uploadCurrentOcrFeedback
@@ -126,9 +161,8 @@ export default function App() {
     setItems,
     setMode,
     goToPage,
-    chargeAiUsage,
-    refundAiUsage,
-    showAiCreditRequired,
+    addPage: PAGE_ADD,
+    inventoryPage: PAGE_INVENTORY,
     setLatestRegisteredId,
     setTotalHighlighted
   });
@@ -159,6 +193,8 @@ export default function App() {
     defaultExpiryType: DEFAULT_EXPIRY_TYPE
   });
   const [launchVisible, setLaunchVisible] = useState(true);
+  const sharedImageInFlightRef = useRef(false);
+  const createReceiptCandidatesRef = useRef(createReceiptCandidates);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
@@ -167,6 +203,37 @@ export default function App() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    createReceiptCandidatesRef.current = createReceiptCandidates;
+  }, [createReceiptCandidates]);
+
+  useEffect(() => {
+    consumeSharedImage();
+    const sharedImageSubscription = DeviceEventEmitter.addListener("FreshKeeperSharedImageIntent", consumeSharedImage);
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") consumeSharedImage();
+    });
+    return () => {
+      sharedImageSubscription.remove();
+      subscription.remove();
+    };
+  }, []);
+
+  async function consumeSharedImage() {
+    if (!SharedImage?.consumeInitialImage || sharedImageInFlightRef.current) return;
+    try {
+      sharedImageInFlightRef.current = true;
+      const imageUri = await SharedImage.consumeInitialImage();
+      if (imageUri) {
+        await createReceiptCandidatesRef.current(imageUri, { sourceType: "auto" });
+      }
+    } catch {
+      Alert.alert("이미지 공유 실패", "공유된 이미지를 불러오지 못했습니다. 갤러리에서 다시 선택해 주세요.");
+    } finally {
+      sharedImageInFlightRef.current = false;
+    }
+  }
 
   useEffect(() => {
     AsyncStorage.getItem(SETTINGS_KEY)
@@ -201,8 +268,8 @@ export default function App() {
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (page !== 0) {
-        goToPage(0);
+      if (page !== PAGE_HOME) {
+        goToPage(PAGE_HOME);
         return true;
       }
 
@@ -216,45 +283,6 @@ export default function App() {
     return () => subscription.remove();
   }, [page, width]);
 
-  const normalizedItems = useMemo(() => {
-    return items.map((item) => ({
-      createdAt: item.createdAt || `${item.expiry || todayIso()}T00:00:00.000`,
-      ...item
-    }));
-  }, [items]);
-
-  const sortedItems = useMemo(() => {
-    return [...normalizedItems]
-      .filter((item) => categoryFilter === "전체" || item.category === categoryFilter)
-      .filter((item) => {
-        if (focusItemId) return item.id === focusItemId;
-        const days = daysUntil(item.expiry);
-        if (statusFilter === "today") return days === 0;
-        if (statusFilter === "expired") return days < 0;
-        if (statusFilter === "urgent") return days >= 0 && days <= reminderDays;
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortMode === "등록일순") {
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        }
-        return daysUntil(a.expiry) - daysUntil(b.expiry);
-      });
-  }, [normalizedItems, categoryFilter, statusFilter, reminderDays, focusItemId, sortMode]);
-
-  const summary = useMemo(() => {
-    return normalizedItems.reduce(
-      (acc, item) => {
-        const days = daysUntil(item.expiry);
-        acc.total += 1;
-        if (days >= 0 && days <= reminderDays) acc.urgent += 1;
-        if (days === 0) acc.today += 1;
-        if (days < 0) acc.expired += 1;
-        return acc;
-      },
-      { total: 0, urgent: 0, today: 0, expired: 0 }
-    );
-  }, [normalizedItems, reminderDays]);
   function goToPage(nextPage) {
     setPage(nextPage);
     pagerRef.current?.scrollTo({ x: width * nextPage, animated: true });
@@ -265,10 +293,67 @@ export default function App() {
     if (nextStatusFilter === "all") setCategoryFilter("전체");
     if (!options.scrollToLatest) setFocusItemId("");
     if (options.scrollToLatest && latestRegisteredId) setFocusItemId(latestRegisteredId);
-    goToPage(1);
+    goToPage(PAGE_INVENTORY);
     setTimeout(() => scrollInventory(options.scrollToLatest), 120);
     if (options.scrollToLatest) setTimeout(() => scrollInventory(true), 420);
     if (options.clearHighlight) setTotalHighlighted(false);
+  }
+
+  function applyItemImage(itemId, imageUri) {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              imageUri
+            }
+          : item
+      )
+    );
+  }
+
+  async function pickItemImageFromLibrary(itemId) {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("권한 필요", "상품 이미지를 바꾸려면 사진 접근 권한이 필요합니다.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85
+    });
+
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+    applyItemImage(itemId, result.assets[0].uri);
+  }
+
+  async function takeItemImagePhoto(itemId) {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("권한 필요", "상품 사진을 촬영하려면 카메라 권한이 필요합니다.");
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85
+    });
+
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+    applyItemImage(itemId, result.assets[0].uri);
+  }
+
+  async function changeItemImage(itemId) {
+    Alert.alert("상품 사진 변경", "사진을 촬영하거나 갤러리에서 선택할 수 있습니다.", [
+      { text: "촬영하기", onPress: () => takeItemImagePhoto(itemId) },
+      { text: "갤러리", onPress: () => pickItemImageFromLibrary(itemId) },
+      { text: "취소", style: "cancel" }
+    ]);
   }
 
   function scrollInventory(scrollToLatest) {
@@ -278,15 +363,6 @@ export default function App() {
       return;
     }
     inventoryScrollRef.current?.scrollTo({ y: 0, animated: true });
-  }
-
-  function handleSummaryPress(type) {
-    if (type === "total") {
-      goToInventory("all", { clearHighlight: totalHighlighted, scrollToLatest: totalHighlighted });
-      return;
-    }
-    setFocusItemId("");
-    goToInventory(type);
   }
 
   function openCalendar(value, onSelect) {
@@ -300,76 +376,6 @@ export default function App() {
     setCalendar((current) => ({ ...current, visible: false }));
   }
 
-  function addItem(nextItem) {
-    if (!nextItem.name.trim() || !nextItem.expiry.trim()) {
-      Alert.alert("입력 필요", "상품명과 날짜를 입력해 주세요.");
-      return false;
-    }
-    setItems((current) => [
-      {
-        id: nextItem.id || `${Date.now()}-${Math.random()}`,
-        createdAt: nextItem.createdAt || new Date().toISOString(),
-        ...nextItem,
-        name: nextItem.name.trim()
-      },
-      ...current
-    ]);
-    return true;
-  }
-
-  function submitManual() {
-    const added = addItem({ name, category, storage, expiryType: DEFAULT_EXPIRY_TYPE, expiry });
-    if (!added) return;
-    setName("");
-    setCategory(categories[0]);
-    setStorage(storageTypes[0]);
-    setExpiry(todayIso());
-    goToPage(1);
-  }
-
-
-  function removeItem(id) {
-    setItems((current) => current.filter((item) => item.id !== id));
-    if (editingId === id) cancelEdit();
-  }
-
-  function startEdit(item) {
-    setEditingId(item.id);
-    setEditForm({
-      name: item.name,
-      category: item.category,
-      storage: item.storage,
-      expiryType: item.expiryType || DEFAULT_EXPIRY_TYPE,
-      expiry: item.expiry
-    });
-    setTimeout(() => scrollItemToCenter(item.id), 120);
-    setTimeout(() => scrollItemToCenter(item.id), 420);
-  }
-
-  function cancelEdit() {
-    setEditingId("");
-    setEditForm(null);
-  }
-
-  function saveEdit() {
-    if (!editForm?.name?.trim() || !editForm?.expiry?.trim()) {
-      Alert.alert("입력 필요", "상품명과 날짜를 입력해 주세요.");
-      return;
-    }
-    setItems((current) =>
-      current.map((item) =>
-        item.id === editingId
-          ? {
-              ...item,
-              ...editForm,
-              name: editForm.name.trim()
-            }
-          : item
-      )
-    );
-    cancelEdit();
-  }
-
   function scrollItemToCenter(itemId) {
     const layout = itemLayoutMapRef.current[itemId];
     if (!layout) return;
@@ -380,48 +386,55 @@ export default function App() {
 
 
   return (
-    <GestureHandlerRootView style={styles.gestureRoot}>
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar style="dark" />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <View style={styles.brandRow}>
-              <Text style={styles.title}>오늘까지야</Text>
-              <Text style={styles.eyebrow}>소비기한 알림 보관함</Text>
-            </View>
-          </View>
+    <AppShell
+      width={width}
+      page={page}
+      pagerRef={pagerRef}
+      pagerEnabled={pagerEnabled}
+      onPageChange={goToPage}
+      onMomentumPageChange={setPage}
+      overlays={
+        <>
+          <CalendarModal
+            visible={calendar.visible}
+            value={calendar.value}
+            onClose={() => setCalendar((current) => ({ ...current, visible: false }))}
+            onSelect={selectCalendarDate}
+          />
+          <ReceiptSelectorModal
+            visible={receiptSelectorVisible}
+            imageUri={receiptImage}
+            imageSize={receiptImageSize}
+            coordinateSize={activeOcrCoordinateSize}
+            lines={ocrLines}
+            cropBoxes={commerceCropBoxes}
+            selectedIds={selectedOcrLineIds}
+            onToggleLine={toggleOcrLine}
+            onToggleCropBox={toggleCommerceCropBox}
+            onClose={() => setReceiptSelectorVisible(false)}
+          />
+          {launchVisible ? <LaunchScreen onDone={() => setLaunchVisible(false)} /> : null}
+        </>
+      }
+    >
+            <HomePage
+              width={width}
+              items={items}
+              summary={summary}
+              reminderDays={reminderDays}
+              onOpenInventory={goToInventory}
+              onOpenAdd={() => goToPage(PAGE_ADD)}
+              onChangeItemImage={changeItemImage}
+            />
 
-          <View style={styles.summaryGrid}>
-            <SummaryTile label="임박" value={summary.urgent} urgent active={statusFilter === "urgent"} onPress={() => handleSummaryPress("urgent")} />
-            <SummaryTile label="전체" value={summary.total} active={totalHighlighted || statusFilter === "all"} highlighted={totalHighlighted} onPress={() => handleSummaryPress("total")} />
-            <SummaryTile label="오늘" value={summary.today} active={statusFilter === "today"} onPress={() => handleSummaryPress("today")} />
-            <SummaryTile label="만료" value={summary.expired} expired active={statusFilter === "expired"} onPress={() => handleSummaryPress("expired")} />
-          </View>
-
-          <View style={styles.pageNav}>
-            <PageNavButton active={page === 0} label="상품추가" onPress={() => goToPage(0)} />
-            <PageNavButton active={page === 1} label="보관함" onPress={() => goToPage(1)} />
-            <PageNavButton active={page === 2} label="설정" onPress={() => goToPage(2)} />
-          </View>
-
-          <ScrollView
-            ref={pagerRef}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            onMomentumScrollEnd={(event) => {
-              setPage(Math.round(event.nativeEvent.contentOffset.x / width));
-            }}
-            style={styles.pager}
-          >
             <AddItemPage
               width={width}
               mode={mode}
               setMode={setMode}
               name={name}
               setName={setName}
+              manualImageUri={manualImageUri}
+              setManualImageUri={setManualImageUri}
               category={category}
               setCategory={setCategory}
               categories={categories}
@@ -433,31 +446,32 @@ export default function App() {
               setExpiry={setExpiry}
               openCalendar={openCalendar}
               submitManual={submitManual}
+              pickManualImage={pickManualImage}
+              takeManualImagePhoto={takeManualImagePhoto}
               takeReceiptPhoto={takeReceiptPhoto}
               pickReceiptImage={pickReceiptImage}
-              receiptExtractionMode={receiptExtractionMode}
-              setReceiptExtractionMode={setReceiptExtractionMode}
+              receiptSourceType={receiptSourceType}
               drafts={drafts}
-              aiReceiptLoading={aiReceiptLoading}
-              aiReceiptInfo={aiReceiptInfo}
+              excludedDrafts={excludedDrafts}
               receiptImage={receiptImage}
               ocrLines={ocrLines}
+              commerceCropBoxes={commerceCropBoxes}
               setReceiptSelectorVisible={setReceiptSelectorVisible}
               setReceiptImageLayout={setReceiptImageLayout}
               setReceiptImageSize={setReceiptImageSize}
               frameForOcrLine={frameForOcrLine}
               selectedOcrLineIds={selectedOcrLineIds}
               toggleOcrLine={toggleOcrLine}
-              ocrCoordinateOptions={ocrCoordinateOptions}
-              ocrCoordinateModeIndex={ocrCoordinateModeIndex}
-              setOcrCoordinateModeIndex={setOcrCoordinateModeIndex}
+              toggleCommerceCropBox={toggleCommerceCropBox}
               receiptStatus={receiptStatus}
+              frameForCommerceCropBox={frameForCommerceCropBox}
               bulkDraftForm={bulkDraftForm}
               applyBulkDraftForm={applyBulkDraftForm}
               addAllDrafts={addAllDrafts}
               draftForms={draftForms}
               DEFAULT_EXPIRY_TYPE={DEFAULT_EXPIRY_TYPE}
               removeDraft={removeDraft}
+              toggleDraftExcluded={toggleDraftExcluded}
               updateDraftForm={updateDraftForm}
               addDraft={addDraft}
             />
@@ -488,6 +502,8 @@ export default function App() {
               saveEdit={saveEdit}
               startEdit={startEdit}
               removeItem={removeItem}
+              onChangeItemImage={changeItemImage}
+              setPagerEnabled={setPagerEnabled}
               onItemLayout={(itemId, event, isEditing) => {
                 itemLayoutMapRef.current[itemId] = {
                   y: event.nativeEvent.layout.y,
@@ -501,136 +517,40 @@ export default function App() {
               expiryType={DEFAULT_EXPIRY_TYPE}
             />
 
-            <ScrollView style={{ width }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-              <View style={styles.section}>
-                <SettingsPanel
-                  settingsTab={settingsTab}
-                  setSettingsTab={setSettingsTab}
-                  aiTotalRemaining={aiTotalRemaining}
-                  aiFreeMonthlyLimit={aiFreeMonthlyLimit}
-                  reminderDays={reminderDays}
-                  setReminderDays={setReminderDays}
-                  notificationSettings={notificationSettings}
-                  setNotificationSettings={setNotificationSettings}
-                  notificationStatus={notificationStatus}
-                  shareFamilyDigest={shareFamilyDigest}
-                  familyCodeInput={familyCodeInput}
-                  setFamilyCodeInput={setFamilyCodeInput}
-                  normalizeFamilyCode={normalizeFamilyCode}
-                  createFamilyShareCode={createFamilyShareCode}
-                  connectFamilyShareCode={connectFamilyShareCode}
-                  familySettings={familySettings}
-                  pullFamilyItems={pullFamilyItems}
-                  disconnectFamilyShare={disconnectFamilyShare}
-                  familyStatus={familyStatus}
-                  aiAdCreditLimit={aiAdCreditLimit}
-                  aiDailyAdLimit={aiDailyAdLimit}
-                  aiFreeRemaining={aiFreeRemaining}
-                  normalizedAiUsage={normalizedAiUsage}
-                  aiAdRemainingToday={aiAdRemainingToday}
-                  simulateRewardedAd={simulateRewardedAd}
-                  aiUsageStatus={aiUsageStatus}
-                  feedbackSettings={feedbackSettings}
-                  setFeedbackSettings={setFeedbackSettings}
-                  feedbackStatus={feedbackStatus}
-                  appVersion={APP_BUILD_LABEL}
-                />
-              </View>
+            <ScrollView style={{ width }} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">
+              <SettingsPanel
+                settingsTab={settingsTab}
+                setSettingsTab={setSettingsTab}
+                aiTotalRemaining={aiTotalRemaining}
+                aiFreeMonthlyLimit={aiFreeMonthlyLimit}
+                reminderDays={reminderDays}
+                setReminderDays={setReminderDays}
+                notificationSettings={notificationSettings}
+                setNotificationSettings={setNotificationSettings}
+                notificationStatus={notificationStatus}
+                shareFamilyDigest={shareFamilyDigest}
+                familyCodeInput={familyCodeInput}
+                setFamilyCodeInput={setFamilyCodeInput}
+                normalizeFamilyCode={normalizeFamilyCode}
+                createFamilyShareCode={createFamilyShareCode}
+                connectFamilyShareCode={connectFamilyShareCode}
+                familySettings={familySettings}
+                pullFamilyItems={pullFamilyItems}
+                disconnectFamilyShare={disconnectFamilyShare}
+                familyStatus={familyStatus}
+                aiAdCreditLimit={aiAdCreditLimit}
+                aiDailyAdLimit={aiDailyAdLimit}
+                aiFreeRemaining={aiFreeRemaining}
+                normalizedAiUsage={normalizedAiUsage}
+                aiAdRemainingToday={aiAdRemainingToday}
+                simulateRewardedAd={simulateRewardedAd}
+                aiUsageStatus={aiUsageStatus}
+                feedbackSettings={feedbackSettings}
+                setFeedbackSettings={setFeedbackSettings}
+                feedbackStatus={feedbackStatus}
+                appVersion={APP_BUILD_LABEL}
+              />
             </ScrollView>
-          </ScrollView>
-        </View>
-        </KeyboardAvoidingView>
-
-        <CalendarModal
-          visible={calendar.visible}
-          value={calendar.value}
-          onClose={() => setCalendar((current) => ({ ...current, visible: false }))}
-          onSelect={selectCalendarDate}
-        />
-        <ReceiptSelectorModal
-          visible={receiptSelectorVisible}
-          imageUri={receiptImage}
-          imageSize={receiptImageSize}
-          coordinateSize={activeOcrCoordinateSize}
-          coordinateLabel={ocrCoordinateOptions[ocrCoordinateModeIndex]?.label || "기본"}
-          canChangeCoordinate={ocrCoordinateOptions.length > 1}
-          lines={ocrLines}
-          selectedIds={selectedOcrLineIds}
-          onToggleLine={toggleOcrLine}
-          onChangeCoordinate={() => setOcrCoordinateModeIndex((current) => (current + 1) % ocrCoordinateOptions.length)}
-          onClose={() => setReceiptSelectorVisible(false)}
-        />
-        {launchVisible ? <LaunchScreen onDone={() => setLaunchVisible(false)} /> : null}
-      </SafeAreaView>
-    </GestureHandlerRootView>
+    </AppShell>
   );
 }
-
-const styles = StyleSheet.create({
-  gestureRoot: {
-    flex: 1
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#f5f2eb"
-  },
-  keyboard: {
-    flex: 1
-  },
-  container: {
-    flex: 1,
-    paddingTop: Platform.OS === "android" ? 44 : 16
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingHorizontal: 16,
-    marginBottom: 10
-  },
-  brandRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  eyebrow: {
-    color: "#14583f",
-    fontSize: 12,
-    fontWeight: "800",
-    marginBottom: 3
-  },
-  title: {
-    color: "#18201c",
-    fontSize: 26,
-    fontWeight: "900"
-  },
-  summaryGrid: {
-    flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 16,
-    marginBottom: 8
-  },
-  pageNav: {
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 16,
-    marginBottom: 8
-  },
-  pager: {
-    flex: 1
-  },
-  page: {
-    paddingHorizontal: 16,
-    paddingBottom: 18
-  },
-  section: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2ddd3",
-    backgroundColor: "#fff",
-    padding: 14,
-    marginTop: 8
-  },});
-

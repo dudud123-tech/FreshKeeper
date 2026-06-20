@@ -1,5 +1,16 @@
 const RECEIPT_CANDIDATE_ENDPOINT = "https://freshkeeper-ocr-feedback.dndud123.workers.dev/api/receipt-candidates";
 
+export class ReceiptAiError extends Error {
+  constructor(message, { status = 0, code = "", detail = "", requestId = "" } = {}) {
+    super(message);
+    this.name = "ReceiptAiError";
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
+    this.requestId = requestId;
+  }
+}
+
 export function mergeReceiptCandidates(primaryCandidates, fallbackCandidates = []) {
   const seen = new Set();
   const results = [];
@@ -30,7 +41,19 @@ export async function requestAiReceiptCandidates({ lines, localCandidates, appVe
   });
 
   if (!response.ok) {
-    throw new Error(`ai_receipt_candidates_failed_${response.status}`);
+    let errorBody = {};
+    try {
+      errorBody = await response.json();
+    } catch {
+      errorBody = {};
+    }
+    const code = errorBody.error || `http_${response.status}`;
+    throw new ReceiptAiError(`ai_receipt_candidates_failed_${response.status}`, {
+      status: response.status,
+      code,
+      detail: errorBody.detail || "",
+      requestId: errorBody.requestId || ""
+    });
   }
 
   const result = await response.json();

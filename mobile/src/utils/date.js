@@ -12,8 +12,11 @@ export function toIsoDate(date) {
 }
 
 export function parseIsoDate(value) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day);
+  if (typeof value !== "string") return new Date();
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return new Date();
+  const [, year, month, day] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day));
 }
 
 export function daysUntil(dateValue) {
@@ -74,8 +77,20 @@ export function formatDateLabel(value) {
 }
 
 export function itemCreatedDate(item) {
-  if (!item?.createdAt) return item?.expiry || todayIso();
-  return toIsoDate(new Date(item.createdAt));
+  const date = safeDate(item?.createdAt);
+  if (date) return toIsoDate(date);
+  return item?.expiry || todayIso();
+}
+
+export function itemCreatedTime(item) {
+  const date = safeDate(item?.createdAt) || parseIsoDate(item?.expiry || todayIso());
+  return date.getTime();
+}
+
+function safeDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export function startOfMonth(date) {

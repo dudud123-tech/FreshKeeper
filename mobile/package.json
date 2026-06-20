@@ -6,6 +6,9 @@
   "scripts": {
     "start": "expo start",
     "start:dev": "expo start --dev-client",
+    "food-rules": "node tools/food-rules-editor/server.js",
+    "dbnet-lab": "start \"\" tools/dbnet-lab/dbnet-lab.html",
+    "build:classifier": "node tools/build-product-classifier.js",
     "android": "expo run:android",
     "android:dev": "expo run:android",
     "build:android:dev": "eas build --platform android --profile development",
@@ -19,6 +22,7 @@
     "@react-native-ml-kit/text-recognition": "^2.0.0",
     "expo": "~54.0.0",
     "expo-dev-client": "~6.0.21",
+    "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.11",
     "expo-notifications": "~0.32.17",
     "expo-status-bar": "~3.0.9",

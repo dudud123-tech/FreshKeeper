@@ -7,9 +7,12 @@ export function labelForAiProvider(provider) {
 
 export function labelForAiFallback(fallbackFrom) {
   if (!fallbackFrom) return "";
-  if (fallbackFrom === "gemini_503") return "Gemini 과부하로 예비 분석 사용";
-  if (fallbackFrom === "gemini_429") return "Gemini 사용량 제한으로 예비 분석 사용";
+  if (fallbackFrom.includes("503")) return "AI 서버 오류로 빠른 추출 사용";
+  if (fallbackFrom.includes("429")) return "AI 사용량 제한으로 빠른 추출 사용";
+  if (fallbackFrom.includes("400")) return "AI 해석 실패로 빠른 추출 사용";
   if (fallbackFrom.startsWith("gemini_")) return "Gemini 실패로 예비 분석 사용";
+  if (fallbackFrom.startsWith("gemini_proxy_")) return "Gemini 실패로 빠른 추출 사용";
+  if (fallbackFrom.startsWith("http_")) return "AI 요청 실패로 빠른 추출 사용";
   if (fallbackFrom === "unauthorized") return "프록시 인증 실패로 예비 분석 사용";
   if (fallbackFrom === "no_ai_credit") return "AI 사용권이 없어 기본 추출 사용";
   if (fallbackFrom === "request_failed") return "AI 요청 실패로 기본 추출 사용";

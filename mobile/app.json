@@ -9,7 +9,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#f5f2eb"
+      "backgroundColor": "#fbfcfb"
     },
     "assetBundlePatterns": [
       "assets/*"
@@ -21,7 +21,7 @@
       "package": "com.wooyoung43.freshkeeper",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1f7a5a"
+        "backgroundColor": "#fbfcfb"
       },
       "permissions": [
         "android.permission.RECORD_AUDIO",

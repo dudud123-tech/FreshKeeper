@@ -23,6 +23,13 @@ const noiseWords = [
   "과세",
   "부가세",
   "합계",
+  "상품명",
+  "단가",
+  "수량",
+  "금액",
+  "단가수량금액",
+  "총품목수량",
+  "총판매상품수",
   "소계",
   "총액",
   "결제",
@@ -58,6 +65,23 @@ const noiseWords = [
   "샴푸",
   "린스",
   "세제"
+];
+
+const noisePatterns = [
+  /정상상품.*신선\s*7\s*일/i,
+  /\[?\s*구\s*매\s*\]?/i,
+  /발행\s*일/i,
+  /할부\s*거래/i,
+  /약관\s*보기/i,
+  /차량\s*번호/i,
+  /출차/i,
+  /일시\s*불/i,
+  /브랜드\s*매장/i,
+  /매장\s*고지/i,
+  /물참조/i,
+  /^CPN$/i,
+  /^SCO\s*:/i,
+  /균일가\s*\d+\s*원/i
 ];
 
 const foodHints = [
@@ -226,6 +250,7 @@ function isNoiseLine(line) {
   const lowered = line.toLowerCase().replace(/\s/g, "");
   return (
     noiseWords.some((word) => lowered.includes(word.toLowerCase().replace(/\s/g, ""))) ||
+    noisePatterns.some((pattern) => pattern.test(line)) ||
     /^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}/.test(line) ||
     /^\d{2}:\d{2}/.test(line) ||
     /^[\d\s,.:()[\]\-]+$/.test(line)

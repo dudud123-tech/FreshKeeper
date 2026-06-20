@@ -4,7 +4,7 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-g
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { frameForBox } from "../utils/receiptOverlay";
 
-export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coordinateSize, coordinateLabel, canChangeCoordinate, lines, selectedIds, onToggleLine, onChangeCoordinate, onClose }) {
+export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coordinateSize, lines, cropBoxes = [], selectedIds, onToggleLine, onToggleCropBox, onClose }) {
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [isReceiptZoomed, setIsReceiptZoomed] = useState(false);
   const scaleValue = useSharedValue(1);
@@ -106,16 +106,15 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
     return frameForBox(line.box, coordinateSize, { width: canvasWidth, height: canvasHeight }, 32, 12, 0.5);
   }
 
+  function modalFrameForCropBox(cropBox) {
+    return frameForBox(cropBox.box, coordinateSize, { width: canvasWidth, height: canvasHeight }, 32, 32, 1);
+  }
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <GestureHandlerRootView style={styles.gestureRoot}>
         <SafeAreaView style={styles.selectorScreen}>
           <Text style={styles.selectorHint}>줄을 터치해 상품 후보를 고르세요. 두 손가락으로 확대/축소하고, 확대 상태에서는 이미지를 끌어서 이동할 수 있습니다.</Text>
-          {canChangeCoordinate ? (
-            <Pressable style={styles.selectorCoordinateButton} onPress={onChangeCoordinate}>
-              <Text style={styles.coordinateButtonText}>좌표 맞춤: {coordinateLabel}</Text>
-            </Pressable>
-          ) : null}
           <ScrollView style={styles.selectorScroll} contentContainerStyle={styles.selectorScrollContent} showsVerticalScrollIndicator={false} scrollEnabled={!isReceiptZoomed}>
             <GestureDetector gesture={receiptGesture}>
               <View
@@ -139,7 +138,20 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
                     if (!frame) return null;
                     const selected = selectedIds.includes(line.id);
                     return (
-                      <Pressable key={line.id} hitSlop={8} style={[styles.ocrBox, selected ? styles.ocrBoxSelected : styles.ocrBoxUnselected, frame]} onPress={() => onToggleLine(line)} />
+                      <Pressable key={line.id} hitSlop={8} style={[styles.ocrBox, ocrBoxStyleForLine(line, selected), frame]} onPress={() => onToggleLine(line)} />
+                    );
+                  })}
+                  {cropBoxes.map((cropBox) => {
+                    const frame = modalFrameForCropBox(cropBox);
+                    if (!frame) return null;
+                    const selected = cropBox.lineId ? selectedIds.includes(cropBox.lineId) : false;
+                    return (
+                      <Pressable
+                        key={cropBox.id}
+                        hitSlop={8}
+                        style={[styles.cropDebugBox, selected ? styles.cropDebugBoxSelected : styles.cropDebugBoxUnselected, frame]}
+                        onPress={() => onToggleCropBox?.(cropBox)}
+                      />
                     );
                   })}
                 </Animated.View>
@@ -152,13 +164,19 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
   );
 }
 
+function ocrBoxStyleForLine(line, selected) {
+  if (selected) return styles.ocrBoxSelected;
+  if (line?.boxSource === "dbnet-text-line") return styles.ocrBoxDbNet;
+  return line?.boxSource === "opencv-text-line" ? styles.ocrBoxOpenCv : styles.ocrBoxUnselected;
+}
+
 const styles = StyleSheet.create({
   gestureRoot: {
     flex: 1
   },
   selectorScreen: {
     flex: 1,
-    backgroundColor: "#f5f2eb"
+    backgroundColor: "#fbfcfb"
   },
   selectorHint: {
     color: "#68716b",
@@ -167,23 +185,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 34,
     paddingBottom: 10
-  },
-  selectorCoordinateButton: {
-    minHeight: 40,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#b9dfcf",
-    backgroundColor: "#edf7f2",
-    alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 16,
-    marginBottom: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  coordinateButtonText: {
-    color: "#14583f",
-    fontWeight: "900"
   },
   selectorScroll: {
     flex: 1
@@ -214,8 +215,29 @@ const styles = StyleSheet.create({
     borderColor: "rgba(79, 91, 84, 0.5)",
     backgroundColor: "rgba(240, 240, 236, 0.28)"
   },
+  ocrBoxOpenCv: {
+    borderColor: "#2f80ed",
+    backgroundColor: "rgba(47, 128, 237, 0.12)"
+  },
+  ocrBoxDbNet: {
+    borderColor: "#8b5cf6",
+    backgroundColor: "rgba(139, 92, 246, 0.16)"
+  },
   ocrBoxSelected: {
     borderColor: "#1f7a5a",
     backgroundColor: "rgba(31, 122, 90, 0.18)"
+  },
+  cropDebugBox: {
+    position: "absolute",
+    borderRadius: 8,
+    borderWidth: 2
+  },
+  cropDebugBoxUnselected: {
+    borderColor: "rgba(79, 91, 84, 0.5)",
+    backgroundColor: "rgba(240, 240, 236, 0.18)"
+  },
+  cropDebugBoxSelected: {
+    borderColor: "#1f7a5a",
+    backgroundColor: "rgba(31, 122, 90, 0.2)"
   }
 });

@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>오늘까지야 식품 규칙 편집기</title>
+  <style>
+    :root {
+      --green: #15855f;
+      --green-dark: #0f5f46;
+      --mint: #eef8f4;
+      --border: #dfe5df;
+      --text: #15201b;
+      --muted: #68736d;
+      --bg: #f7f8f7;
+      --danger: #b23a2e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 28px;
+      background: rgba(255, 255, 255, 0.92);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+    }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 20px; margin-bottom: 14px; }
+    h3 { font-size: 16px; margin-bottom: 10px; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(480px, 1fr);
+      gap: 18px;
+      padding: 18px 28px 32px;
+    }
+    section {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 10px 24px rgba(20, 32, 27, 0.04);
+    }
+    .stack { display: grid; gap: 18px; align-content: start; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    label {
+      display: grid;
+      gap: 7px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 13px;
+      font: inherit;
+      background: #fff;
+      color: var(--text);
+    }
+    textarea {
+      min-height: 100px;
+      line-height: 1.5;
+      resize: vertical;
+    }
+    button {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 14px;
+      font: inherit;
+      font-weight: 800;
+      color: var(--text);
+      background: #fff;
+      cursor: pointer;
+    }
+    button.primary {
+      border-color: var(--green);
+      background: var(--green);
+      color: #fff;
+    }
+    button.ghost { background: var(--mint); color: var(--green-dark); border-color: #bde5d7; }
+    button.danger { color: var(--danger); border-color: #f0c8c1; background: #fff7f6; }
+    .result {
+      display: grid;
+      gap: 8px;
+      padding: 16px;
+      border-radius: 16px;
+      background: var(--mint);
+      border: 1px solid #bde5d7;
+      font-weight: 700;
+    }
+    .result .big { font-size: 30px; color: var(--green-dark); }
+    .note { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: var(--mint);
+      color: var(--green-dark);
+      font-weight: 800;
+      border: 1px solid #cbeadf;
+    }
+    .table {
+      display: grid;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .table-row {
+      display: grid;
+      grid-template-columns: 1.1fr 110px 72px;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      background: #fff;
+    }
+    .table-row:last-child { border-bottom: 0; }
+    .table-row.head {
+      background: #f3f6f4;
+      font-weight: 900;
+      color: var(--muted);
+    }
+    .editor-grid {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .category-list {
+      display: grid;
+      gap: 8px;
+      max-height: 70vh;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .category-tab {
+      width: 100%;
+      text-align: left;
+      border-radius: 12px;
+    }
+    .category-tab.active {
+      border-color: var(--green);
+      background: var(--green);
+      color: #fff;
+    }
+    .keyword-group {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fff;
+    }
+    .keyword-groups {
+      display: grid;
+      gap: 12px;
+      max-height: 68vh;
+      overflow: auto;
+      padding-right: 6px;
+    }
+    .status { min-height: 20px; color: var(--green-dark); font-weight: 800; }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; padding: 14px; }
+      header { padding: 14px; align-items: flex-start; flex-direction: column; }
+      .editor-grid { grid-template-columns: 1fr; }
+      .category-list { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>오늘까지야 식품 규칙 편집기</h1>
+      <div class="note">상품명 테스트 후 카테고리, 보관방식, 소비기한 키워드를 바로 JSON에 반영합니다.</div>
+    </div>
+    <div class="row">
+      <span id="status" class="status"></span>
+      <button class="ghost" id="reloadButton">다시 불러오기</button>
+      <button class="primary" id="saveButton">JSON 저장</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="stack">
+      <section>
+        <h2>상품명 테스트</h2>
+        <div class="stack">
+          <label>
+            상품명
+            <input id="testName" placeholder="예: 서울우유 1L, 올리고당, 냉동만두">
+          </label>
+          <label>
+            보관 방식
+            <select id="testStorage">
+              <option value="">자동 추천</option>
+              <option>냉장</option>
+              <option>냉동</option>
+              <option>실온</option>
+            </select>
+          </label>
+          <button class="primary" id="testButton">결과 확인</button>
+          <div id="testResult" class="result" style="display:none"></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>카테고리 추가</h2>
+        <div class="stack">
+          <label>
+            새 카테고리명
+            <input id="newCategoryName" placeholder="예: 베이커리">
+          </label>
+          <label>
+            기본 소비기한
+            <input id="newCategoryDays" type="number" min="0" value="7">
+          </label>
+          <button class="ghost" id="addCategoryButton">카테고리 추가</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>카테고리 기본값</h2>
+        <div id="categoryTable" class="table"></div>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section>
+        <h2>카테고리 키워드</h2>
+        <div class="editor-grid">
+          <div id="categoryTabs" class="category-list"></div>
+          <div class="stack">
+            <h3 id="selectedCategoryTitle"></h3>
+            <label>
+              일반 키워드
+              <textarea id="categoryKeywords" placeholder="쉼표 또는 줄바꿈으로 구분"></textarea>
+            </label>
+            <label>
+              우선 매칭 키워드
+              <textarea id="priorityKeywords" placeholder="토마토케찹처럼 다른 카테고리보다 먼저 잡아야 하는 키워드"></textarea>
+            </label>
+            <label>
+              기본 보관 방식
+              <select id="categoryStorageMode">
+                <option value="">냉장 기본</option>
+                <option value="room">실온 기본</option>
+                <option value="long">긴 소비기한 보호</option>
+                <option value="both">실온 기본 + 긴 소비기한 보호</option>
+              </select>
+            </label>
+            <button class="ghost" id="applyCategoryEditButton">카테고리 키워드 반영</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>소비기한 키워드 그룹</h2>
+        <div class="note">상품명이 아래 키워드에 걸리면 카테고리 기본값보다 우선 적용됩니다. 예: 올리고당/물엿 180일.</div>
+        <div class="row" style="margin:12px 0">
+          <input id="newKeywordDays" type="number" min="0" placeholder="일수" style="max-width:140px">
+          <button class="ghost" id="addKeywordGroupButton">그룹 추가</button>
+        </div>
+        <div id="keywordGroups" class="keyword-groups"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    let rules = null;
+    let selectedCategory = "";
+    const API_BASE = location.protocol === "file:" ? "http://localhost:5178" : "";
+
+    const $ = (id) => document.getElementById(id);
+
+    function splitWords(value) {
+      return String(value || "")
+        .split(/[\n,]/)
+        .map((word) => word.trim())
+        .filter(Boolean);
+    }
+
+    function joinWords(words) {
+      return (words || []).join(", ");
+    }
+
+    function setStatus(message) {
+      $("status").textContent = message;
+      if (message) setTimeout(() => {
+        if ($("status").textContent === message) $("status").textContent = "";
+      }, 2800);
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          ...(options.headers || {})
+        }
+      });
+      const body = await response.json();
+      if (!response.ok || body.ok === false) throw new Error(body.error || "요청 실패");
+      return body;
+    }
+
+    async function loadRules() {
+      const body = await api("/api/rules");
+      rules = body.rules;
+      selectedCategory = selectedCategory || rules.categories[0] || "";
+      render();
+      setStatus("불러왔습니다");
+    }
+
+    async function saveRules() {
+      await api("/api/rules", {
+        method: "POST",
+        body: JSON.stringify({ rules })
+      });
+      setStatus("저장했습니다");
+    }
+
+    async function testProduct() {
+      const name = $("testName").value.trim();
+      if (!name) return;
+      const body = await api("/api/test", {
+        method: "POST",
+        body: JSON.stringify({ name, storage: $("testStorage").value })
+      });
+      const result = body.result;
+      $("testResult").style.display = "grid";
+      $("testResult").innerHTML = `
+        <div class="big">${result.category} · ${result.storage} · ${result.days}일</div>
+        <div>예상 소비기한: ${result.expiryDate}</div>
+        <div>매칭 키워드: ${result.categoryMatchedKeyword || "없음"}</div>
+        <div class="note">${result.notes.join("<br>")}</div>
+      `;
+    }
+
+    function renderCategoryTable() {
+      const rows = [
+        `<div class="table-row head"><div>카테고리</div><div>기본 일수</div><div></div></div>`
+      ];
+      for (const category of rules.categories) {
+        rows.push(`
+          <div class="table-row">
+            <input value="${escapeHtml(category)}" data-category-name="${escapeHtml(category)}">
+            <input type="number" min="0" value="${Number(rules.categoryExpiryDays[category] || 0)}" data-category-days="${escapeHtml(category)}">
+            <button class="danger" data-remove-category="${escapeHtml(category)}">삭제</button>
+          </div>
+        `);
+      }
+      $("categoryTable").innerHTML = rows.join("");
+    }
+
+    function renderCategoryTabs() {
+      $("categoryTabs").innerHTML = rules.categories.map((category) => `
+        <button class="category-tab ${category === selectedCategory ? "active" : ""}" data-select-category="${escapeHtml(category)}">
+          ${escapeHtml(category)}
+        </button>
+      `).join("");
+      renderSelectedCategory();
+    }
+
+    function renderSelectedCategory() {
+      if (!selectedCategory && rules.categories.length) selectedCategory = rules.categories[0];
+      $("selectedCategoryTitle").textContent = selectedCategory ? `${selectedCategory} 규칙` : "카테고리 없음";
+      $("categoryKeywords").value = joinWords((rules.categoryKeywords || {})[selectedCategory] || []);
+      $("priorityKeywords").value = joinWords((rules.priorityCategoryKeywords || {})[selectedCategory] || []);
+
+      const isRoom = (rules.roomStorageCategories || []).includes(selectedCategory);
+      const isLong = (rules.longShelfCategories || []).includes(selectedCategory);
+      $("categoryStorageMode").value = isRoom && isLong ? "both" : isRoom ? "room" : isLong ? "long" : "";
+    }
+
+    function renderKeywordGroups() {
+      $("keywordGroups").innerHTML = (rules.keywordExpiryDays || []).map((group, index) => `
+        <div class="keyword-group">
+          <div class="row">
+            <label style="max-width:140px">
+              일수
+              <input type="number" min="0" value="${Number(group.days || 0)}" data-keyword-days="${index}">
+            </label>
+            <button class="danger" data-remove-keyword-group="${index}">그룹 삭제</button>
+          </div>
+          <label>
+            키워드
+            <textarea data-keyword-words="${index}">${escapeHtml(joinWords(group.words || []))}</textarea>
+          </label>
+        </div>
+      `).join("");
+    }
+
+    function render() {
+      renderCategoryTable();
+      renderCategoryTabs();
+      renderKeywordGroups();
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function syncCategoryTableEdits(target) {
+      if (target.dataset.categoryDays) {
+        rules.categoryExpiryDays[target.dataset.categoryDays] = Number(target.value || 0);
+      }
+
+      if (target.dataset.categoryName) {
+        const previous = target.dataset.categoryName;
+        const next = target.value.trim();
+        if (!next || next === previous) return;
+        renameCategory(previous, next);
+        selectedCategory = next;
+        render();
+      }
+    }
+
+    function renameCategory(previous, next) {
+      rules.categories = rules.categories.map((category) => category === previous ? next : category);
+      for (const key of ["categoryExpiryDays", "categoryKeywords", "priorityCategoryKeywords"]) {
+        rules[key] = rules[key] || {};
+        rules[key][next] = rules[key][previous] || (key === "categoryExpiryDays" ? 7 : []);
+        delete rules[key][previous];
+      }
+      for (const listName of ["roomStorageCategories", "longShelfCategories"]) {
+        rules[listName] = (rules[listName] || []).map((category) => category === previous ? next : category);
+      }
+    }
+
+    function removeCategory(category) {
+      if (!confirm(`${category} 카테고리를 삭제할까요?`)) return;
+      rules.categories = rules.categories.filter((item) => item !== category);
+      delete rules.categoryExpiryDays[category];
+      delete rules.categoryKeywords[category];
+      delete rules.priorityCategoryKeywords[category];
+      rules.roomStorageCategories = (rules.roomStorageCategories || []).filter((item) => item !== category);
+      rules.longShelfCategories = (rules.longShelfCategories || []).filter((item) => item !== category);
+      selectedCategory = rules.categories[0] || "";
+      render();
+    }
+
+    function addCategory() {
+      const name = $("newCategoryName").value.trim();
+      const days = Number($("newCategoryDays").value || 7);
+      if (!name) return;
+      if (rules.categories.includes(name)) {
+        selectedCategory = name;
+        render();
+        return;
+      }
+      rules.categories.push(name);
+      rules.categoryExpiryDays[name] = days;
+      rules.categoryKeywords[name] = [];
+      selectedCategory = name;
+      $("newCategoryName").value = "";
+      render();
+    }
+
+    function applyCategoryEdit() {
+      if (!selectedCategory) return;
+      rules.categoryKeywords[selectedCategory] = splitWords($("categoryKeywords").value);
+      const priority = splitWords($("priorityKeywords").value);
+      if (priority.length) rules.priorityCategoryKeywords[selectedCategory] = priority;
+      else delete rules.priorityCategoryKeywords[selectedCategory];
+
+      const mode = $("categoryStorageMode").value;
+      rules.roomStorageCategories = (rules.roomStorageCategories || []).filter((item) => item !== selectedCategory);
+      rules.longShelfCategories = (rules.longShelfCategories || []).filter((item) => item !== selectedCategory);
+      if (mode === "room" || mode === "both") rules.roomStorageCategories.push(selectedCategory);
+      if (mode === "long" || mode === "both") rules.longShelfCategories.push(selectedCategory);
+      setStatus("카테고리 규칙을 반영했습니다");
+    }
+
+    function syncKeywordGroupEdits(target) {
+      if (target.dataset.keywordDays) {
+        rules.keywordExpiryDays[Number(target.dataset.keywordDays)].days = Number(target.value || 0);
+      }
+      if (target.dataset.keywordWords) {
+        rules.keywordExpiryDays[Number(target.dataset.keywordWords)].words = splitWords(target.value);
+      }
+    }
+
+    function addKeywordGroup() {
+      const days = Number($("newKeywordDays").value || 7);
+      rules.keywordExpiryDays = rules.keywordExpiryDays || [];
+      rules.keywordExpiryDays.push({ days, words: [] });
+      $("newKeywordDays").value = "";
+      renderKeywordGroups();
+    }
+
+    function removeKeywordGroup(index) {
+      rules.keywordExpiryDays.splice(Number(index), 1);
+      renderKeywordGroups();
+    }
+
+    document.addEventListener("input", (event) => {
+      syncCategoryTableEdits(event.target);
+      syncKeywordGroupEdits(event.target);
+    });
+
+    document.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target) return;
+      if (target.id === "saveButton") saveRules().catch((error) => setStatus(error.message));
+      if (target.id === "reloadButton") loadRules().catch((error) => setStatus(error.message));
+      if (target.id === "testButton") testProduct().catch((error) => setStatus(error.message));
+      if (target.id === "addCategoryButton") addCategory();
+      if (target.id === "applyCategoryEditButton") applyCategoryEdit();
+      if (target.id === "addKeywordGroupButton") addKeywordGroup();
+      if (target.dataset.selectCategory) {
+        selectedCategory = target.dataset.selectCategory;
+        renderCategoryTabs();
+      }
+      if (target.dataset.removeCategory) removeCategory(target.dataset.removeCategory);
+      if (target.dataset.removeKeywordGroup) removeKeywordGroup(target.dataset.removeKeywordGroup);
+    });
+
+    loadRules().catch((error) => setStatus(error.message));
+  </script>
+</body>
+</html>

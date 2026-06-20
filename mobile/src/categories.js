@@ -1,21 +1,35 @@
-export const categories = ["유제품", "육류/생선", "채소/과일", "냉동식품", "가공식품", "음료", "간식", "기타"];
+import foodRules from "./data/foodRules.json";
+import { findProductClassifierMatch } from "./utils/productClassifier";
 
-const keywordMap = {
-  "유제품": ["우유", "멸균", "요거트", "요구르트", "치즈", "버터", "크림", "두유"],
-  "육류/생선": ["고기", "삼겹", "목살", "한우", "소고기", "돼지", "닭", "계란", "달걀", "란", "생선", "연어", "참치", "고등어"],
-  "채소/과일": ["사과", "바나나", "딸기", "포도", "토마토", "상추", "양파", "감자", "고구마", "당근", "오이", "샐러드", "야채"],
-  "냉동식품": ["냉동", "만두", "피자", "아이스", "튀김", "프로즌"],
-  "가공식품": ["라면", "햇반", "김치", "두부", "소스", "참기름", "통조림", "스팸", "어묵", "미숫가루"],
-  "음료": ["물", "커피", "주스", "콜라", "사이다", "맥주", "소주", "음료", "에스프레소"],
-  "간식": ["과자", "초콜릿", "쿠키", "빵", "케이크", "롤케익", "젤리", "꿀오랑"]
-};
+export const categories = foodRules.categories;
+
+function normalizeKeywordText(value) {
+  return String(value || "").replace(/\s/g, "").toLowerCase();
+}
+
+function matchesAnyKeyword(normalizedName, words = []) {
+  return words.some((word) => normalizedName.includes(normalizeKeywordText(word)));
+}
 
 export function suggestCategory(name) {
-  const normalized = name.replace(/\s/g, "").toLowerCase();
-  for (const [category, words] of Object.entries(keywordMap)) {
-    if (words.some((word) => normalized.includes(word.toLowerCase()))) {
+  const normalized = normalizeKeywordText(name);
+
+  for (const [category, words] of Object.entries(foodRules.priorityCategoryKeywords || {})) {
+    if (matchesAnyKeyword(normalized, words)) {
       return category;
     }
   }
+
+  const classifierMatch = findProductClassifierMatch(name);
+  if (classifierMatch?.category) {
+    return classifierMatch.category;
+  }
+
+  for (const [category, words] of Object.entries(foodRules.categoryKeywords || {})) {
+    if (matchesAnyKeyword(normalized, words)) {
+      return category;
+    }
+  }
+
   return "기타";
 }

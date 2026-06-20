@@ -37,6 +37,32 @@ Example body:
 
 Sensitive numeric patterns are masked again on the server before storage.
 
+## Beta feedback queries
+
+Recent OCR feedback receipts:
+
+```powershell
+npx.cmd wrangler d1 execute freshkeeper-ocr-feedback --remote --command "SELECT id, ai_request_id, created_at, app_version, line_count, selected_count, rejected_count FROM receipt_feedback ORDER BY created_at DESC LIMIT 20;"
+```
+
+OCR lines and selected flags for one receipt:
+
+```powershell
+npx.cmd wrangler d1 execute freshkeeper-ocr-feedback --remote --command "SELECT line_index, selected, text_masked, x, y, width, height FROM ocr_feedback_lines WHERE receipt_id = 'RECEIPT_ID' ORDER BY line_index;"
+```
+
+Final products registered by the user for one receipt:
+
+```powershell
+npx.cmd wrangler d1 execute freshkeeper-ocr-feedback --remote --command "SELECT item_index, name_masked FROM receipt_feedback_selected_items WHERE receipt_id = 'RECEIPT_ID' ORDER BY item_index;"
+```
+
+Compare AI output with final user-selected products:
+
+```powershell
+npx.cmd wrangler d1 execute freshkeeper-ocr-feedback --remote --command "SELECT r.id AS receipt_id, r.ai_request_id, r.created_at, a.name AS ai_name, s.name_masked AS final_name FROM receipt_feedback r LEFT JOIN ai_receipt_ai_candidates a ON a.request_id = r.ai_request_id LEFT JOIN receipt_feedback_selected_items s ON s.receipt_id = r.id ORDER BY r.created_at DESC LIMIT 50;"
+```
+
 ## Local Setup
 
 ```powershell

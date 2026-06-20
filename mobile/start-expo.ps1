@@ -6,7 +6,7 @@ param(
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $outLog = Join-Path $root "expo.out.log"
 $errLog = Join-Path $root "expo.err.log"
-$expoArgs = @("expo", "start", "--localhost")
+$expoArgs = @("expo", "start", "--lan")
 
 if ($DevClient) {
   $expoArgs += "--dev-client"

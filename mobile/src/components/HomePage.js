@@ -1,8 +1,10 @@
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { daysUntil, itemCreatedDate } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
+import AdSlot from "./AdSlot";
 
-const homeFridgeImage = require("../../assets/home-fridge.png");
+const homeHeroIcon = require("../../assets/home-app-symbol.png");
 
 export default function HomePage({
   width,
@@ -13,12 +15,14 @@ export default function HomePage({
   onOpenAdd,
   onChangeItemImage
 }) {
+  const [repurchasePanelVisible, setRepurchasePanelVisible] = useState(false);
   const urgentItems = [...items]
     .sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry))
     .slice(0, 3);
   const recentItems = [...items]
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
     .slice(0, 4);
+  const heroStatus = getHeroStatus(summary);
 
   return (
     <ScrollView style={{ width }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
@@ -29,7 +33,10 @@ export default function HomePage({
             <Text style={styles.heroValue}>{summary.total}</Text>
           </Pressable>
           <View style={styles.fridgeTile}>
-            <Image source={homeFridgeImage} resizeMode="contain" style={styles.fridgeImage} />
+            <Image source={homeHeroIcon} resizeMode="contain" style={styles.fridgeImage} />
+            <View style={[styles.heroStatusBadge, styles[heroStatus.style]]}>
+              <Text style={styles.heroStatusText}>{heroStatus.text}</Text>
+            </View>
           </View>
         </View>
         <View style={styles.heroStats}>
@@ -59,8 +66,8 @@ export default function HomePage({
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>이번 주 먼저 먹을 것</Text>
-        <Pressable onPress={() => onOpenInventory("urgent")}>
-          <Text style={styles.moreText}>더보기 &gt;</Text>
+        <Pressable onPress={() => setRepurchasePanelVisible((current) => !current)}>
+          <Text style={styles.moreText}>{repurchasePanelVisible ? "접기" : "다시 구매 >"}</Text>
         </Pressable>
       </View>
       <View style={styles.priorityRow}>
@@ -75,6 +82,12 @@ export default function HomePage({
           </View>
         )}
       </View>
+
+      {repurchasePanelVisible ? (
+        <RepurchasePanel items={urgentItems} onOpenInventory={() => onOpenInventory("urgent")} />
+      ) : null}
+
+      <AdSlot variant="home" style={styles.homeAdSlot} />
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>최근 추가한 상품</Text>
@@ -93,6 +106,76 @@ export default function HomePage({
         )}
       </View>
     </ScrollView>
+  );
+}
+
+function RepurchasePanel({ items, onOpenInventory }) {
+  if (!items.length) {
+    return (
+      <View style={styles.repurchasePanel}>
+        <Text style={styles.repurchasePanelTitle}>다시 살 상품이 아직 없습니다</Text>
+        <Text style={styles.repurchasePanelText}>임박 상품이 생기면 구매 링크를 바로 열 수 있어요.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.repurchasePanel}>
+      <View style={styles.repurchasePanelHeader}>
+        <View>
+          <Text style={styles.repurchasePanelTitle}>임박 상품 다시 구매</Text>
+          <Text style={styles.repurchasePanelText}>구매 링크가 있는 상품은 바로 열 수 있어요. 가격 추세는 플레이스토어 등록 후 준비할게요.</Text>
+        </View>
+        <Pressable onPress={onOpenInventory}>
+          <Text style={styles.repurchasePanelMore}>보관함</Text>
+        </Pressable>
+      </View>
+      <View style={styles.repurchaseList}>
+        {items.map((item) => (
+          <RepurchaseItem key={item.id} item={item} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function RepurchaseItem({ item }) {
+  const days = daysUntil(item.expiry);
+
+  async function openPurchaseUrl() {
+    const url = String(item.purchaseUrl || "").trim();
+    if (!url) {
+      Alert.alert("구매 링크 없음", "보관함에서 상품을 수정해 쿠팡 공유 링크를 붙여넣으면 바로 이동할 수 있어요.");
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      Alert.alert("링크 확인", "http:// 또는 https://로 시작하는 구매 링크를 넣어주세요.");
+      return;
+    }
+    const supported = await Linking.canOpenURL(url);
+    if (!supported) {
+      Alert.alert("링크 열기 실패", "이 링크를 열 수 없습니다.");
+      return;
+    }
+    Linking.openURL(url);
+  }
+
+  return (
+    <View style={styles.repurchaseItem}>
+      <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.repurchaseItemImage} />
+      <View style={styles.repurchaseItemBody}>
+        <View style={styles.repurchaseItemTop}>
+          <Text style={styles.repurchaseItemName} numberOfLines={1}>{item.name}</Text>
+          <Text style={[styles.repurchaseDday, days <= 1 && styles.dDayDanger]}>{labelForDays(days)}</Text>
+        </View>
+        <Text style={styles.repurchaseMeta}>{item.storage} · {item.expiry}</Text>
+        <Pressable style={[styles.purchaseButton, !item.purchaseUrl && styles.purchaseButtonMuted]} onPress={openPurchaseUrl}>
+          <Text style={[styles.purchaseButtonText, !item.purchaseUrl && styles.purchaseButtonTextMuted]}>
+            {item.purchaseUrl ? "구매 링크 열기" : "구매 링크 등록 필요"}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -134,6 +217,19 @@ function labelForDays(days) {
   return `D-${days}`;
 }
 
+function getHeroStatus(summary) {
+  if (summary.expired > 0) {
+    return { text: "정리가 필요해요", style: "heroStatusExpired" };
+  }
+  if (summary.today > 0) {
+    return { text: "오늘 확인해요", style: "heroStatusToday" };
+  }
+  if (summary.urgent > 0) {
+    return { text: "먼저 먹을 게 있어요", style: "heroStatusUrgent" };
+  }
+  return { text: "괜찮아요", style: "heroStatusSafe" };
+}
+
 const styles = StyleSheet.create({
   // 홈 화면 전체 여백입니다. 배너/목록의 좌우 여백과 하단 탭에 가리지 않는 아래 여백을 조정합니다.
   page: {
@@ -143,7 +239,7 @@ const styles = StyleSheet.create({
   // 초록색 상단 배너 카드입니다. 배너 높이, 둥근 모서리, 그림자, 내부 여백을 담당합니다.
   heroCard: {
     position: "relative",
-    minHeight: 176,
+    minHeight: 168,
     borderRadius: 16,
     backgroundColor: "#237b58",
     paddingHorizontal: 18,
@@ -162,12 +258,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
     gap: 12,
-    minHeight: 88
+    minHeight: 82
   },
   // 배너 왼쪽의 "보관 중인 상품"과 전체 개수 영역입니다. 클릭하면 보관함 전체로 이동합니다.
   heroPrimary: {
-    minHeight: 82,
-    justifyContent: "center"
+    minHeight: 76,
+    justifyContent: "flex-start"
   },
   // 배너의 작은 설명 텍스트입니다. 예: "보관 중인 상품".
   heroLabel: {
@@ -180,12 +276,40 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 46,
     fontWeight: "900",
-    marginTop: 4
+    marginTop: 4,
+    marginLeft: 20
+  },
+  heroStatusBadge: {
+    alignSelf: "center",
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    marginTop: -8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.24)",
+    backgroundColor: "rgba(255,255,255,0.14)"
+  },
+  heroStatusText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  heroStatusSafe: {
+    backgroundColor: "rgba(255,255,255,0.15)"
+  },
+  heroStatusUrgent: {
+    backgroundColor: "rgba(239,179,60,0.22)"
+  },
+  heroStatusToday: {
+    backgroundColor: "rgba(109,144,242,0.24)"
+  },
+  heroStatusExpired: {
+    backgroundColor: "rgba(236,91,84,0.24)"
   },
   // 배너 하단의 임박/만료/오늘 만료 통계 줄입니다.
   heroStats: {
     flexDirection: "row",
-    marginTop: 4,
+    marginTop: 2,
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.18)",
     paddingTop: 8
@@ -242,24 +366,21 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 3
   },
-  // 배너 오른쪽 냉장고 이미지의 배경 타일입니다. 위치를 바꾸려면 right/top을 조정합니다.
+  // 배너 오른쪽 상태 캐릭터 영역입니다. 위치를 바꾸려면 right/top을 조정합니다.
   fridgeTile: {
     position: "absolute",
-    right: 15,
-    top: 4,
-    width: 82,
-    height: 82,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+    right: 5,
+    top: -10,
+    width: 112,
+    height: 106,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "flex-start"
   },
-  // 냉장고 이미지 자체 크기입니다. 타일보다 조금 크게 두면 꽉 차 보입니다.
+  // 상태 캐릭터 이미지 크기입니다.
   fridgeImage: {
-    width: 90,
-    height: 90
+    width: 75,
+    height: 75,
+    opacity: 0.92
   },
   // 각 섹션의 제목 줄입니다. 제목과 "더보기 >"를 좌우로 배치합니다.
   sectionHeader: {
@@ -285,6 +406,102 @@ const styles = StyleSheet.create({
   priorityRow: {
     flexDirection: "row",
     gap: 10
+  },
+  homeAdSlot: {
+    marginTop: 18
+  },
+  repurchasePanel: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e6e4df",
+    backgroundColor: "#fff",
+    padding: 14,
+    marginTop: 12
+  },
+  repurchasePanelHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  repurchasePanelTitle: {
+    color: "#18201c",
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  repurchasePanelText: {
+    color: "#68716b",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 5
+  },
+  repurchasePanelMore: {
+    color: "#1f7a5a",
+    fontSize: 12,
+    fontWeight: "900",
+    paddingTop: 2
+  },
+  repurchaseList: {
+    gap: 10,
+    marginTop: 12
+  },
+  repurchaseItem: {
+    flexDirection: "row",
+    gap: 11,
+    borderRadius: 13,
+    backgroundColor: "#f8fbf9",
+    padding: 10
+  },
+  repurchaseItemImage: {
+    width: 58,
+    height: 58,
+    borderRadius: 12,
+    backgroundColor: "#edf7f2",
+    overflow: "hidden"
+  },
+  repurchaseItemBody: {
+    flex: 1
+  },
+  repurchaseItemTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10
+  },
+  repurchaseItemName: {
+    flex: 1,
+    color: "#18201c",
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  repurchaseDday: {
+    color: "#ef8b1f",
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  repurchaseMeta: {
+    color: "#68716b",
+    fontSize: 12,
+    marginTop: 4
+  },
+  purchaseButton: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    backgroundColor: "#1f7a5a",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginTop: 9
+  },
+  purchaseButtonMuted: {
+    backgroundColor: "#eef4f1"
+  },
+  purchaseButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  purchaseButtonTextMuted: {
+    color: "#68716b"
   },
   // 이번 주 카드 한 장입니다. 카드 높이, 테두리, 내부 여백을 담당합니다.
   priorityCard: {

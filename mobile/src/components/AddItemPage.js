@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { ChoiceGroup, DateButton, Field, PrimaryButton } from "./CommonControls";
@@ -11,8 +11,10 @@ const cameraIcon = require("../../assets/actions/action-camera.png");
 const galleryIcon = require("../../assets/actions/action-gallery.png");
 const photoRegisterIcon = require("../../assets/actions/action-photo-register.png");
 const directRegisterIcon = require("../../assets/actions/action-direct-register.png");
-const receiptCompleteIcon = require("../../assets/actions/receipt-complete-basket.png");
 const inventoryEditIcon = require("../../assets/actions/inventory-edit.png");
+const resetIcon = require("../../assets/actions/action-reset.png");
+const storageTabIcon = require("../../assets/tabs/tab-box.png");
+const defaultItemImage = require("../../assets/foods/category-etc.png");
 
 export default function AddItemPage({
   width,
@@ -22,6 +24,8 @@ export default function AddItemPage({
   setName,
   manualImageUri,
   setManualImageUri,
+  manualPurchaseUrl,
+  setManualPurchaseUrl,
   category,
   setCategory,
   categories,
@@ -33,17 +37,21 @@ export default function AddItemPage({
   setExpiry,
   openCalendar,
   submitManual,
-  pickManualImage,
-  takeManualImagePhoto,
+  changeManualImage,
   takeReceiptPhoto,
   pickReceiptImage,
+  selectReceiptImageForType,
+  receiptImageTypeChooserVisible,
+  setReceiptImageTypeChooserVisible,
   receiptSourceType,
+  receiptInteractionMode,
   drafts,
   excludedDrafts,
   receiptImage,
   ocrLines,
   commerceCropBoxes,
   setReceiptSelectorVisible,
+  openReceiptSelector,
   setReceiptImageLayout,
   setReceiptImageSize,
   frameForOcrLine,
@@ -55,11 +63,13 @@ export default function AddItemPage({
   bulkDraftForm,
   applyBulkDraftForm,
   addAllDrafts,
+  resetReceiptDrafts,
   draftForms,
   DEFAULT_EXPIRY_TYPE,
   removeDraft,
   toggleDraftExcluded,
   updateDraftForm,
+  pickDraftImage,
   addDraft
 }) {
   const [isReceiptPreviewAdjusting, setReceiptPreviewAdjusting] = useState(false);
@@ -72,6 +82,7 @@ export default function AddItemPage({
   }, [receiptImage]);
 
   return (
+    <>
             <ScrollView
               style={{ width }}
               contentContainerStyle={styles.page}
@@ -98,44 +109,34 @@ export default function AddItemPage({
 
                 {mode === "manual" ? (
                   <View style={styles.form}>
-                    <View style={styles.manualImageBox}>
-                      <View style={styles.manualImagePreview}>
-                        {manualImageUri ? (
-                          <Image source={{ uri: manualImageUri }} resizeMode="cover" style={styles.manualImage} />
-                        ) : (
-                          <Image source={directRegisterIcon} resizeMode="contain" style={styles.manualImagePlaceholder} />
-                        )}
-                      </View>
-                      <View style={styles.manualImageActions}>
-                        <Pressable style={styles.manualImageButton} onPress={takeManualImagePhoto}>
-                          <Image source={cameraIcon} resizeMode="contain" style={styles.manualImageButtonIcon} />
-                          <Text style={styles.manualImageButtonText}>{"\ucd2c\uc601\ud558\uae30"}</Text>
-                        </Pressable>
-                        <Pressable style={styles.manualImageButton} onPress={pickManualImage}>
-                          <Image source={galleryIcon} resizeMode="contain" style={styles.manualImageButtonIcon} />
-                          <Text style={styles.manualImageButtonText}>{"\uac24\ub7ec\ub9ac"}</Text>
-                        </Pressable>
-                        {manualImageUri ? (
-                          <Pressable style={styles.manualImageClearButton} onPress={() => setManualImageUri("")}>
-                            <Text style={styles.manualImageClearText}>{"\uc0ad\uc81c"}</Text>
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    </View>
                     <Field label={"\uc0c1\ud488\uba85"}>
-                      <TextInput
-                        value={name}
-                        onChangeText={(value) => {
-                          const nextCategory = suggestCategory(value);
-                          const nextStorage = suggestedStorage(value, nextCategory, storage);
-                          setName(value);
-                          setCategory(nextCategory);
-                          setStorage(nextStorage);
-                          setExpiry(suggestedExpiryDate(value, nextCategory, nextStorage));
-                        }}
-                        placeholder={"\uc608: \uc11c\uc6b8\uc6b0\uc720, \uacc4\ub780, \ub538\uae30"}
-                        style={styles.input}
-                      />
+                      <View style={styles.manualNameRow}>
+                        <Pressable
+                          style={styles.manualNameImageButton}
+                          accessibilityLabel={"\uc0c1\ud488 \uc0ac\uc9c4 \ubcc0\uacbd"}
+                          onLongPress={changeManualImage}
+                          delayLongPress={300}
+                        >
+                          <Image
+                            source={manualImageUri ? { uri: manualImageUri } : defaultItemImage}
+                            resizeMode="cover"
+                            style={styles.manualNameImage}
+                          />
+                        </Pressable>
+                        <TextInput
+                          value={name}
+                          onChangeText={(value) => {
+                            const nextCategory = suggestCategory(value);
+                            const nextStorage = suggestedStorage(value, nextCategory, storage);
+                            setName(value);
+                            setCategory(nextCategory);
+                            setStorage(nextStorage);
+                            setExpiry(suggestedExpiryDate(value, nextCategory, nextStorage));
+                          }}
+                          placeholder={"\uc608: \uc11c\uc6b8\uc6b0\uc720, \uacc4\ub780, \ub538\uae30"}
+                          style={[styles.input, styles.manualNameInput]}
+                        />
+                      </View>
                     </Field>
                     <ChoiceGroup
                       label={"\uce74\ud14c\uace0\ub9ac"}
@@ -165,6 +166,18 @@ export default function AddItemPage({
                     <Field label={"\uc18c\ube44\uae30\ud55c"}>
                       <DateButton value={expiry} onPress={() => openCalendar(expiry, setExpiry)} />
                     </Field>
+                    <Field label={"구매 링크"}>
+                      <TextInput
+                        value={manualPurchaseUrl}
+                        onChangeText={setManualPurchaseUrl}
+                        placeholder={"쿠팡 공유 링크를 붙여넣어 주세요"}
+                        style={styles.input}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        inputMode="url"
+                      />
+                    </Field>
                     <PrimaryButton label={"\ub4f1\ub85d\ud558\uae30"} onPress={submitManual} />
                   </View>
                 ) : (
@@ -174,8 +187,8 @@ export default function AddItemPage({
                         <Image source={cameraIcon} resizeMode="contain" style={styles.receiptHeroIcon} />
                       </View>
                       <View style={styles.galleryCopy}>
-                        <Text style={styles.receiptHeroTitle}>{"\uc885\uc774 \uc601\uc218\uc99d \ucd2c\uc601"}</Text>
-                        <Text style={styles.receiptHeroText}>{"\uce74\uba54\ub77c\ub85c \ucd2c\uc601\ud558\uba74 \uc0c1\ud488 \ud6c4\ubcf4\ub97c \uc790\ub3d9 \uc778\uc2dd\ud569\ub2c8\ub2e4."}</Text>
+                        <Text style={styles.receiptHeroTitle}>{"구매내역 촬영"}</Text>
+                        <Text style={styles.receiptHeroText}>{"영수증, 주문내역에서 상품을 찾습니다."}</Text>
                       </View>
                     </Pressable>
 
@@ -184,40 +197,29 @@ export default function AddItemPage({
                         <Image source={galleryIcon} resizeMode="contain" style={styles.receiptHeroIcon} />
                       </View>
                       <View style={styles.galleryCopy}>
-                        <Text style={styles.receiptHeroTitle}>{"\uc0ac\uc9c4/\ucea1\ucc98 \ubd88\ub7ec\uc624\uae30"}</Text>
-                        <Text style={styles.receiptHeroText}>{"\ubaa8\ubc14\uc77c \uc601\uc218\uc99d, \ucfe0\ud321 \uc8fc\ubb38\ub0b4\uc5ed \ucea1\ucc98\ub3c4 \uc0ac\uc6a9\ud560 \uc218 \uc788\uc5b4\uc694."}</Text>
+                        <Text style={styles.receiptHeroTitle}>{"구매내역 스캔"}</Text>
+                        <Text style={styles.receiptHeroText}>{"영수증, 쿠팡·컬리 주문내역도 가능합니다."}</Text>
                       </View>
                     </Pressable>
 
-                    {receiptImage || drafts.length > 0 ? (
-                      <View style={styles.recognitionSummaryCard}>
-                        <Image source={receiptCompleteIcon} resizeMode="contain" style={styles.summaryIcon} />
-                        <View style={styles.summaryCopy}>
-                          <Text style={styles.summaryTitle}>
-                            {receiptImage ? "\uc601\uc218\uc99d \uc778\uc2dd \uc644\ub8cc" : "\uc0c1\ud488 \ub4f1\ub85d \uc900\ube44"}
-                          </Text>
-                          <Text style={styles.summaryCount}>
-                            {drafts.length > 0
-                              ? drafts.length + "\uac1c \uc0c1\ud488\uc744 \ubc1c\uacac\ud588\uc5b4\uc694"
-                              : "\uc0c1\ud488 \ud6c4\ubcf4\ub97c \ucc3e\ub294 \uc911\uc785\ub2c8\ub2e4"}
-                          </Text>
-                          <Text style={styles.summaryText}>
-                            {"\ud544\uc694\ud55c \uc0c1\ud488\ub9cc \ud655\uc778\ud558\uace0 \uc800\uc7a5\ud558\uc138\uc694."}
-                          </Text>
-                        </View>
-                      </View>
-                    ) : null}
-
                     {receiptImage ? (
                       <View style={styles.receiptPreviewCard}>
-                        <Pressable style={styles.receiptPreviewHeader} onPress={() => setReceiptSelectorVisible(true)}>
+                        <Pressable
+                          style={styles.receiptPreviewHeader}
+                          onPress={() => {
+                            if (openReceiptSelector) openReceiptSelector(receiptInteractionMode === "paper" ? "highlight" : "box");
+                            else setReceiptSelectorVisible(true);
+                          }}
+                        >
                           <View style={styles.receiptThumbWrap}>
                             <Image source={{ uri: receiptImage }} style={styles.receiptThumb} />
                           </View>
                           <View style={styles.receiptPreviewCopy}>
                             <Text style={styles.receiptPreviewTitle}>{"\uc601\uc218\uc99d \uc774\ubbf8\uc9c0"}</Text>
                             <Text style={styles.receiptPreviewMeta}>
-                              {receiptSourceType === "coupang" ? "\ucfe0\ud321 \uc8fc\ubb38\ub0b4\uc5ed" : "\ucd2c\uc601/\ucea1\ucc98 \uc774\ubbf8\uc9c0"}
+                              {receiptSourceType === "coupang"
+                                  ? "\ucfe0\ud321 \uc8fc\ubb38\ub0b4\uc5ed"
+                                  : "\ucd2c\uc601/\ucea1\ucc98 \uc774\ubbf8\uc9c0"}
                             </Text>
                           </View>
                           <Text style={styles.receiptPreviewToggle}>{"\ubcf4\uae30 \u203a"}</Text>
@@ -229,10 +231,28 @@ export default function AddItemPage({
                       {drafts.length > 0 ? (
                         <>
                           <View style={styles.discoveredHeader}>
-                            <Text style={styles.discoveredTitle}>{"\ubc1c\uacac\ub41c \uc0c1\ud488"}</Text>
-                            <Text style={styles.discoveredCount}>{"\uc120\ud0dd\ub428 \u2713"}</Text>
+                            <Text style={styles.discoveredTitle}>{"\uc120\ud0dd\ub41c \uc0c1\ud488"}</Text>
                           </View>
 
+                          <View style={styles.bulkBox}>
+                            <View style={styles.bulkCountBox}>
+                              <Text style={styles.bulkCount}>{selectedDraftCount + "\uac1c"}</Text>
+                              <Text style={styles.bulkCountLabel}>{"선택됨"}</Text>
+                            </View>
+                            <Pressable
+                              style={styles.bulkResetButton}
+                              accessibilityLabel={"\uc120\ud0dd \uc0c1\ud488 \ub9ac\uc14b"}
+                              onPress={resetReceiptDrafts}
+                            >
+                              <Image source={resetIcon} resizeMode="contain" style={styles.bulkResetIcon} />
+                              <Text style={styles.bulkResetText}>{"초기화"}</Text>
+                            </Pressable>
+                            <Pressable style={styles.bulkSubmitButton} onPress={addAllDrafts}>
+                              <Image source={storageTabIcon} resizeMode="contain" style={styles.bulkSubmitIcon} />
+                              <Text style={styles.bulkSubmitText}>{"\ubcf4\uad00\ud568\uc5d0 \uc800\uc7a5\ud558\uae30"}</Text>
+                              <Text style={styles.bulkSubmitChevron}>{"›"}</Text>
+                            </Pressable>
+                          </View>
                           <View style={styles.draftList}>
                             {drafts.map((draft) => {
                               const isDraftExcluded = excludedDrafts?.includes(draft);
@@ -249,15 +269,21 @@ export default function AddItemPage({
                                   >
                                     {isDraftExcluded ? null : <Text style={styles.draftCheckText}>{"\u2713"}</Text>}
                                   </Pressable>
-                                  <Image
-                                    source={getFoodImageSource({
-                                      name: draft,
-                                      category: draftCategory,
-                                      imageUri: draftForms[draft]?.imageUri
-                                    })}
-                                    resizeMode="cover"
-                                    style={styles.draftImage}
-                                  />
+                                  <Pressable
+                                    accessibilityLabel={"\uc0c1\ud488 \uc0ac\uc9c4 \ubcc0\uacbd"}
+                                    onLongPress={() => pickDraftImage?.(draft)}
+                                    delayLongPress={300}
+                                  >
+                                    <Image
+                                      source={getFoodImageSource({
+                                        name: draft,
+                                        category: draftCategory,
+                                        imageUri: draftForms[draft]?.imageUri
+                                      })}
+                                      resizeMode="cover"
+                                      style={styles.draftImage}
+                                    />
+                                  </Pressable>
                                   <View style={styles.draftText}>
                                     <Text style={styles.itemName} numberOfLines={2}>{draft}</Text>
                                     <Text style={[styles.storageBadge, storageBadgeStyle(draftStorage)]}>{draftStorage}</Text>
@@ -318,15 +344,6 @@ export default function AddItemPage({
                             <Text style={styles.missingProductText}>{"\uff0b \ub204\ub77d\ub41c \uc0c1\ud488 \uc9c1\uc811 \ucd94\uac00\ud558\uae30"}</Text>
                           </Pressable>
 
-                          <View style={styles.bulkBox}>
-                            <View>
-                              <Text style={styles.bulkLabel}>{"\uc120\ud0dd\ub41c \uc0c1\ud488"}</Text>
-                              <Text style={styles.bulkCount}>{selectedDraftCount + "\uac1c"}</Text>
-                            </View>
-                            <Pressable style={styles.bulkSubmitButton} onPress={addAllDrafts}>
-                              <Text style={styles.bulkSubmitText}>{"\ub0c9\uc7a5\uace0\uc5d0 \uc800\uc7a5\ud558\uae30"}</Text>
-                            </Pressable>
-                          </View>
                         </>
                       ) : (
                         <Text style={styles.receiptEmptyText}>
@@ -338,6 +355,38 @@ export default function AddItemPage({
                 )}
               </View>
             </ScrollView>
+            <Modal
+              visible={Boolean(receiptImageTypeChooserVisible)}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setReceiptImageTypeChooserVisible?.(false)}
+            >
+              <View style={styles.imageTypeModalBackdrop}>
+                <View style={styles.imageTypeModalCard}>
+                  <View style={styles.imageTypeIconHalo}>
+                    <Image source={galleryIcon} resizeMode="contain" style={styles.imageTypeHeroIcon} />
+                    <View style={styles.imageTypeQuestionBadge}>
+                      <Text style={styles.imageTypeQuestionText}>{"?"}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.imageTypeTitle}>{"어떤 이미지인가요?"}</Text>
+                  <Text style={styles.imageTypeSubtitle}>{"이미지 유형을 선택해 주세요."}</Text>
+                  <View style={styles.imageTypeOptions}>
+                    <ImageTypeOption
+                      icon={cameraIcon}
+                      label={"실물 영수증 사진"}
+                      onPress={() => selectReceiptImageForType?.({ sourceType: "receipt", physicalReceipt: true })}
+                    />
+                    <ImageTypeOption
+                      icon={galleryIcon}
+                      label={"모바일/주문내역 캡쳐"}
+                      onPress={() => selectReceiptImageForType?.({ sourceType: "auto" })}
+                    />
+                  </View>
+                </View>
+              </View>
+            </Modal>
+    </>
   );
 }
 
@@ -557,6 +606,18 @@ function AddModeCard({ active, icon, title, onPress }) {
   );
 }
 
+function ImageTypeOption({ icon, label, onPress }) {
+  return (
+    <Pressable style={styles.imageTypeOption} onPress={onPress}>
+      <View style={styles.imageTypeOptionIconWrap}>
+        <Image source={icon} resizeMode="contain" style={styles.imageTypeOptionIcon} />
+      </View>
+      <Text style={styles.imageTypeOptionText}>{label}</Text>
+      <Text style={styles.imageTypeChevron}>{"›"}</Text>
+    </Pressable>
+  );
+}
+
 function ReceiptStep({ number, title, description, children }) {
   return (
     <View style={styles.receiptStep}>
@@ -632,6 +693,27 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 10
+  },
+  manualNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  manualNameImageButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 12,
+    backgroundColor: "#edf8f2",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  manualNameImage: {
+    width: "100%",
+    height: "100%"
+  },
+  manualNameInput: {
+    flex: 1
   },
   manualImageBox: {
     minHeight: 92,
@@ -785,6 +867,112 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 17
   },
+  imageTypeModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24
+  },
+  imageTypeModalCard: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 18,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8
+  },
+  imageTypeIconHalo: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#edf8f2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12
+  },
+  imageTypeHeroIcon: {
+    width: 38,
+    height: 38
+  },
+  imageTypeQuestionBadge: {
+    position: "absolute",
+    right: 8,
+    top: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#1f7a5a",
+    borderWidth: 2,
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  imageTypeQuestionText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  imageTypeTitle: {
+    color: "#18201c",
+    fontSize: 17,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  imageTypeSubtitle: {
+    color: "#8a938d",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 5,
+    marginBottom: 16,
+    textAlign: "center"
+  },
+  imageTypeOptions: {
+    width: "100%",
+    gap: 8
+  },
+  imageTypeOption: {
+    minHeight: 48,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e8ebe6",
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    gap: 10
+  },
+  imageTypeOptionIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: "#edf8f2",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  imageTypeOptionIcon: {
+    width: 18,
+    height: 18
+  },
+  imageTypeOptionText: {
+    flex: 1,
+    color: "#18201c",
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  imageTypeChevron: {
+    color: "#1f7a5a",
+    fontSize: 22,
+    fontWeight: "700",
+    marginTop: -2
+  },
   recognizedPanel: {
     gap: 10,
     borderRadius: 14,
@@ -792,53 +980,6 @@ const styles = StyleSheet.create({
     borderColor: "#e6e4df",
     backgroundColor: "#fff",
     padding: 14
-  },
-  recognitionSummaryCard: {
-    minHeight: 116,
-    borderRadius: 18,
-    backgroundColor: "#eef8f3",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 18
-  },
-  summaryIcon: {
-    width: 58,
-    height: 58
-  },
-  summaryCheckCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#1f7a5a",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  summaryCheckText: {
-    color: "#fff",
-    fontSize: 28,
-    fontWeight: "900"
-  },
-  summaryCopy: {
-    flex: 1,
-    gap: 4
-  },
-  summaryTitle: {
-    color: "#1f7a5a",
-    fontSize: 13,
-    fontWeight: "800"
-  },
-  summaryCount: {
-    color: "#18201c",
-    fontSize: 15,
-    fontWeight: "700"
-  },
-  summaryText: {
-    color: "#68716b",
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: "700"
   },
   receiptPreviewCard: {
     borderRadius: 16,
@@ -956,11 +1097,6 @@ const styles = StyleSheet.create({
   discoveredTitle: {
     color: "#18201c",
     fontSize: 20,
-    fontWeight: "900"
-  },
-  discoveredCount: {
-    color: "#1f7a5a",
-    fontSize: 13,
     fontWeight: "900"
   },
   label: {
@@ -1312,45 +1448,88 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   bulkBox: {
-    minHeight: 104,
-    marginTop: 8,
+    minHeight: 72,
+    marginTop: 4,
+    marginBottom: 4,
     borderRadius: 18,
     backgroundColor: "#fff",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 14,
-    padding: 16,
+    gap: 10,
+    padding: 10,
     shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3
   },
-  bulkLabel: {
-    color: "#68716b",
-    fontSize: 12,
-    fontWeight: "800"
+  bulkCountBox: {
+    width: 64,
+    minHeight: 56,
+    borderRadius: 12,
+    backgroundColor: "#edf8f2",
+    alignItems: "center",
+    justifyContent: "center"
   },
   bulkCount: {
     color: "#1f7a5a",
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: "900",
-    marginTop: 3
+    lineHeight: 26
+  },
+  bulkCountLabel: {
+    color: "#68716b",
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2
+  },
+  bulkResetButton: {
+    width: 58,
+    minHeight: 56,
+    borderRadius: 12,
+    backgroundColor: "#f5faf7",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  bulkResetIcon: {
+    width: 25,
+    height: 25,
+    tintColor: "#1f7a5a"
+  },
+  bulkResetText: {
+    color: "#68716b",
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2
   },
   bulkSubmitButton: {
     flex: 1,
-    minHeight: 60,
-    borderRadius: 14,
+    minHeight: 56,
+    borderRadius: 13,
     backgroundColor: "#1f7a5a",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16
+    gap: 9,
+    paddingHorizontal: 14
+  },
+  bulkSubmitIcon: {
+    width: 22,
+    height: 22,
+    tintColor: "#fff"
   },
   bulkSubmitText: {
     color: "#fff",
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "900"
+  },
+  bulkSubmitChevron: {
+    color: "#fff",
+    fontSize: 24,
+    fontWeight: "900",
+    lineHeight: 26,
+    marginLeft: 2
   },
   itemName: {
     color: "#18201c",

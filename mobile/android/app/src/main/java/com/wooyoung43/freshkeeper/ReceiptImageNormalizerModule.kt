@@ -8,6 +8,8 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.bridge.ReadableMap
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.CvType
@@ -127,6 +129,78 @@ class ReceiptImageNormalizerModule(private val reactContext: ReactApplicationCon
       promise.resolve(result)
     } catch (error: Exception) {
       promise.reject("text_line_detect_failed", error.message, error)
+    }
+  }
+
+  @ReactMethod
+  fun calibrateOcrLineBoxes(imageUri: String, lines: ReadableArray, promise: Promise) {
+    try {
+      if (!OpenCVLoader.initDebug()) {
+        promise.resolve(ocrCalibrationResult(Arguments.createArray(), 0.0, 0.0, 0, "opencv_unavailable"))
+        return
+      }
+
+      val bitmap = loadBitmap(imageUri)
+      if (bitmap == null) {
+        promise.resolve(ocrCalibrationResult(Arguments.createArray(), 0.0, 0.0, 0, "image_unreadable"))
+        return
+      }
+
+      val source = Mat()
+      val gray = Mat()
+      Utils.bitmapToMat(bitmap, source)
+      Imgproc.cvtColor(source, gray, Imgproc.COLOR_RGBA2GRAY)
+
+      val samples = mutableListOf<CalibrationSample>()
+      val originalBoxes = mutableListOf<Pair<String, Rect>>()
+
+      for (index in 0 until lines.size()) {
+        val line = lines.getMap(index) ?: continue
+        val id = line.getString("id") ?: "ocr-$index"
+        val box = line.getMap("box") ?: continue
+        val rect = rectFromReadableMap(box, source.width(), source.height()) ?: continue
+        originalBoxes.add(id to rect)
+
+        val detectedRect = detectTextPixelsNearBox(gray, rect)
+        if (detectedRect != null) {
+          val deltaX = centerX(detectedRect) - centerX(rect)
+          val deltaY = centerY(detectedRect) - centerY(rect)
+          if (kotlin.math.abs(deltaX) <= source.width() * 0.08 && kotlin.math.abs(deltaY) <= source.height() * 0.08) {
+            samples.add(CalibrationSample(deltaX, deltaY))
+          }
+        }
+      }
+
+      val sampleCount = samples.size
+      if (sampleCount < max(4, originalBoxes.size / 5)) {
+        source.release()
+        gray.release()
+        promise.resolve(ocrCalibrationResult(Arguments.createArray(), 0.0, 0.0, sampleCount, "not_enough_samples"))
+        return
+      }
+
+      val offsetX = medianDouble(samples.map { it.deltaX })
+      val offsetY = medianDouble(samples.map { it.deltaY })
+      val calibratedBoxes = Arguments.createArray()
+      originalBoxes.forEach { (id, rect) ->
+        val calibrated = Arguments.createMap()
+        val box = Arguments.createMap()
+        val x = clamp((rect.x + offsetX).roundToInt(), 0, max(0, source.width() - rect.width))
+        val y = clamp((rect.y + offsetY).roundToInt(), 0, max(0, source.height() - rect.height))
+        box.putDouble("x", x.toDouble())
+        box.putDouble("y", y.toDouble())
+        box.putDouble("width", rect.width.toDouble())
+        box.putDouble("height", rect.height.toDouble())
+        calibrated.putString("id", id)
+        calibrated.putMap("box", box)
+        calibratedBoxes.pushMap(calibrated)
+      }
+
+      source.release()
+      gray.release()
+      promise.resolve(ocrCalibrationResult(calibratedBoxes, offsetX, offsetY, sampleCount, "calibrated"))
+    } catch (error: Exception) {
+      promise.reject("ocr_box_calibrate_failed", error.message, error)
     }
   }
 
@@ -293,6 +367,63 @@ class ReceiptImageNormalizerModule(private val reactContext: ReactApplicationCon
       .sortedBy { it.y }
   }
 
+  private fun detectTextPixelsNearBox(gray: Mat, original: Rect): Rect? {
+    val padX = max(12, (original.width * 0.38).roundToInt())
+    val padY = max(8, (original.height * 1.55).roundToInt())
+    val left = clamp(original.x - padX, 0, gray.width() - 1)
+    val top = clamp(original.y - padY, 0, gray.height() - 1)
+    val right = clamp(original.x + original.width + padX, left + 1, gray.width())
+    val bottom = clamp(original.y + original.height + padY, top + 1, gray.height())
+    val roiRect = Rect(left, top, right - left, bottom - top)
+    val roi = Mat(gray, roiRect)
+    val binary = Mat()
+    Imgproc.threshold(roi, binary, 0.0, 255.0, Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU)
+
+    val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(2.0, 2.0))
+    Imgproc.morphologyEx(binary, binary, Imgproc.MORPH_OPEN, kernel)
+
+    val contours = mutableListOf<MatOfPoint>()
+    Imgproc.findContours(binary, contours, Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+    var found: Rect? = null
+    for (contour in contours) {
+      val rect = Imgproc.boundingRect(contour)
+      val area = rect.width * rect.height
+      val isSeparator = rect.width > roiRect.width * 0.82 && rect.height <= max(2, original.height / 5)
+      val isNoise = rect.width < 2 || rect.height < 2 || area < 5 || isSeparator
+      if (!isNoise) {
+        found = if (found == null) rect else union(found!!, rect)
+      }
+      contour.release()
+    }
+
+    roi.release()
+    binary.release()
+    kernel.release()
+
+    val textRect = found ?: return null
+    val minTextWidth = max(4, (original.width * 0.12).roundToInt())
+    val minTextHeight = max(3, (original.height * 0.22).roundToInt())
+    if (textRect.width < minTextWidth || textRect.height < minTextHeight) {
+      return null
+    }
+    return Rect(left + textRect.x, top + textRect.y, textRect.width, textRect.height)
+  }
+
+  private fun rectFromReadableMap(box: ReadableMap, imageWidth: Int, imageHeight: Int): Rect? {
+    val x = readDouble(box, "x")
+    val y = readDouble(box, "y")
+    val width = readDouble(box, "width")
+    val height = readDouble(box, "height")
+    if (!x.isFinite() || !y.isFinite() || !width.isFinite() || !height.isFinite() || width <= 0 || height <= 0) {
+      return null
+    }
+    val left = clamp(x.roundToInt(), 0, max(0, imageWidth - 1))
+    val top = clamp(y.roundToInt(), 0, max(0, imageHeight - 1))
+    val right = clamp((x + width).roundToInt(), left + 1, imageWidth)
+    val bottom = clamp((y + height).roundToInt(), top + 1, imageHeight)
+    return Rect(left, top, right - left, bottom - top)
+  }
+
   private fun orderCorners(points: List<Point>): List<Point> {
     val topLeft = points.minBy { it.x + it.y }
     val bottomRight = points.maxBy { it.x + it.y }
@@ -330,7 +461,41 @@ class ReceiptImageNormalizerModule(private val reactContext: ReactApplicationCon
       putString("reason", reason)
     }
 
+  private fun ocrCalibrationResult(boxes: com.facebook.react.bridge.WritableArray, offsetX: Double, offsetY: Double, sampleCount: Int, reason: String) =
+    Arguments.createMap().apply {
+      putArray("boxes", boxes)
+      putDouble("offsetX", offsetX)
+      putDouble("offsetY", offsetY)
+      putInt("sampleCount", sampleCount)
+      putString("reason", reason)
+    }
+
+  private data class CalibrationSample(val deltaX: Double, val deltaY: Double)
+
   private fun distance(a: Point, b: Point): Double = hypot(a.x - b.x, a.y - b.y)
+
+  private fun centerX(rect: Rect): Double = rect.x + rect.width / 2.0
+
+  private fun centerY(rect: Rect): Double = rect.y + rect.height / 2.0
+
+  private fun union(a: Rect, b: Rect): Rect {
+    val left = min(a.x, b.x)
+    val top = min(a.y, b.y)
+    val right = max(a.x + a.width, b.x + b.width)
+    val bottom = max(a.y + a.height, b.y + b.height)
+    return Rect(left, top, right - left, bottom - top)
+  }
+
+  private fun readDouble(map: ReadableMap, key: String): Double {
+    return if (map.hasKey(key) && !map.isNull(key)) map.getDouble(key) else Double.NaN
+  }
+
+  private fun medianDouble(values: List<Double>): Double {
+    if (values.isEmpty()) return 0.0
+    val sorted = values.sorted()
+    val middle = sorted.size / 2
+    return if (sorted.size % 2 == 1) sorted[middle] else (sorted[middle - 1] + sorted[middle]) / 2.0
+  }
 
   private fun clamp(value: Int, minValue: Int, maxValue: Int): Int {
     return max(minValue, min(maxValue, value))

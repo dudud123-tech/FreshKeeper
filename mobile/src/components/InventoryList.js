@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { statusFor, timelineFor } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
+import AdSlot from "./AdSlot";
 
 const searchIcon = require("../../assets/actions/inventory-search.png");
 const filterIcon = require("../../assets/actions/inventory-filter.png");
@@ -135,8 +136,9 @@ export default function InventoryList({
               const isEditing = editingId === item.id && editForm;
               const dateMeta = sortMode === "등록일순" ? `등록 ${createdDateLabel(item)}` : `${expiryType} ${expiryValue || "-"}`;
               return (
+                <Fragment key={renderKey}>
+                {index === 8 ? <AdSlot variant="inventory" style={styles.inventoryAdSlot} /> : null}
                 <View
-                  key={renderKey}
                   style={[styles.itemCard, isEditing && styles.itemCardEditing]}
                   onLayout={(event) => onItemLayout(itemKey, event, isEditing)}
                 >
@@ -238,6 +240,7 @@ export default function InventoryList({
                     </View>
                   )}
                 </View>
+                </Fragment>
               );
             })
           )}
@@ -515,6 +518,9 @@ const styles = StyleSheet.create({
   itemList: {
     gap: 8,
     marginTop: 10
+  },
+  inventoryAdSlot: {
+    marginVertical: 2
   },
   empty: {
     color: "#68716b",

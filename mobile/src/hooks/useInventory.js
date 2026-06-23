@@ -1,9 +1,13 @@
 import { useMemo, useState } from "react";
-import * as ImagePicker from "expo-image-picker";
 import { Alert } from "react-native";
 import { categories } from "../categories";
 import { daysUntil, itemCreatedTime, todayIso } from "../utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
+import {
+  chooseItemImage,
+  pickItemImageFromLibrary,
+  takeItemImagePhoto
+} from "../utils/itemImagePicker";
 
 export function useInventory({
   defaultExpiryType,
@@ -17,6 +21,7 @@ export function useInventory({
   const [mode, setMode] = useState("receipt");
   const [name, setName] = useState("");
   const [manualImageUri, setManualImageUri] = useState("");
+  const [manualPurchaseUrl, setManualPurchaseUrl] = useState("");
   const [category, setCategory] = useState(categories[0]);
   const [storage, setStorage] = useState(storageTypes[0]);
   const [expiry, setExpiry] = useState(() => suggestedExpiryDate("", categories[0], storageTypes[0]));
@@ -93,10 +98,19 @@ export function useInventory({
   }
 
   function submitManual() {
-    const added = addItem({ name, category, storage, expiryType: defaultExpiryType, expiry, imageUri: manualImageUri });
+    const added = addItem({
+      name,
+      category,
+      storage,
+      expiryType: defaultExpiryType,
+      expiry,
+      imageUri: manualImageUri,
+      purchaseUrl: manualPurchaseUrl.trim()
+    });
     if (!added) return;
     setName("");
     setManualImageUri("");
+    setManualPurchaseUrl("");
     setCategory(categories[0]);
     setStorage(storageTypes[0]);
     setExpiry(suggestedExpiryDate("", categories[0], storageTypes[0]));
@@ -104,39 +118,15 @@ export function useInventory({
   }
 
   async function pickManualImage() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("권한 필요", "상품 이미지를 선택하려면 사진 접근 권한이 필요합니다.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85
-    });
-
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-    setManualImageUri(result.assets[0].uri);
+    await pickItemImageFromLibrary({ onSelected: setManualImageUri });
   }
 
   async function takeManualImagePhoto() {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("권한 필요", "상품 사진을 촬영하려면 카메라 권한이 필요합니다.");
-      return;
-    }
+    await takeItemImagePhoto({ onSelected: setManualImageUri });
+  }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85
-    });
-
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-    setManualImageUri(result.assets[0].uri);
+  function changeManualImage() {
+    chooseItemImage({ onSelected: setManualImageUri });
   }
 
   function removeItem(id) {
@@ -190,6 +180,8 @@ export function useInventory({
     setName,
     manualImageUri,
     setManualImageUri,
+    manualPurchaseUrl,
+    setManualPurchaseUrl,
     category,
     setCategory,
     storage,
@@ -213,6 +205,7 @@ export function useInventory({
     submitManual,
     pickManualImage,
     takeManualImagePhoto,
+    changeManualImage,
     removeItem,
     startEdit,
     cancelEdit,

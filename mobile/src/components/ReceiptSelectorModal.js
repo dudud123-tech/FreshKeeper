@@ -1,12 +1,44 @@
-import { useEffect, useState } from "react";
-import { Image, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Image, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { frameForBox } from "../utils/receiptOverlay";
 
-export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coordinateSize, lines, cropBoxes = [], selectedIds, onToggleLine, onToggleCropBox, onClose }) {
+const DEBUG_LOG = true;
+const HIGHLIGHT_TOOL_ICONS = {
+  move: require("../../assets/actions/highlight-zoom.png"),
+  paint: require("../../assets/actions/highlight-pen.png"),
+  erase: require("../../assets/actions/highlight-eraser.png"),
+  done: require("../../assets/actions/highlight-done.png")
+};
+
+function debugHighlightPaint(payload) {
+  if (!DEBUG_LOG) return;
+  console.log("[freshkeeper:highlight-paint]", payload);
+}
+
+export default function ReceiptSelectorModal({
+  visible,
+  imageUri,
+  imageSize,
+  coordinateSize,
+  lines,
+  cropBoxes = [],
+  mode = "box",
+  selectedIds,
+  highlightMarks = [],
+  setHighlightMarks,
+  onToggleLine,
+  onToggleCropBox,
+  onConfirmHighlight,
+  onClose
+}) {
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [isReceiptZoomed, setIsReceiptZoomed] = useState(false);
+  const [highlightToolMode, setHighlightToolMode] = useState("paint");
+  const lastHighlightMarkRef = useRef(null);
+  const isPaintMode = mode === "highlight";
+  const canMoveReceipt = !isPaintMode || highlightToolMode === "move";
   const scaleValue = useSharedValue(1);
   const translateXValue = useSharedValue(0);
   const translateYValue = useSharedValue(0);
@@ -20,7 +52,9 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
   const fallbackWidth = layout.width || 360;
   const imageRatio = imageSize.width && imageSize.height ? imageSize.height / imageSize.width : 1.6;
   const canvasWidth = fallbackWidth;
-  const canvasHeight = Math.max(520, Math.round(canvasWidth * imageRatio));
+  const naturalCanvasHeight = Math.max(520, Math.round(canvasWidth * imageRatio));
+  const canvasHeight = isPaintMode ? Math.min(naturalCanvasHeight, 760) : naturalCanvasHeight;
+  const highlighterSize = estimateHighlighterSize(lines, coordinateSize, canvasWidth, canvasHeight);
 
   const applyTransform = (nextScale, nextTranslateX, nextTranslateY) => {
     "worklet";
@@ -38,7 +72,28 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
     translateYValue.value = Math.min(Math.max(nextTranslateY, -maxTranslateY), maxTranslateY);
   };
 
+  const paintAtPoint = (x, y) => {
+    "worklet";
+    const scale = Math.max(scaleValue.value, 1);
+    const centerX = canvasWidthValue.value / 2;
+    const centerY = canvasHeightValue.value / 2;
+    const canvasX = (x - centerX - translateXValue.value) / scale + centerX;
+    const canvasY = (y - centerY - translateYValue.value) / scale + centerY;
+    runOnJS(addHighlightMark)(canvasX, canvasY);
+  };
+
+  const eraseAtPoint = (x, y) => {
+    "worklet";
+    const scale = Math.max(scaleValue.value, 1);
+    const centerX = canvasWidthValue.value / 2;
+    const centerY = canvasHeightValue.value / 2;
+    const canvasX = (x - centerX - translateXValue.value) / scale + centerX;
+    const canvasY = (y - centerY - translateYValue.value) / scale + centerY;
+    runOnJS(removeHighlightMarkAt)(canvasX, canvasY);
+  };
+
   const pinchGesture = Gesture.Pinch()
+    .enabled(canMoveReceipt)
     .onBegin((event) => {
       startScaleValue.value = scaleValue.value;
       startTranslateXValue.value = translateXValue.value;
@@ -59,7 +114,7 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
     });
 
   const panGesture = Gesture.Pan()
-    .enabled(isReceiptZoomed)
+    .enabled(canMoveReceipt && isReceiptZoomed)
     .maxPointers(1)
     .minDistance(4)
     .onBegin(() => {
@@ -80,7 +135,37 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
       runOnJS(setIsReceiptZoomed)(scaleValue.value > 1.02);
     });
 
-  const receiptGesture = Gesture.Race(pinchGesture, panGesture);
+  const paintGesture = Gesture.Pan()
+    .enabled(isPaintMode && highlightToolMode === "paint")
+    .minDistance(1)
+    .onBegin((event) => {
+      paintAtPoint(event.x, event.y);
+    })
+    .onUpdate((event) => {
+      paintAtPoint(event.x, event.y);
+    });
+
+  const eraseGesture = Gesture.Pan()
+    .enabled(isPaintMode && highlightToolMode === "erase")
+    .minDistance(1)
+    .onBegin((event) => {
+      eraseAtPoint(event.x, event.y);
+    })
+    .onUpdate((event) => {
+      eraseAtPoint(event.x, event.y);
+    });
+
+  const eraseTapGesture = Gesture.Tap()
+    .enabled(isPaintMode && highlightToolMode === "erase")
+    .onEnd((event) => {
+      eraseAtPoint(event.x, event.y);
+    });
+
+  const receiptGesture = isPaintMode && highlightToolMode === "paint"
+    ? paintGesture
+    : isPaintMode && highlightToolMode === "erase"
+      ? Gesture.Race(eraseTapGesture, eraseGesture)
+      : Gesture.Race(pinchGesture, panGesture);
   const animatedCanvasStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateXValue.value },
@@ -100,7 +185,98 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
     translateXValue.value = 0;
     translateYValue.value = 0;
     setIsReceiptZoomed(false);
-  }, [visible, imageUri, scaleValue, translateXValue, translateYValue]);
+    setHighlightToolMode("paint");
+    lastHighlightMarkRef.current = null;
+  }, [visible, imageUri, mode, scaleValue, translateXValue, translateYValue]);
+
+  function addHighlightMark(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const markHeight = highlighterSize.height;
+    const markWidth = highlighterSize.width;
+    const markX = Math.max(0, Math.min(x - markWidth / 2, canvasWidth - markWidth));
+    const markY = Math.max(0, Math.min(y - markHeight / 2, canvasHeight - markHeight));
+    const previous = lastHighlightMarkRef.current;
+    const minDistance = Math.max(6, markHeight * 0.8);
+    if (previous && Math.hypot(previous.x - markX, previous.y - markY) < minDistance) return;
+    lastHighlightMarkRef.current = { x: markX, y: markY };
+    setHighlightMarks?.((current) => [
+      ...current,
+      {
+        id: `${Date.now()}-${current.length}`,
+        x: markX,
+        y: markY,
+        width: markWidth,
+        height: markHeight
+      }
+    ]);
+  }
+
+  function removeHighlightMarkAt(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    lastHighlightMarkRef.current = null;
+    setHighlightMarks?.((current) => {
+      if (!current.length) return current;
+      const padding = Math.max(8, highlighterSize.height * 0.8);
+      const hits = current
+        .map((mark, index) => {
+          const centerX = mark.x + mark.width / 2;
+          const centerY = mark.y + mark.height / 2;
+          const inside =
+            x >= mark.x - padding &&
+            x <= mark.x + mark.width + padding &&
+            y >= mark.y - padding &&
+            y <= mark.y + mark.height + padding;
+          return inside ? { index, distance: Math.hypot(centerX - x, centerY - y) } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.distance - b.distance);
+      if (!hits.length) return current;
+      const removeIndex = hits[0].index;
+      return current.filter((_, index) => index !== removeIndex);
+    });
+  }
+
+  function confirmHighlight() {
+    if (!isPaintMode) {
+      onClose?.();
+      return;
+    }
+    if (!highlightMarks.length) {
+      onClose?.();
+      return;
+    }
+    const padding = 16;
+    const minX = Math.max(0, Math.min(...highlightMarks.map((mark) => mark.x)) - padding);
+    const minY = Math.max(0, Math.min(...highlightMarks.map((mark) => mark.y)) - padding);
+    const maxX = Math.min(canvasWidth, Math.max(...highlightMarks.map((mark) => mark.x + mark.width)) + padding);
+    const maxY = Math.min(canvasHeight, Math.max(...highlightMarks.map((mark) => mark.y + mark.height)) + padding);
+    debugHighlightPaint({
+      markCount: highlightMarks.length,
+      highlighterSize,
+      selection: {
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+        canvasWidth,
+        canvasHeight
+      }
+    });
+    onConfirmHighlight?.({
+      x: minX,
+      y: minY,
+      width: Math.max(1, maxX - minX),
+      height: Math.max(1, maxY - minY),
+      canvasWidth,
+      canvasHeight,
+      marks: highlightMarks.map((mark) => ({
+        x: mark.x,
+        y: mark.y,
+        width: mark.width,
+        height: mark.height
+      }))
+    });
+  }
 
   function modalFrameForLine(line) {
     return frameForBox(line.box, coordinateSize, { width: canvasWidth, height: canvasHeight }, 32, 12, 0.5);
@@ -114,8 +290,37 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <GestureHandlerRootView style={styles.gestureRoot}>
         <SafeAreaView style={styles.selectorScreen}>
-          <Text style={styles.selectorHint}>줄을 터치해 상품 후보를 고르세요. 두 손가락으로 확대/축소하고, 확대 상태에서는 이미지를 끌어서 이동할 수 있습니다.</Text>
-          <ScrollView style={styles.selectorScroll} contentContainerStyle={styles.selectorScrollContent} showsVerticalScrollIndicator={false} scrollEnabled={!isReceiptZoomed}>
+          {isPaintMode ? (
+            <View style={styles.highlightToolbar}>
+              <Pressable
+                style={[styles.highlightToolButton, highlightToolMode === "move" ? styles.highlightToolButtonActive : null]}
+                onPress={() => setHighlightToolMode("move")}
+              >
+                <Image source={HIGHLIGHT_TOOL_ICONS.move} style={styles.highlightToolImage} />
+              </Pressable>
+              <Pressable
+                style={[styles.highlightToolButton, highlightToolMode === "paint" ? styles.highlightToolButtonActive : null]}
+                onPress={() => setHighlightToolMode("paint")}
+              >
+                <Image source={HIGHLIGHT_TOOL_ICONS.paint} style={styles.highlightToolImage} />
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.highlightToolButton,
+                  highlightToolMode === "erase" ? styles.highlightToolButtonActive : null,
+                  !highlightMarks.length ? styles.highlightToolButtonDisabled : null
+                ]}
+                disabled={!highlightMarks.length}
+                onPress={() => setHighlightToolMode("erase")}
+              >
+                <Image source={HIGHLIGHT_TOOL_ICONS.erase} style={styles.highlightToolImage} />
+              </Pressable>
+              <Pressable style={styles.highlightToolButton} onPress={confirmHighlight}>
+                <Image source={HIGHLIGHT_TOOL_ICONS.done} style={styles.highlightToolImage} />
+              </Pressable>
+            </View>
+          ) : null}
+          <ScrollView style={styles.selectorScroll} contentContainerStyle={styles.selectorScrollContent} showsVerticalScrollIndicator={false} scrollEnabled={!isReceiptZoomed && !isPaintMode}>
             <GestureDetector gesture={receiptGesture}>
               <View
                 collapsable={false}
@@ -133,27 +338,41 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
                   ]}
                 >
                   {imageUri ? <Image source={{ uri: imageUri }} style={styles.selectorImage} /> : null}
-                  {lines.map((line) => {
-                    const frame = modalFrameForLine(line);
-                    if (!frame) return null;
-                    const selected = selectedIds.includes(line.id);
-                    return (
-                      <Pressable key={line.id} hitSlop={8} style={[styles.ocrBox, ocrBoxStyleForLine(line, selected), frame]} onPress={() => onToggleLine(line)} />
-                    );
-                  })}
-                  {cropBoxes.map((cropBox) => {
-                    const frame = modalFrameForCropBox(cropBox);
-                    if (!frame) return null;
-                    const selected = cropBox.lineId ? selectedIds.includes(cropBox.lineId) : false;
-                    return (
-                      <Pressable
-                        key={cropBox.id}
-                        hitSlop={8}
-                        style={[styles.cropDebugBox, selected ? styles.cropDebugBoxSelected : styles.cropDebugBoxUnselected, frame]}
-                        onPress={() => onToggleCropBox?.(cropBox)}
-                      />
-                    );
-                  })}
+                  {isPaintMode ? (
+                    <>
+                      {highlightMarks.map((mark) => (
+                        <View
+                          key={mark.id}
+                          pointerEvents="none"
+                          style={[styles.highlightMark, { left: mark.x, top: mark.y, width: mark.width, height: mark.height, borderRadius: mark.height / 2 }]}
+                        />
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {lines.map((line) => {
+                        const frame = modalFrameForLine(line);
+                        if (!frame) return null;
+                        const selected = selectedIds.includes(line.id);
+                        return (
+                          <Pressable key={line.id} hitSlop={8} style={[styles.ocrBox, ocrBoxStyleForLine(line, selected), frame]} onPress={() => onToggleLine(line)} />
+                        );
+                      })}
+                      {cropBoxes.map((cropBox) => {
+                        const frame = modalFrameForCropBox(cropBox);
+                        if (!frame) return null;
+                        const selected = cropBox.lineId ? selectedIds.includes(cropBox.lineId) : false;
+                        return (
+                          <Pressable
+                            key={cropBox.id}
+                            hitSlop={8}
+                            style={[styles.cropDebugBox, selected ? styles.cropDebugBoxSelected : styles.cropDebugBoxUnselected, frame]}
+                            onPress={() => onToggleCropBox?.(cropBox)}
+                          />
+                        );
+                      })}
+                    </>
+                  )}
                 </Animated.View>
               </View>
             </GestureDetector>
@@ -162,6 +381,19 @@ export default function ReceiptSelectorModal({ visible, imageUri, imageSize, coo
       </GestureHandlerRootView>
     </Modal>
   );
+}
+
+function estimateHighlighterSize(lines, coordinateSize, canvasWidth, canvasHeight) {
+  const heights = (Array.isArray(lines) ? lines : [])
+    .map((line) => frameForBox(line.box, coordinateSize, { width: canvasWidth, height: canvasHeight }, 0, 0, 0)?.height || 0)
+    .filter((height) => height >= 7 && height <= 34)
+    .sort((a, b) => a - b);
+  const medianHeight = heights.length ? heights[Math.floor(heights.length / 2)] : 14;
+  const height = Math.max(8, Math.min(18, Math.round(medianHeight * 0.9)));
+  return {
+    height,
+    width: Math.max(16, Math.min(36, Math.round(height * 2.0)))
+  };
 }
 
 function ocrBoxStyleForLine(line, selected) {
@@ -178,13 +410,37 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fbfcfb"
   },
-  selectorHint: {
-    color: "#68716b",
-    fontSize: 13,
-    lineHeight: 19,
+  highlightToolbar: {
+    minHeight: 84,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
     paddingHorizontal: 16,
-    paddingTop: 34,
-    paddingBottom: 10
+    paddingTop: 48,
+    paddingBottom: 5
+  },
+  highlightToolButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#dfe5df",
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  highlightToolButtonActive: {
+    borderColor: "#1f7a5a",
+    backgroundColor: "#ecf8f2"
+  },
+  highlightToolButtonDisabled: {
+    opacity: 0.45
+  },
+  highlightToolImage: {
+    width: 32,
+    height: 32,
+    resizeMode: "contain"
   },
   selectorScroll: {
     flex: 1
@@ -205,6 +461,10 @@ const styles = StyleSheet.create({
   selectorImage: {
     width: "100%",
     height: "100%"
+  },
+  highlightMark: {
+    position: "absolute",
+    backgroundColor: "rgba(255, 231, 64, 0.1)"
   },
   ocrBox: {
     position: "absolute",

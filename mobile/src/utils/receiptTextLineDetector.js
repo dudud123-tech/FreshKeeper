@@ -26,10 +26,10 @@ export function alignOcrLinesWithDetectedBoxes(lines, detectedBoxes, boxSource =
   const sortedLines = [...linesWithBoxes].sort((a, b) => centerY(a.box) - centerY(b.box));
   const sortedBoxes = [...lineBoxes].sort((a, b) => centerY(a) - centerY(b));
   const lineToBox = boxSource === "dbnet-text-line"
-    ? matchLinesToBoxesByRelativeY(sortedLines, sortedBoxes)
+    ? matchLinesToBoxesByAnchoredY(sortedLines, sortedBoxes)
     : matchLinesToBoxesByRank(sortedLines, sortedBoxes);
 
-  if (boxSource === "dbnet-text-line" && lineToBox.size < Math.max(4, linesWithBoxes.length * 0.38)) {
+  if (boxSource === "dbnet-text-line" && !isReliableDbnetMatch(sortedLines, sortedBoxes, lineToBox)) {
     return lines;
   }
 
@@ -57,26 +57,24 @@ function matchLinesToBoxesByRank(sortedLines, sortedBoxes) {
   return lineToBox;
 }
 
-function matchLinesToBoxesByRelativeY(sortedLines, sortedBoxes) {
+function matchLinesToBoxesByAnchoredY(sortedLines, sortedBoxes) {
   const lineToBox = new Map();
   if (!sortedLines.length || !sortedBoxes.length) return lineToBox;
 
   const lineCenters = sortedLines.map((line) => centerY(line.box));
   const boxCenters = sortedBoxes.map(centerY);
-  const lineMin = Math.min(...lineCenters);
-  const lineMax = Math.max(...lineCenters);
-  const boxMin = Math.min(...boxCenters);
-  const boxMax = Math.max(...boxCenters);
-  const lineSpread = Math.max(1, lineMax - lineMin);
-  const boxSpread = Math.max(1, boxMax - boxMin);
+  const lineRange = trimmedRange(lineCenters);
+  const boxRange = trimmedRange(boxCenters);
+  const lineSpread = Math.max(1, lineRange.max - lineRange.min);
+  const boxSpread = Math.max(1, boxRange.max - boxRange.min);
   const medianHeight = median(sortedBoxes.map((box) => Number(box.height || 0)).filter((height) => height > 0)) || 8;
   const averageGap = sortedBoxes.length > 1 ? boxSpread / (sortedBoxes.length - 1) : medianHeight;
-  const maxDistance = Math.max(medianHeight * 1.6, averageGap * 0.55);
+  const maxDistance = Math.max(medianHeight * 1.35, averageGap * 0.42);
   const used = new Set();
 
   sortedLines.forEach((line) => {
-    const relativeY = (centerY(line.box) - lineMin) / lineSpread;
-    const expectedY = boxMin + relativeY * boxSpread;
+    const relativeY = (centerY(line.box) - lineRange.min) / lineSpread;
+    const expectedY = boxRange.min + relativeY * boxSpread;
     let bestIndex = -1;
     let bestDistance = Infinity;
 
@@ -100,7 +98,11 @@ function matchLinesToBoxesByRelativeY(sortedLines, sortedBoxes) {
 
 export function groupDetectedBoxesIntoRows(boxes) {
   if (!Array.isArray(boxes) || boxes.length === 0) return [];
-  const validBoxes = boxes
+  const normalizedBoxes = boxes.filter((box) => box?.width > 0 && box?.height > 0);
+  const medianHeight = median(normalizedBoxes.map((box) => Number(box.height || 0)).filter((height) => height > 0)) || 8;
+  const medianWidth = median(normalizedBoxes.map((box) => Number(box.width || 0)).filter((width) => width > 0)) || 20;
+  const validBoxes = normalizedBoxes
+    .filter((box) => !isLikelySeparatorBox(box, medianWidth, medianHeight))
     .filter((box) => box?.width > 0 && box?.height > 0)
     .sort((a, b) => centerY(a) - centerY(b) || Number(a.x || 0) - Number(b.x || 0));
   const rows = [];
@@ -131,6 +133,44 @@ export function groupDetectedBoxesIntoRows(boxes) {
   return rows
     .filter((box) => box.width >= 12 && box.height >= 5)
     .sort((a, b) => centerY(a) - centerY(b) || Number(a.x || 0) - Number(b.x || 0));
+}
+
+function isReliableDbnetMatch(sortedLines, sortedBoxes, lineToBox) {
+  const minMatches = Math.max(4, sortedLines.length * 0.32);
+  if (lineToBox.size < minMatches) return false;
+
+  const matchedDistances = [];
+  const matchedHeights = [];
+  sortedLines.forEach((line) => {
+    const box = lineToBox.get(line.id);
+    if (!box) return;
+    matchedDistances.push(Math.abs(centerY(line.box) - centerY(box)));
+    matchedHeights.push(Number(box.height || 0));
+  });
+
+  const medianDistance = median(matchedDistances);
+  const medianHeight = median(matchedHeights) || 8;
+  return medianDistance <= Math.max(medianHeight * 2.6, 18);
+}
+
+function isLikelySeparatorBox(box, medianWidth, medianHeight) {
+  const width = Number(box.width || 0);
+  const height = Number(box.height || 0);
+  if (height <= 0 || width <= 0) return true;
+  const veryThin = height <= Math.max(3, medianHeight * 0.45);
+  const unusuallyWide = width >= Math.max(medianWidth * 2.8, 120);
+  return veryThin && unusuallyWide;
+}
+
+function trimmedRange(values) {
+  if (!values.length) return { min: 0, max: 1 };
+  const sorted = [...values].sort((a, b) => a - b);
+  const lowIndex = Math.floor((sorted.length - 1) * 0.08);
+  const highIndex = Math.ceil((sorted.length - 1) * 0.92);
+  return {
+    min: sorted[lowIndex],
+    max: sorted[highIndex]
+  };
 }
 
 function normalizeDetectedBox(box) {

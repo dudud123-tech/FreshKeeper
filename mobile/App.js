@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ImagePicker from "expo-image-picker";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -20,7 +19,6 @@ import InventoryList from "./src/components/InventoryList";
 import LaunchScreen from "./src/components/LaunchScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
 import SettingsPanel from "./src/components/SettingsPanel";
-import { useAiUsage } from "./src/hooks/useAiUsage";
 import { useExpiryNotifications } from "./src/hooks/useExpiryNotifications";
 import { useFamilySync } from "./src/hooks/useFamilySync";
 import { useInventory } from "./src/hooks/useInventory";
@@ -28,6 +26,7 @@ import { useReceiptFlow } from "./src/hooks/useReceiptFlow";
 import {
   todayIso,
 } from "./src/utils/date";
+import { chooseItemImage } from "./src/utils/itemImagePicker";
 
 const STORAGE_KEY = "fresh-keeper-mobile-items-v1";
 const SETTINGS_KEY = "fresh-keeper-mobile-settings-v1";
@@ -62,6 +61,8 @@ export default function App() {
     setName,
     manualImageUri,
     setManualImageUri,
+    manualPurchaseUrl,
+    setManualPurchaseUrl,
     category,
     setCategory,
     storage,
@@ -85,6 +86,7 @@ export default function App() {
     submitManual,
     pickManualImage,
     takeManualImagePhoto,
+    changeManualImage,
     removeItem,
     startEdit,
     cancelEdit,
@@ -100,26 +102,14 @@ export default function App() {
       setTimeout(() => scrollItemToCenter(itemId), 420);
     }
   });
-  const {
-    aiUsageSettings,
-    setAiUsageSettings,
-    aiUsageStatus,
-    normalizedAiUsage,
-    aiFreeRemaining,
-    aiTotalRemaining,
-    aiAdRemainingToday,
-    aiFreeMonthlyLimit,
-    aiAdCreditLimit,
-    aiDailyAdLimit,
-    normalizeAiUsageSettings,
-    simulateRewardedAd
-  } = useAiUsage();
-  const [settingsTab, setSettingsTab] = useState("plan");
+  const [settingsTab, setSettingsTab] = useState("alert");
   const [settingsReady, setSettingsReady] = useState(false);
   const [, setTotalHighlighted] = useState(false);
   const [latestRegisteredId, setLatestRegisteredId] = useState("");
   const {
     receiptSourceType,
+    receiptInteractionMode,
+    receiptSelectorMode,
     receiptImage,
     receiptImageSize,
     activeOcrCoordinateSize,
@@ -128,8 +118,14 @@ export default function App() {
     ocrLines,
     commerceCropBoxes,
     selectedOcrLineIds,
+    highlightMarks,
+    setHighlightMarks,
     receiptSelectorVisible,
     setReceiptSelectorVisible,
+    receiptImageTypeChooserVisible,
+    setReceiptImageTypeChooserVisible,
+    openReceiptSelector,
+    applyHighlightedReceiptSelection,
     drafts,
     excludedDrafts,
     draftForms,
@@ -142,15 +138,18 @@ export default function App() {
     createReceiptCandidates,
     takeReceiptPhoto,
     pickReceiptImage,
+    selectReceiptImageForType,
     frameForOcrLine,
     frameForCommerceCropBox,
     toggleOcrLine,
     toggleCommerceCropBox,
     applyBulkDraftForm,
     addAllDrafts,
+    resetReceiptDrafts,
     removeDraft,
     toggleDraftExcluded,
     updateDraftForm,
+    pickDraftImage,
     addDraft,
     uploadCurrentOcrFeedback
   } = useReceiptFlow({
@@ -243,7 +242,6 @@ export default function App() {
         if (typeof settings.reminderDays === "number") setReminderDays(settings.reminderDays);
         if (settings.notifications) setNotificationSettings(normalizeNotificationSettings(settings.notifications));
         if (settings.feedback) setFeedbackSettings(normalizeFeedbackSettings(settings.feedback));
-        if (settings.aiUsage) setAiUsageSettings(normalizeAiUsageSettings(settings.aiUsage));
         if (settings.family) {
           const nextFamily = normalizeFamilySettings(settings.family);
           setFamilySettings(nextFamily);
@@ -262,9 +260,9 @@ export default function App() {
     if (!settingsReady) return;
     AsyncStorage.setItem(
       SETTINGS_KEY,
-      JSON.stringify({ reminderDays, notifications: notificationSettings, feedback: feedbackSettings, family: familySettings, aiUsage: normalizeAiUsageSettings(aiUsageSettings) })
+      JSON.stringify({ reminderDays, notifications: notificationSettings, feedback: feedbackSettings, family: familySettings })
     ).catch(() => undefined);
-  }, [reminderDays, notificationSettings, feedbackSettings, familySettings, aiUsageSettings, settingsReady]);
+  }, [reminderDays, notificationSettings, feedbackSettings, familySettings, settingsReady]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -312,48 +310,12 @@ export default function App() {
     );
   }
 
-  async function pickItemImageFromLibrary(itemId) {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("권한 필요", "상품 이미지를 바꾸려면 사진 접근 권한이 필요합니다.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85
-    });
-
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-    applyItemImage(itemId, result.assets[0].uri);
-  }
-
-  async function takeItemImagePhoto(itemId) {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("권한 필요", "상품 사진을 촬영하려면 카메라 권한이 필요합니다.");
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85
-    });
-
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-    applyItemImage(itemId, result.assets[0].uri);
-  }
-
   async function changeItemImage(itemId) {
-    Alert.alert("상품 사진 변경", "사진을 촬영하거나 갤러리에서 선택할 수 있습니다.", [
-      { text: "촬영하기", onPress: () => takeItemImagePhoto(itemId) },
-      { text: "갤러리", onPress: () => pickItemImageFromLibrary(itemId) },
-      { text: "취소", style: "cancel" }
-    ]);
+    chooseItemImage({
+      onSelected: (imageUri) => applyItemImage(itemId, imageUri),
+      libraryPermissionMessage: "상품 이미지를 바꾸려면 사진 접근 권한이 필요합니다.",
+      cameraPermissionMessage: "상품 사진을 촬영하려면 카메라 권한이 필요합니다."
+    });
   }
 
   function scrollInventory(scrollToLatest) {
@@ -408,9 +370,13 @@ export default function App() {
             coordinateSize={activeOcrCoordinateSize}
             lines={ocrLines}
             cropBoxes={commerceCropBoxes}
+            mode={receiptSelectorMode}
             selectedIds={selectedOcrLineIds}
+            highlightMarks={highlightMarks}
+            setHighlightMarks={setHighlightMarks}
             onToggleLine={toggleOcrLine}
             onToggleCropBox={toggleCommerceCropBox}
+            onConfirmHighlight={applyHighlightedReceiptSelection}
             onClose={() => setReceiptSelectorVisible(false)}
           />
           {launchVisible ? <LaunchScreen onDone={() => setLaunchVisible(false)} /> : null}
@@ -435,6 +401,8 @@ export default function App() {
               setName={setName}
               manualImageUri={manualImageUri}
               setManualImageUri={setManualImageUri}
+              manualPurchaseUrl={manualPurchaseUrl}
+              setManualPurchaseUrl={setManualPurchaseUrl}
               category={category}
               setCategory={setCategory}
               categories={categories}
@@ -448,15 +416,21 @@ export default function App() {
               submitManual={submitManual}
               pickManualImage={pickManualImage}
               takeManualImagePhoto={takeManualImagePhoto}
+              changeManualImage={changeManualImage}
               takeReceiptPhoto={takeReceiptPhoto}
               pickReceiptImage={pickReceiptImage}
+              selectReceiptImageForType={selectReceiptImageForType}
+              receiptImageTypeChooserVisible={receiptImageTypeChooserVisible}
+              setReceiptImageTypeChooserVisible={setReceiptImageTypeChooserVisible}
               receiptSourceType={receiptSourceType}
+              receiptInteractionMode={receiptInteractionMode}
               drafts={drafts}
               excludedDrafts={excludedDrafts}
               receiptImage={receiptImage}
               ocrLines={ocrLines}
               commerceCropBoxes={commerceCropBoxes}
               setReceiptSelectorVisible={setReceiptSelectorVisible}
+              openReceiptSelector={openReceiptSelector}
               setReceiptImageLayout={setReceiptImageLayout}
               setReceiptImageSize={setReceiptImageSize}
               frameForOcrLine={frameForOcrLine}
@@ -468,11 +442,13 @@ export default function App() {
               bulkDraftForm={bulkDraftForm}
               applyBulkDraftForm={applyBulkDraftForm}
               addAllDrafts={addAllDrafts}
+              resetReceiptDrafts={resetReceiptDrafts}
               draftForms={draftForms}
               DEFAULT_EXPIRY_TYPE={DEFAULT_EXPIRY_TYPE}
               removeDraft={removeDraft}
               toggleDraftExcluded={toggleDraftExcluded}
               updateDraftForm={updateDraftForm}
+              pickDraftImage={pickDraftImage}
               addDraft={addDraft}
             />
 
@@ -521,8 +497,6 @@ export default function App() {
               <SettingsPanel
                 settingsTab={settingsTab}
                 setSettingsTab={setSettingsTab}
-                aiTotalRemaining={aiTotalRemaining}
-                aiFreeMonthlyLimit={aiFreeMonthlyLimit}
                 reminderDays={reminderDays}
                 setReminderDays={setReminderDays}
                 notificationSettings={notificationSettings}
@@ -538,13 +512,6 @@ export default function App() {
                 pullFamilyItems={pullFamilyItems}
                 disconnectFamilyShare={disconnectFamilyShare}
                 familyStatus={familyStatus}
-                aiAdCreditLimit={aiAdCreditLimit}
-                aiDailyAdLimit={aiDailyAdLimit}
-                aiFreeRemaining={aiFreeRemaining}
-                normalizedAiUsage={normalizedAiUsage}
-                aiAdRemainingToday={aiAdRemainingToday}
-                simulateRewardedAd={simulateRewardedAd}
-                aiUsageStatus={aiUsageStatus}
                 feedbackSettings={feedbackSettings}
                 setFeedbackSettings={setFeedbackSettings}
                 feedbackStatus={feedbackStatus}
@@ -554,3 +521,4 @@ export default function App() {
     </AppShell>
   );
 }
+

@@ -1,10 +1,9 @@
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 const settingsTabs = [
-  { id: "plan", label: "이용권", icon: require("../../assets/settings/setting-plan.png") },
   { id: "alert", label: "알림", icon: require("../../assets/settings/setting-alert.png") },
   { id: "share", label: "가족", icon: require("../../assets/settings/setting-share.png") },
-  { id: "ai", label: "스마트", icon: require("../../assets/settings/setting-ai.png") }
+  { id: "feedback", label: "개선", icon: require("../../assets/settings/setting-ai.png") }
 ];
 const reminderOptions = [0, 1, 2, 3, 4, 5, 6, 7];
 const notificationHourOptions = Array.from({ length: 24 }, (_, index) => index);
@@ -13,8 +12,6 @@ const notificationMinuteOptions = Array.from({ length: 60 }, (_, index) => index
 export default function SettingsPanel({
   settingsTab,
   setSettingsTab,
-  aiTotalRemaining,
-  aiFreeMonthlyLimit,
   reminderDays,
   setReminderDays,
   notificationSettings,
@@ -30,13 +27,6 @@ export default function SettingsPanel({
   pullFamilyItems,
   disconnectFamilyShare,
   familyStatus,
-  aiAdCreditLimit,
-  aiDailyAdLimit,
-  aiFreeRemaining,
-  normalizedAiUsage,
-  aiAdRemainingToday,
-  simulateRewardedAd,
-  aiUsageStatus,
   feedbackSettings,
   setFeedbackSettings,
   feedbackStatus,
@@ -68,23 +58,6 @@ export default function SettingsPanel({
           </Pressable>
         ))}
       </ScrollView>
-
-      <View style={[styles.planBox, settingsTab !== "plan" && styles.hiddenSettingSection]}>
-        <View style={styles.planHeaderRow}>
-          <View style={styles.dailyAlertCopy}>
-            <Text style={styles.planEyebrow}>현재 플랜</Text>
-            <Text style={styles.planTitle}>무료</Text>
-          </View>
-          <Text style={styles.aiCreditPill}>AI {aiTotalRemaining}회</Text>
-        </View>
-        <Text style={styles.settingDescription}>개인 보관함, 알림, OCR/AI 정리를 사용할 수 있습니다.</Text>
-        <View style={styles.planRow}>
-          <Text style={styles.planChip}>무료 AI 월 {aiFreeMonthlyLimit}회</Text>
-          <Text style={styles.planChip}>광고 충전 가능</Text>
-          <Text style={styles.planChip}>Plus · 광고 없음 · AI 월 50회</Text>
-          <Text style={styles.planChip}>Family · 가족 보관함 공유</Text>
-        </View>
-      </View>
 
       <View style={[settingsTab !== "alert" && styles.hiddenSettingSection]}>
         <Text style={styles.settingGroupTitle}>알림</Text>
@@ -178,35 +151,8 @@ export default function SettingsPanel({
         </View>
       </View>
 
-      <View style={[settingsTab !== "ai" && styles.hiddenSettingSection]}>
-        <Text style={styles.settingGroupTitle}>AI / 학습</Text>
-        <View style={styles.aiCreditBox}>
-          <View style={styles.aiCreditHeader}>
-            <View style={styles.dailyAlertCopy}>
-              <Text style={styles.dailyAlertTitle}>AI 정리 사용권</Text>
-              <Text style={styles.settingDescription}>무료 월 {aiFreeMonthlyLimit}회, 광고 1회 시 AI 1회를 충전합니다.</Text>
-            </View>
-            <Text style={styles.aiCreditPill}>{aiTotalRemaining}회 남음</Text>
-          </View>
-          <View style={styles.aiCreditGrid}>
-            <View style={styles.aiCreditStat}>
-              <Text style={styles.aiCreditLabel}>무료</Text>
-              <Text style={styles.aiCreditValue}>{aiFreeRemaining}/{aiFreeMonthlyLimit}</Text>
-            </View>
-            <View style={styles.aiCreditStat}>
-              <Text style={styles.aiCreditLabel}>광고 충전</Text>
-              <Text style={styles.aiCreditValue}>{normalizedAiUsage.adCredits}/{aiAdCreditLimit}</Text>
-            </View>
-            <View style={styles.aiCreditStat}>
-              <Text style={styles.aiCreditLabel}>오늘 광고</Text>
-              <Text style={styles.aiCreditValue}>{aiAdRemainingToday}/{aiDailyAdLimit}</Text>
-            </View>
-          </View>
-          <Pressable style={styles.aiCreditButton} onPress={simulateRewardedAd}>
-            <Text style={styles.aiCreditButtonText}>광고 보고 AI 1회 충전</Text>
-          </Pressable>
-          {aiUsageStatus ? <Text style={styles.notificationStatus}>{aiUsageStatus}</Text> : null}
-        </View>
+      <View style={[settingsTab !== "feedback" && styles.hiddenSettingSection]}>
+        <Text style={styles.settingGroupTitle}>학습 개선</Text>
         <View style={[styles.dailyAlertBox, feedbackSettings.enabled && styles.dailyAlertBoxActive]}>
           <Pressable
             style={styles.dailyAlertHeader}
@@ -214,7 +160,9 @@ export default function SettingsPanel({
           >
             <View style={styles.dailyAlertCopy}>
               <Text style={styles.dailyAlertTitle}>학습 개선 데이터 전송</Text>
-              <Text style={styles.settingDescription}>선택/제외한 OCR 줄만 익명으로 보내 상품 추출을 개선합니다.</Text>
+              <Text style={styles.settingDescription}>
+                선택하거나 제외한 OCR 결과를 익명으로 보내 상품 추출을 개선합니다.
+              </Text>
             </View>
             <View style={[styles.toggleSwitch, feedbackSettings.enabled && styles.toggleSwitchActive]}>
               <View style={[styles.toggleKnob, feedbackSettings.enabled && styles.toggleKnobActive]} />

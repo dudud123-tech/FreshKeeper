@@ -8,9 +8,15 @@
     "deploy": "wrangler deploy",
     "db:create": "wrangler d1 create freshkeeper-ocr-feedback",
     "db:migrate:local": "wrangler d1 migrations apply freshkeeper-ocr-feedback --local",
-    "db:migrate:remote": "wrangler d1 migrations apply freshkeeper-ocr-feedback --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply freshkeeper-ocr-feedback --remote",
+    "db:seed:classifications": "node tools/build-product-classification-seed.js",
+    "db:seed:classifications:local": "npm run db:seed:classifications && wrangler d1 execute freshkeeper-ocr-feedback --local --file .generated/product-classifications-seed.sql",
+    "db:seed:classifications:remote": "npm run db:seed:classifications && wrangler d1 execute freshkeeper-ocr-feedback --remote --file .generated/product-classifications-seed.sql"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "jose": "^6.2.3"
   }
 }

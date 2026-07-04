@@ -1,29 +1,71 @@
-package com.wooyoung43.freshkeeper
+package com.palchonajae.freshkeeper
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 
+import com.facebook.react.ReactApplication
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.facebook.react.uimanager.DisplayMetricsHolder
 
 import expo.modules.ReactActivityDelegateWrapper
 
 class MainActivity : ReactActivity() {
+  private var appliedFontScale = 1f
+
   override fun onCreate(savedInstanceState: Bundle?) {
     // Set the theme to AppTheme BEFORE onCreate to support
     // coloring the background, status bar, and navigation bar.
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
+    appliedFontScale = resources.configuration.fontScale
   }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
     SharedImageModule.notifySharedImageIntent(this, intent)
+  }
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    val fontScaleChanged = appliedFontScale != newConfig.fontScale
+    super.onConfigurationChanged(newConfig)
+    DisplayMetricsHolder.initDisplayMetrics(this)
+
+    if (fontScaleChanged) {
+      reloadReactForFontScale(newConfig.fontScale)
+      return
+    }
+
+    window.decorView.requestLayout()
+  }
+
+  override fun onResume() {
+    super.onResume()
+
+    // Some Samsung devices defer configuration delivery while the app is in the
+    // background. Recheck the resource value when returning from Settings.
+    if (appliedFontScale != resources.configuration.fontScale) {
+      reloadReactForFontScale(resources.configuration.fontScale)
+    }
+  }
+
+  private fun reloadReactForFontScale(fontScale: Float) {
+    appliedFontScale = fontScale
+    DisplayMetricsHolder.initDisplayMetrics(this)
+
+    val host = (application as? ReactApplication)?.reactHost
+    if (host != null) {
+      host.reload("Android font scale changed")
+    } else {
+      // Old-architecture fallback. The current app normally uses ReactHost.
+      recreate()
+    }
   }
 
   /**

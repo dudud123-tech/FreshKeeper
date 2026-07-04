@@ -19,6 +19,7 @@ import InventoryList from "./src/components/InventoryList";
 import LaunchScreen from "./src/components/LaunchScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
 import SettingsPanel from "./src/components/SettingsPanel";
+import { useAuth } from "./src/hooks/useAuth";
 import { useExpiryNotifications } from "./src/hooks/useExpiryNotifications";
 import { useFamilySync } from "./src/hooks/useFamilySync";
 import { useInventory } from "./src/hooks/useInventory";
@@ -39,17 +40,22 @@ const PAGE_HOME = 0;
 const PAGE_ADD = 1;
 const PAGE_INVENTORY = 2;
 const SharedImage = NativeModules.SharedImage;
+let sessionPage = PAGE_HOME;
+let launchScreenShown = false;
 
 export default function App() {
-  const { width } = useWindowDimensions();
-  const viewportHeight = useWindowDimensions().height;
-  const pagerRef = useRef(null);
+  const {
+    fontScale,
+    height: viewportHeight,
+    scale: displayScale,
+    width: viewportWidth
+  } = useWindowDimensions();
+  const displayLayoutKey = `${viewportWidth}-${viewportHeight}-${displayScale}-${fontScale}`;
   const inventoryScrollRef = useRef(null);
   const inventoryViewportHeightRef = useRef(0);
   const itemLayoutMapRef = useRef({});
   const calendarCallbackRef = useRef(null);
-  const [page, setPage] = useState(0);
-  const [pagerEnabled, setPagerEnabled] = useState(true);
+  const [page, setPage] = useState(sessionPage);
   const [calendar, setCalendar] = useState({ visible: false, value: todayIso() });
   const [reminderDays, setReminderDays] = useState(3);
   const {
@@ -104,6 +110,20 @@ export default function App() {
   });
   const [settingsTab, setSettingsTab] = useState("alert");
   const [settingsReady, setSettingsReady] = useState(false);
+  const {
+    user: authUser,
+    authReady,
+    authBusy,
+    authProviderBusy,
+    authStatus,
+    googleLoginConfigured,
+    kakaoLoginConfigured,
+    naverLoginConfigured,
+    loginWithGoogle,
+    loginWithKakao,
+    loginWithNaver,
+    logout
+  } = useAuth();
   const [, setTotalHighlighted] = useState(false);
   const [latestRegisteredId, setLatestRegisteredId] = useState("");
   const {
@@ -168,7 +188,6 @@ export default function App() {
   const {
     notificationSettings,
     setNotificationSettings,
-    notificationStatus,
     normalizeNotificationSettings
   } = useExpiryNotifications({ items, reminderDays, settingsReady });
   const {
@@ -191,7 +210,7 @@ export default function App() {
     reminderDays,
     defaultExpiryType: DEFAULT_EXPIRY_TYPE
   });
-  const [launchVisible, setLaunchVisible] = useState(true);
+  const [launchVisible, setLaunchVisible] = useState(!launchScreenShown);
   const sharedImageInFlightRef = useRef(false);
   const createReceiptCandidatesRef = useRef(createReceiptCandidates);
 
@@ -223,9 +242,9 @@ export default function App() {
     if (!SharedImage?.consumeInitialImage || sharedImageInFlightRef.current) return;
     try {
       sharedImageInFlightRef.current = true;
-      const imageUri = await SharedImage.consumeInitialImage();
-      if (imageUri) {
-        await createReceiptCandidatesRef.current(imageUri, { sourceType: "auto" });
+      const sharedImage = await SharedImage.consumeInitialImage();
+      if (sharedImage) {
+        await createReceiptCandidatesRef.current(sharedImage, { sourceType: "auto" });
       }
     } catch {
       Alert.alert("이미지 공유 실패", "공유된 이미지를 불러오지 못했습니다. 갤러리에서 다시 선택해 주세요.");
@@ -279,11 +298,16 @@ export default function App() {
     });
 
     return () => subscription.remove();
-  }, [page, width]);
+  }, [page]);
 
   function goToPage(nextPage) {
+    sessionPage = nextPage;
     setPage(nextPage);
-    pagerRef.current?.scrollTo({ x: width * nextPage, animated: true });
+  }
+
+  function finishLaunch() {
+    launchScreenShown = true;
+    setLaunchVisible(false);
   }
 
   function goToInventory(nextStatusFilter = "all", options = {}) {
@@ -349,12 +373,10 @@ export default function App() {
 
   return (
     <AppShell
-      width={width}
+      key={displayLayoutKey}
       page={page}
-      pagerRef={pagerRef}
-      pagerEnabled={pagerEnabled}
       onPageChange={goToPage}
-      onMomentumPageChange={setPage}
+      hideBottomNav={launchVisible}
       overlays={
         <>
           <CalendarModal
@@ -379,12 +401,11 @@ export default function App() {
             onConfirmHighlight={applyHighlightedReceiptSelection}
             onClose={() => setReceiptSelectorVisible(false)}
           />
-          {launchVisible ? <LaunchScreen onDone={() => setLaunchVisible(false)} /> : null}
+          {launchVisible ? <LaunchScreen onDone={finishLaunch} /> : null}
         </>
       }
     >
             <HomePage
-              width={width}
               items={items}
               summary={summary}
               reminderDays={reminderDays}
@@ -394,7 +415,6 @@ export default function App() {
             />
 
             <AddItemPage
-              width={width}
               mode={mode}
               setMode={setMode}
               name={name}
@@ -453,7 +473,6 @@ export default function App() {
             />
 
             <InventoryList
-              width={width}
               scrollRef={inventoryScrollRef}
               onLayout={(event) => {
                 inventoryViewportHeightRef.current = event.nativeEvent.layout.height;
@@ -479,7 +498,6 @@ export default function App() {
               startEdit={startEdit}
               removeItem={removeItem}
               onChangeItemImage={changeItemImage}
-              setPagerEnabled={setPagerEnabled}
               onItemLayout={(itemId, event, isEditing) => {
                 itemLayoutMapRef.current[itemId] = {
                   y: event.nativeEvent.layout.y,
@@ -493,7 +511,7 @@ export default function App() {
               expiryType={DEFAULT_EXPIRY_TYPE}
             />
 
-            <ScrollView style={{ width }} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">
+            <ScrollView style={appShellStyles.screen} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">
               <SettingsPanel
                 settingsTab={settingsTab}
                 setSettingsTab={setSettingsTab}
@@ -501,7 +519,6 @@ export default function App() {
                 setReminderDays={setReminderDays}
                 notificationSettings={notificationSettings}
                 setNotificationSettings={setNotificationSettings}
-                notificationStatus={notificationStatus}
                 shareFamilyDigest={shareFamilyDigest}
                 familyCodeInput={familyCodeInput}
                 setFamilyCodeInput={setFamilyCodeInput}
@@ -515,7 +532,18 @@ export default function App() {
                 feedbackSettings={feedbackSettings}
                 setFeedbackSettings={setFeedbackSettings}
                 feedbackStatus={feedbackStatus}
-                appVersion={APP_BUILD_LABEL}
+                authUser={authUser}
+                authReady={authReady}
+                authBusy={authBusy}
+                authProviderBusy={authProviderBusy}
+                authStatus={authStatus}
+                googleLoginConfigured={googleLoginConfigured}
+                kakaoLoginConfigured={kakaoLoginConfigured}
+                naverLoginConfigured={naverLoginConfigured}
+                loginWithGoogle={loginWithGoogle}
+                loginWithKakao={loginWithKakao}
+                loginWithNaver={loginWithNaver}
+                logout={logout}
               />
             </ScrollView>
     </AppShell>

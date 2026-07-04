@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { typography } from "../theme/typography";
 import { buildCalendarWeeks, parseIsoDate, startOfMonth, todayIso, toIsoDate } from "../utils/date";
 
 export default function CalendarModal({ visible, value, onClose, onSelect }) {
@@ -134,9 +135,8 @@ const styles = StyleSheet.create({
     marginBottom: 16
   },
   calendarTitle: {
+    ...typography.sectionTitle,
     color: "#18201c",
-    fontSize: 18,
-    fontWeight: "900"
   },
   calendarTitleButton: {
     alignItems: "center",
@@ -145,9 +145,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8
   },
   calendarTitleHint: {
+    ...typography.badge,
     color: "#68716b",
-    fontSize: 11,
-    fontWeight: "800",
     marginTop: 2
   },
   calendarNav: {
@@ -167,9 +166,9 @@ const styles = StyleSheet.create({
     flexDirection: "row"
   },
   weekText: {
+    ...typography.label,
     flex: 1,
     color: "#68716b",
-    fontWeight: "900",
     textAlign: "center",
     marginBottom: 8
   },
@@ -200,10 +199,9 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   yearPickerText: {
+    ...typography.screenTitle,
     minWidth: 112,
     color: "#18201c",
-    fontSize: 20,
-    fontWeight: "900",
     textAlign: "center"
   },
   monthGrid: {
@@ -226,8 +224,8 @@ const styles = StyleSheet.create({
     borderColor: "#1f7a5a"
   },
   monthCellText: {
+    ...typography.label,
     color: "#18201c",
-    fontWeight: "900"
   },
   monthCellTextActive: {
     color: "#fff"
@@ -249,8 +247,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#1f7a5a"
   },
   dayText: {
+    ...typography.label,
     color: "#18201c",
-    fontWeight: "900"
   },
   daySelectedText: {
     color: "#fff"
@@ -270,8 +268,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16
   },
   secondaryActionText: {
+    ...typography.label,
     color: "#18201c",
-    fontWeight: "900"
   },
   saveAction: {
     minHeight: 42,
@@ -282,7 +280,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18
   },
   saveActionText: {
+    ...typography.label,
     color: "#fff",
-    fontWeight: "900"
   }
 });

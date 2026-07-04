@@ -1,8 +1,10 @@
-package com.wooyoung43.freshkeeper
+package com.palchonajae.freshkeeper
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.ReactApplication
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.bridge.Promise
@@ -51,20 +53,33 @@ class SharedImageModule(private val reactContext: ReactApplicationContext) :
         return
       }
 
-      val copiedUri = copySharedImage(activity, uri)
+      val copiedFile = copySharedImage(activity, uri)
+      val imageOptions = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+      }
+      BitmapFactory.decodeFile(copiedFile.absolutePath, imageOptions)
+      val imageAsset = Arguments.createMap().apply {
+        putString("uri", Uri.fromFile(copiedFile).toString())
+        putString("fileName", copiedFile.name)
+        putString("mimeType", activity.contentResolver.getType(uri) ?: "image/jpeg")
+        if (imageOptions.outWidth > 0 && imageOptions.outHeight > 0) {
+          putInt("width", imageOptions.outWidth)
+          putInt("height", imageOptions.outHeight)
+        }
+      }
       pendingShareIntent = null
       activity.intent = Intent(activity.intent).apply {
         action = Intent.ACTION_MAIN
         type = null
         removeExtra(Intent.EXTRA_STREAM)
       }
-      promise.resolve(copiedUri)
+      promise.resolve(imageAsset)
     } catch (error: Exception) {
       promise.reject("shared_image_failed", error.message, error)
     }
   }
 
-  private fun copySharedImage(activity: Activity, uri: Uri): String {
+  private fun copySharedImage(activity: Activity, uri: Uri): File {
     val directory = File(activity.cacheDir, "shared-receipts")
     if (!directory.exists()) directory.mkdirs()
     val extension = extensionForUri(uri)
@@ -75,7 +90,7 @@ class SharedImageModule(private val reactContext: ReactApplicationContext) :
       target.outputStream().use { output -> input.copyTo(output) }
     }
 
-    return Uri.fromFile(target).toString()
+    return target
   }
 
   private fun extensionForUri(uri: Uri): String {

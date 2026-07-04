@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { typography } from "../theme/typography";
 import { formatDateLabel } from "../utils/date";
 
 export function SummaryTile({ label, value, urgent, expired, active, highlighted, onPress }) {
@@ -102,14 +103,13 @@ const styles = StyleSheet.create({
     borderColor: "#1f7a5a"
   },
   summaryLabel: {
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 12,
-    fontWeight: "800"
   },
   summaryValue: {
     color: "#18201c",
     fontSize: 23,
-    fontWeight: "900",
+    fontWeight: "800",
     marginTop: 5
   },
   summaryUrgentText: {
@@ -130,8 +130,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#1f7a5a"
   },
   tabText: {
+    ...typography.label,
     color: "#68716b",
-    fontWeight: "900"
   },
   tabTextActive: {
     color: "#fff"
@@ -152,9 +152,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#edf7f2"
   },
   pageNavText: {
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 13,
-    fontWeight: "900"
   },
   pageNavTextActive: {
     color: "#14583f"
@@ -168,9 +167,8 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   label: {
+    ...typography.label,
     color: "#68716b",
-    fontSize: 13,
-    fontWeight: "800"
   },
   dateButton: {
     minHeight: 50,
@@ -187,16 +185,15 @@ const styles = StyleSheet.create({
     paddingVertical: 7
   },
   dateText: {
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   dateTextCompact: {
-    fontSize: 14
+    ...typography.bodyStrong
   },
   dateSubText: {
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 12,
     marginTop: 2
   },
   choices: {
@@ -205,7 +202,7 @@ const styles = StyleSheet.create({
     gap: 7
   },
   choice: {
-    height: 34,
+    minHeight: 34,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#e2ddd3",
@@ -214,7 +211,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10
   },
   choiceCompact: {
-    height: 34,
+    minHeight: 34,
     paddingHorizontal: 9
   },
   choiceActive: {
@@ -222,28 +219,28 @@ const styles = StyleSheet.create({
     borderColor: "#1f7a5a"
   },
   choiceText: {
+    ...typography.label,
     color: "#18201c",
-    fontWeight: "800"
   },
   choiceTextCompact: {
-    fontSize: 13
+    ...typography.captionStrong
   },
   choiceTextActive: {
     color: "#fff"
   },
   primaryButton: {
-    height: 44,
+    minHeight: 44,
     borderRadius: 8,
     backgroundColor: "#1f7a5a",
     alignItems: "center",
     justifyContent: "center"
   },
   primaryButtonText: {
+    ...typography.label,
     color: "#fff",
-    fontWeight: "900"
   },
   secondaryButton: {
-    height: 44,
+    minHeight: 44,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#e2ddd3",
@@ -252,7 +249,7 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   secondaryButtonText: {
+    ...typography.label,
     color: "#18201c",
-    fontWeight: "900"
   }
 });

@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { typography } from "../theme/typography";
 import { statusFor, timelineFor } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
 import AdSlot from "./AdSlot";
@@ -9,7 +10,6 @@ const filterIcon = require("../../assets/actions/inventory-filter.png");
 const editIcon = require("../../assets/actions/inventory-edit.png");
 
 export default function InventoryList({
-  width,
   scrollRef,
   onLayout,
   sortedItems,
@@ -33,7 +33,6 @@ export default function InventoryList({
   startEdit,
   removeItem,
   onChangeItemImage,
-  setPagerEnabled,
   onItemLayout,
   reminderDays,
   expiryType
@@ -63,7 +62,7 @@ export default function InventoryList({
   return (
     <ScrollView
       ref={scrollRef}
-      style={{ width }}
+      style={styles.screen}
       contentContainerStyle={styles.page}
       keyboardShouldPersistTaps="handled"
       onLayout={onLayout}
@@ -311,6 +310,10 @@ function createdDateLabel(item) {
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    alignSelf: "stretch"
+  },
   page: {
     paddingHorizontal: 16,
     paddingBottom: 140
@@ -341,10 +344,9 @@ const styles = StyleSheet.create({
     opacity: 0.72
   },
   searchInput: {
+    ...typography.bodyStrong,
     flex: 1,
     color: "#18201c",
-    fontSize: 14,
-    fontWeight: "700",
     paddingVertical: 0
   },
   toolButton: {
@@ -376,9 +378,8 @@ const styles = StyleSheet.create({
     gap: 8
   },
   controlLabel: {
+    ...typography.label,
     color: "#18201c",
-    fontSize: 13,
-    fontWeight: "900"
   },
   compactChoiceRow: {
     flexDirection: "row",
@@ -399,17 +400,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#1f7a5a"
   },
   compactChoiceText: {
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 12,
-    fontWeight: "900"
   },
   compactChoiceTextActive: {
     color: "#fff"
   },
   controlHint: {
+    ...typography.badge,
     color: "#8a938d",
-    fontSize: 11,
-    fontWeight: "700"
   },
   categoryWrap: {
     flexDirection: "row",
@@ -431,9 +430,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#1f7a5a"
   },
   categoryChipText: {
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 12,
-    fontWeight: "900"
   },
   categoryChipTextActive: {
     color: "#fff"
@@ -447,9 +445,8 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   label: {
+    ...typography.label,
     color: "#68716b",
-    fontSize: 13,
-    fontWeight: "900"
   },
   choices: {
     flexDirection: "row",
@@ -476,11 +473,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#1f7a5a"
   },
   choiceText: {
+    ...typography.label,
     color: "#18201c",
-    fontWeight: "900"
   },
   choiceTextCompact: {
-    fontSize: 12
+    ...typography.captionStrong
   },
   choiceTextActive: {
     color: "#fff"
@@ -498,10 +495,9 @@ const styles = StyleSheet.create({
     padding: 10
   },
   focusNoticeText: {
+    ...typography.captionStrong,
     flex: 1,
     color: "#14583f",
-    fontSize: 13,
-    fontWeight: "900"
   },
   focusNoticeButton: {
     minHeight: 34,
@@ -511,9 +507,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12
   },
   focusNoticeButtonText: {
+    ...typography.captionStrong,
     color: "#fff",
-    fontSize: 12,
-    fontWeight: "900"
   },
   itemList: {
     gap: 8,
@@ -523,6 +518,7 @@ const styles = StyleSheet.create({
     marginVertical: 2
   },
   empty: {
+    ...typography.body,
     color: "#68716b",
     textAlign: "center",
     paddingVertical: 24
@@ -564,19 +560,17 @@ const styles = StyleSheet.create({
     paddingVertical: 5
   },
   editBannerText: {
+    ...typography.captionStrong,
     color: "#d95f3d",
-    fontSize: 12,
-    fontWeight: "900"
   },
   input: {
+    ...typography.cardTitle,
     minHeight: 46,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#d9cfc0",
     backgroundColor: "#fff",
     color: "#18201c",
-    fontSize: 16,
-    fontWeight: "900",
     paddingHorizontal: 12
   },
   dateButton: {
@@ -590,13 +584,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   dateText: {
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 16,
-    fontWeight: "900"
   },
   dateSubText: {
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 12,
     marginTop: 2
   },
   cardActions: {
@@ -614,8 +607,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   secondaryActionText: {
+    ...typography.label,
     color: "#18201c",
-    fontWeight: "900"
   },
   editSaveAction: {
     minHeight: 42,
@@ -626,8 +619,8 @@ const styles = StyleSheet.create({
     paddingVertical: 9
   },
   saveActionText: {
+    ...typography.label,
     color: "#fff",
-    fontWeight: "900"
   },
   deleteAction: {
     minHeight: 38,
@@ -637,8 +630,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   deleteText: {
+    ...typography.label,
     color: "#9f3929",
-    fontWeight: "900"
   },
   purchaseAction: {
     alignSelf: "flex-start",
@@ -653,9 +646,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7
   },
   purchaseActionText: {
+    ...typography.captionStrong,
     color: "#14583f",
-    fontSize: 12,
-    fontWeight: "900"
   },
   itemHeader: {
     flexDirection: "row",
@@ -670,25 +662,22 @@ const styles = StyleSheet.create({
     gap: 7
   },
   itemName: {
+    ...typography.cardTitle,
     flex: 1,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   storagePill: {
+    ...typography.badge,
     color: "#1f7a5a",
     backgroundColor: "#e8f4ee",
     borderRadius: 7,
     overflow: "hidden",
     paddingHorizontal: 7,
     paddingVertical: 3,
-    fontSize: 10,
-    fontWeight: "900"
   },
   badge: {
+    ...typography.captionStrong,
     textAlign: "center",
-    fontSize: 13,
-    fontWeight: "900"
   },
   normal: {
     color: "#3b9f44"
@@ -700,16 +689,13 @@ const styles = StyleSheet.create({
     color: "#e54135"
   },
   meta: {
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 12,
-    lineHeight: 19,
     marginTop: 4
   },
   expiryMeta: {
+    ...typography.captionStrong,
     color: "#14583f",
-    fontSize: 13,
-    fontWeight: "900",
-    lineHeight: 19,
     marginTop: 2
   },
   timelineWrap: {

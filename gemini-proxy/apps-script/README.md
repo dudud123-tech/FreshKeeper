@@ -29,7 +29,7 @@ GEMINI_MODEL=gemini-2.5-flash
 ## 4. Cloudflare Worker 연결
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\cloudflare\worker"
+cd "C:\Workspace\FreshKeeper\cloudflare\worker"
 npx.cmd wrangler secret put GEMINI_PROXY_URL
 npx.cmd wrangler secret put GEMINI_PROXY_TOKEN
 npx.cmd wrangler deploy

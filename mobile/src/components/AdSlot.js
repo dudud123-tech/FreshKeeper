@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { typography } from "../theme/typography";
 
 const adCopy = {
   home: {
@@ -44,25 +45,22 @@ const styles = StyleSheet.create({
     gap: 8
   },
   badge: {
+    ...typography.badge,
     color: "#1f7a5a",
     backgroundColor: "#e8f4ee",
     borderRadius: 999,
     overflow: "hidden",
     paddingHorizontal: 8,
     paddingVertical: 3,
-    fontSize: 10,
-    fontWeight: "900"
   },
   title: {
+    ...typography.bodyStrong,
     flex: 1,
     color: "#18201c",
-    fontSize: 13,
-    fontWeight: "900"
   },
   body: {
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 12,
-    lineHeight: 18,
     marginTop: 7
   }
 });

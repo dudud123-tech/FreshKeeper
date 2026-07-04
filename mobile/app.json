@@ -18,7 +18,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.wooyoung43.freshkeeper",
+      "package": "com.palchonajae.freshkeeper",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -41,6 +41,17 @@
         {
           "photosPermission": "영수증과 상품 사진을 불러오기 위해 사진 접근 권한이 필요합니다.",
           "cameraPermission": "상품 사진과 영수증을 촬영하기 위해 카메라 권한이 필요합니다."
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraMavenRepos": [
+              "https://devrepo.kakao.com/nexus/content/groups/public/"
+            ]
+          }
         }
       ]
     ],

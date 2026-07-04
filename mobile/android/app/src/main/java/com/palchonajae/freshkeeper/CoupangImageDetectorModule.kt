@@ -1,4 +1,4 @@
-package com.wooyoung43.freshkeeper
+package com.palchonajae.freshkeeper
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -59,6 +59,12 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
       }
 
       val normalizedLines = readLines(lines)
+      val isKurlyCapture = normalizedLines.any { line ->
+        val key = normalizeText(line.text)
+        key.contains("샛별배송") ||
+          key.contains("전체상품다시담기") ||
+          key.contains("후기작성")
+      }
       val mat = Mat()
       Utils.bitmapToMat(bitmap, mat)
 
@@ -67,10 +73,12 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
       val selectedLineIds = Arguments.createArray()
       val detectedDraftNames = Arguments.createArray()
       val usedRects = mutableListOf<Rect>()
+      val usedDraftNames = mutableSetOf<String>()
       val thumbnailRects = detectThumbnailRects(
         mat = mat,
         bitmapWidth = bitmap.width,
-        bitmapHeight = bitmap.height
+        bitmapHeight = bitmap.height,
+        compactThumbnails = isKurlyCapture
       )
 
       for ((index, cropRect) in thumbnailRects.withIndex()) {
@@ -87,6 +95,7 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
         if (usedRects.any { intersectionRatio(it, cropRect) > 0.45 }) continue
 
         usedRects.add(cropRect)
+        usedDraftNames.add(normalizeText(draftName))
         val croppedUri = saveCrop(bitmap, cropRect)
         if (croppedUri.isNotBlank()) imageMap.putString(draftName, croppedUri)
         selectedLineIds.pushString(line.id)
@@ -99,6 +108,41 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
         cropBox.putString("imageUri", croppedUri)
         cropBox.putMap("box", rectToCoordinateBox(cropRect, bitmap.width, bitmap.height, coordinateWidth, coordinateHeight))
         cropBoxes.pushMap(cropBox)
+      }
+
+      if (isKurlyCapture) {
+        var fallbackIndex = thumbnailRects.size
+        for (line in normalizedLines.sortedBy { it.y }) {
+          val draftName = matchDraftName(draftNames, line.text) ?: continue
+          val draftKey = normalizeText(draftName)
+          if (draftKey.isBlank() || usedDraftNames.contains(draftKey)) continue
+
+          val cropRect = inferKurlyThumbnailRect(
+            line = line,
+            bitmapWidth = bitmap.width,
+            bitmapHeight = bitmap.height,
+            coordinateWidth = coordinateWidth,
+            coordinateHeight = coordinateHeight
+          )
+          if (cropRect == null || usedRects.any { intersectionRatio(it, cropRect) > 0.45 }) continue
+          if (!looksLikePhoto(mat, cropRect)) continue
+
+          usedRects.add(cropRect)
+          usedDraftNames.add(draftKey)
+          val croppedUri = saveCrop(bitmap, cropRect)
+          if (croppedUri.isNotBlank()) imageMap.putString(draftName, croppedUri)
+          selectedLineIds.pushString(line.id)
+          detectedDraftNames.pushString(draftName)
+
+          val cropBox = Arguments.createMap()
+          cropBox.putString("id", "opencv-kurly-crop-$fallbackIndex-$draftName")
+          cropBox.putString("draftName", draftName)
+          cropBox.putString("lineId", line.id)
+          cropBox.putString("imageUri", croppedUri)
+          cropBox.putMap("box", rectToCoordinateBox(cropRect, bitmap.width, bitmap.height, coordinateWidth, coordinateHeight))
+          cropBoxes.pushMap(cropBox)
+          fallbackIndex += 1
+        }
       }
 
       mat.release()
@@ -143,9 +187,11 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
   private fun detectThumbnailRects(
     mat: Mat,
     bitmapWidth: Int,
-    bitmapHeight: Int
+    bitmapHeight: Int,
+    compactThumbnails: Boolean
   ): List<Rect> {
-    val expectedSide = clamp((bitmapWidth * 0.19).roundToInt(), 90, 280)
+    val expectedRatio = if (compactThumbnails) 0.145 else 0.19
+    val expectedSide = clamp((bitmapWidth * expectedRatio).roundToInt(), 90, 280)
     val searchRect = Rect(0, 0, clamp((bitmapWidth * 0.42).roundToInt(), 1, bitmapWidth), bitmapHeight)
 
     val roi = Mat(mat, searchRect)
@@ -183,6 +229,26 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
         accepted
       }
       .sortedBy { it.y }
+  }
+
+  private fun inferKurlyThumbnailRect(
+    line: OcrLine,
+    bitmapWidth: Int,
+    bitmapHeight: Int,
+    coordinateWidth: Double,
+    coordinateHeight: Double
+  ): Rect? {
+    val scaleX = bitmapWidth / coordinateWidth
+    val scaleY = bitmapHeight / coordinateHeight
+    val lineLeft = line.x * scaleX
+    if (lineLeft < bitmapWidth * 0.18 || lineLeft > bitmapWidth * 0.72) return null
+
+    val side = clamp((bitmapWidth * 0.145).roundToInt(), 96, 220)
+    val gap = bitmapWidth * 0.025
+    val centerY = (line.y + line.height / 2.0) * scaleY + side * 0.18
+    val x = clamp((lineLeft - side - gap).roundToInt(), 0, max(0, bitmapWidth - side))
+    val y = clamp((centerY - side / 2.0).roundToInt(), 0, max(0, bitmapHeight - side))
+    return Rect(x, y, min(side, bitmapWidth - x), min(side, bitmapHeight - y))
   }
 
   private fun findProductLineForThumbnail(
@@ -257,7 +323,7 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
     mean.release()
     std.release()
     edges.release()
-    return stddev > 18.0 && edgeRatio > 0.015
+    return stddev > 13.0 && edgeRatio > 0.01
   }
 
   private fun expandToSquare(rect: Rect, expectedSide: Int, bitmapWidth: Int, bitmapHeight: Int): Rect {
@@ -278,9 +344,9 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
     )
     val crop = Bitmap.createBitmap(bitmap, safeRect.x, safeRect.y, safeRect.width, safeRect.height)
     val scaled = Bitmap.createScaledBitmap(crop, 320, 320, true)
-    val directory = File(reactContext.cacheDir, "coupang-product-images")
+    val directory = File(reactContext.cacheDir, "commerce-product-images")
     if (!directory.exists()) directory.mkdirs()
-    val file = File(directory, "coupang-product-${System.currentTimeMillis()}-${safeRect.y}.jpg")
+    val file = File(directory, "commerce-product-${System.currentTimeMillis()}-${safeRect.y}.jpg")
     FileOutputStream(file).use { output ->
       scaled.compress(Bitmap.CompressFormat.JPEG, 88, output)
     }
@@ -345,7 +411,20 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
   private fun isLikelyProductName(value: String): Boolean {
     if (value.length < 4) return false
     if (value.matches(Regex("^[0-9]+원?[0-9]*개?$"))) return false
-    val blocked = listOf("배송주문관리", "바로구매", "장바구니", "주문내역", "검색", "배송완료", "로켓프레시")
+    val blocked = listOf(
+      "배송주문관리",
+      "바로구매",
+      "장바구니",
+      "주문내역",
+      "검색",
+      "배송완료",
+      "로켓프레시",
+      "샛별배송",
+      "배송조회",
+      "후기작성",
+      "전체상품다시담기",
+      "주문상품"
+    )
     if (blocked.any { value.contains(it) }) return false
     return true
   }

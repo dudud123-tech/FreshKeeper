@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { typography } from "../theme/typography";
 import { daysUntil, itemCreatedDate } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
 import AdSlot from "./AdSlot";
 
-const homeHeroIcon = require("../../assets/home-app-symbol.png");
-
 export default function HomePage({
-  width,
   items,
   summary,
   reminderDays,
@@ -16,30 +14,52 @@ export default function HomePage({
   onChangeItemImage
 }) {
   const [repurchasePanelVisible, setRepurchasePanelVisible] = useState(false);
+  const [layoutWidth, setLayoutWidth] = useState(0);
   const urgentItems = [...items]
-    .sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry))
-    .slice(0, 3);
+    .filter((item) => {
+      const days = daysUntil(item.expiry);
+      return days >= 0 && days <= reminderDays;
+    })
+    .sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry));
+  const priorityCardWidth = Math.max((layoutWidth - 32 - 20) / 3, 104);
   const recentItems = [...items]
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
     .slice(0, 4);
-  const heroStatus = getHeroStatus(summary);
+  const heroInsight = getHeroInsight(summary);
 
   return (
-    <ScrollView style={{ width }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.page}
+      keyboardShouldPersistTaps="handled"
+      onLayout={(event) => {
+        const nextWidth = event.nativeEvent.layout.width;
+        if (nextWidth > 0 && Math.abs(nextWidth - layoutWidth) > 0.5) {
+          setLayoutWidth(nextWidth);
+        }
+      }}
+    >
       <View style={styles.heroCard}>
         <View style={styles.heroTop}>
-          <Pressable style={styles.heroPrimary} onPress={() => onOpenInventory("all")}>
-            <Text style={styles.heroLabel}>보관 중인 상품</Text>
-            <Text style={styles.heroValue}>{summary.total}</Text>
-          </Pressable>
-          <View style={styles.fridgeTile}>
-            <Image source={homeHeroIcon} resizeMode="contain" style={styles.fridgeImage} />
-            <View style={[styles.heroStatusBadge, styles[heroStatus.style]]}>
-              <Text style={styles.heroStatusText}>{heroStatus.text}</Text>
+          <Pressable style={styles.heroMood} onPress={() => onOpenInventory("all")}>
+            <View style={styles.heroMoodContent}>
+              <Text maxFontSizeMultiplier={1.15} style={styles.heroEmoji}>{heroInsight.emoji}</Text>
+              <View style={styles.heroMoodCopy}>
+                <Text maxFontSizeMultiplier={1.3} style={styles.heroMoodTitle}>{heroInsight.title}</Text>
+                <Text maxFontSizeMultiplier={1.3} style={styles.heroMoodText}>{heroInsight.body}</Text>
+              </View>
             </View>
-          </View>
+          </Pressable>
+          <View style={styles.heroFutureSlot} />
         </View>
         <View style={styles.heroStats}>
+          <Pressable style={[styles.heroStat, styles.heroStatDivider]} onPress={() => onOpenInventory("all")}>
+            <View style={styles.heroStatLabelRow}>
+              <Text style={[styles.heroStatIcon, styles.heroStatIconStored]}>▰</Text>
+              <Text style={styles.heroStatLabel}>보관</Text>
+            </View>
+            <Text style={styles.heroStatValue}>{summary.total}</Text>
+          </Pressable>
           <Pressable style={[styles.heroStat, styles.heroStatDivider]} onPress={() => onOpenInventory("urgent")}>
             <View style={styles.heroStatLabelRow}>
               <Text style={styles.heroStatIcon}>!</Text>
@@ -70,21 +90,31 @@ export default function HomePage({
           <Text style={styles.moreText}>{repurchasePanelVisible ? "접기" : "다시 구매 >"}</Text>
         </Pressable>
       </View>
-      <View style={styles.priorityRow}>
-        {urgentItems.length ? (
-          urgentItems.map((item) => (
-            <PriorityCard key={item.id} item={item} onChangeItemImage={onChangeItemImage} />
-          ))
-        ) : (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>급한 상품이 없습니다</Text>
-            <Text style={styles.emptyText}>소비기한이 임박하면 여기에 먼저 보여드릴게요.</Text>
-          </View>
-        )}
-      </View>
+      {urgentItems.length ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.priorityRow}
+        >
+          {urgentItems.map((item) => (
+            <PriorityCard
+              key={item.id}
+              item={item}
+              width={priorityCardWidth}
+              onPress={() => onOpenInventory("urgent")}
+              onLongPress={() => onChangeItemImage?.(item.id)}
+            />
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>급한 상품이 없습니다</Text>
+          <Text style={styles.emptyText}>소비기한이 임박하면 여기에 먼저 보여드릴게요.</Text>
+        </View>
+      )}
 
       {repurchasePanelVisible ? (
-        <RepurchasePanel items={urgentItems} onOpenInventory={() => onOpenInventory("urgent")} />
+        <RepurchasePanel items={urgentItems} />
       ) : null}
 
       <AdSlot variant="home" style={styles.homeAdSlot} />
@@ -109,7 +139,7 @@ export default function HomePage({
   );
 }
 
-function RepurchasePanel({ items, onOpenInventory }) {
+function RepurchasePanel({ items }) {
   if (!items.length) {
     return (
       <View style={styles.repurchasePanel}>
@@ -126,9 +156,6 @@ function RepurchasePanel({ items, onOpenInventory }) {
           <Text style={styles.repurchasePanelTitle}>임박 상품 다시 구매</Text>
           <Text style={styles.repurchasePanelText}>구매 링크가 있는 상품은 바로 열 수 있어요. 가격 추세는 플레이스토어 등록 후 준비할게요.</Text>
         </View>
-        <Pressable onPress={onOpenInventory}>
-          <Text style={styles.repurchasePanelMore}>보관함</Text>
-        </Pressable>
       </View>
       <View style={styles.repurchaseList}>
         {items.map((item) => (
@@ -179,19 +206,32 @@ function RepurchaseItem({ item }) {
   );
 }
 
-function PriorityCard({ item, onChangeItemImage }) {
+function PriorityCard({ item, width, onPress, onLongPress }) {
   const days = daysUntil(item.expiry);
   return (
-    <View style={styles.priorityCard}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, ${labelForDays(days)}, ${item.storage}`}
+      style={({ pressed }) => [
+        styles.priorityCard,
+        { width },
+        pressed && styles.priorityCardPressed
+      ]}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+    >
       <View style={styles.priorityTopRow}>
-        <Pressable onLongPress={() => onChangeItemImage?.(item.id)} delayLongPress={350}>
-          <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
-        </Pressable>
-        <Text style={styles.storagePill}>{item.storage}</Text>
+        <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
       </View>
-      <Text style={styles.priorityName} numberOfLines={2}>{item.name}</Text>
-      <Text style={[styles.dDay, days <= 1 && styles.dDayDanger]}>{labelForDays(days)}</Text>
-    </View>
+      <Text maxFontSizeMultiplier={1.3} style={styles.priorityName} numberOfLines={2}>{item.name}</Text>
+      <View style={styles.priorityDdayRow}>
+        <Text maxFontSizeMultiplier={1.3} style={[styles.dDay, days <= 1 && styles.dDayDanger]}>
+          {labelForDays(days)}
+        </Text>
+        <Text maxFontSizeMultiplier={1.3} style={styles.storagePill}>{item.storage}</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -217,20 +257,39 @@ function labelForDays(days) {
   return `D-${days}`;
 }
 
-function getHeroStatus(summary) {
-  if (summary.expired > 0) {
-    return { text: "정리가 필요해요", style: "heroStatusExpired" };
-  }
+function getHeroInsight(summary) {
   if (summary.today > 0) {
-    return { text: "오늘 확인해요", style: "heroStatusToday" };
+    return {
+      emoji: "😭",
+      title: `오늘 만료 ${summary.today}개`,
+      body: "지금 확인하세요!"
+    };
+  } else if (summary.expired > 0) {
+    return {
+      emoji: "😨",
+      title: `만료 ${summary.expired}개가 있어요`,
+      body: "정리가 필요해요."
+    };
+  } else if (summary.urgent > 0) {
+    return {
+      emoji: "😐",
+      title: "잘 관리 중이에요!",
+      body: `${summary.urgent}개를 먼저 먹으면 돼요.`
+    };
+  } else {
+    return {
+      emoji: "😊",
+      title: "완벽해요!",
+      body: "지금 급한 상품이 없어요."
+    };
   }
-  if (summary.urgent > 0) {
-    return { text: "먼저 먹을 게 있어요", style: "heroStatusUrgent" };
-  }
-  return { text: "괜찮아요", style: "heroStatusSafe" };
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    alignSelf: "stretch"
+  },
   // 홈 화면 전체 여백입니다. 배너/목록의 좌우 여백과 하단 탭에 가리지 않는 아래 여백을 조정합니다.
   page: {
     paddingHorizontal: 16,
@@ -255,56 +314,41 @@ const styles = StyleSheet.create({
   // 배너 위쪽 영역입니다. 왼쪽 숫자 영역과 오른쪽 냉장고 이미지를 한 줄에 배치합니다.
   heroTop: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-    minHeight: 82
+    alignItems: "stretch",
+    minHeight: 76
   },
-  // 배너 왼쪽의 "보관 중인 상품"과 전체 개수 영역입니다. 클릭하면 보관함 전체로 이동합니다.
-  heroPrimary: {
-    minHeight: 76,
-    justifyContent: "flex-start"
+  heroMood: {
+    flex: 1.05,
+    paddingRight: 12
   },
   // 배너의 작은 설명 텍스트입니다. 예: "보관 중인 상품".
   heroLabel: {
+    ...typography.captionStrong,
     color: "#d8f0e7",
-    fontSize: 13,
-    fontWeight: "800"
   },
-  // 배너의 큰 숫자입니다. 보관 중인 상품 개수를 표시합니다.
-  heroValue: {
+  heroMoodContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  heroEmoji: {
+    fontSize: 34
+  },
+  heroMoodCopy: {
+    flex: 1
+  },
+  heroMoodTitle: {
+    ...typography.bodyStrong,
     color: "#fff",
-    fontSize: 46,
-    fontWeight: "900",
-    marginTop: 4,
-    marginLeft: 20
   },
-  heroStatusBadge: {
-    alignSelf: "center",
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    marginTop: -8,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.24)",
-    backgroundColor: "rgba(255,255,255,0.14)"
+  heroMoodText: {
+    ...typography.badge,
+    color: "#d8f0e7",
+    marginTop: 4
   },
-  heroStatusText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "900"
-  },
-  heroStatusSafe: {
-    backgroundColor: "rgba(255,255,255,0.15)"
-  },
-  heroStatusUrgent: {
-    backgroundColor: "rgba(239,179,60,0.22)"
-  },
-  heroStatusToday: {
-    backgroundColor: "rgba(109,144,242,0.24)"
-  },
-  heroStatusExpired: {
-    backgroundColor: "rgba(236,91,84,0.24)"
+  heroFutureSlot: {
+    flex: 0.95
   },
   // 배너 하단의 임박/만료/오늘 만료 통계 줄입니다.
   heroStats: {
@@ -327,9 +371,8 @@ const styles = StyleSheet.create({
   },
   // 통계 이름 텍스트입니다. 예: 임박, 만료, 오늘 만료.
   heroStatLabel: {
+    ...typography.captionStrong,
     color: "#d8f0e7",
-    fontSize: 12,
-    fontWeight: "800"
   },
   // 통계 아이콘과 텍스트를 가로로 붙이는 줄입니다.
   heroStatLabelRow: {
@@ -348,11 +391,15 @@ const styles = StyleSheet.create({
     color: "#fff",
     backgroundColor: "#efb33c",
     fontSize: 9,
-    fontWeight: "900"
+    fontWeight: "700"
   },
   // 만료 통계 아이콘 색상입니다.
   heroStatIconDanger: {
     backgroundColor: "#ec5b54"
+  },
+  heroStatIconStored: {
+    backgroundColor: "#4b9b7b",
+    fontSize: 8
   },
   // 오늘 만료 통계 아이콘 색상입니다.
   heroStatIconCalendar: {
@@ -363,24 +410,8 @@ const styles = StyleSheet.create({
   heroStatValue: {
     color: "#fff",
     fontSize: 22,
-    fontWeight: "900",
+    fontWeight: "800",
     marginTop: 3
-  },
-  // 배너 오른쪽 상태 캐릭터 영역입니다. 위치를 바꾸려면 right/top을 조정합니다.
-  fridgeTile: {
-    position: "absolute",
-    right: 5,
-    top: -10,
-    width: 112,
-    height: 106,
-    alignItems: "center",
-    justifyContent: "flex-start"
-  },
-  // 상태 캐릭터 이미지 크기입니다.
-  fridgeImage: {
-    width: 75,
-    height: 75,
-    opacity: 0.92
   },
   // 각 섹션의 제목 줄입니다. 제목과 "더보기 >"를 좌우로 배치합니다.
   sectionHeader: {
@@ -392,19 +423,16 @@ const styles = StyleSheet.create({
   },
   // 섹션 제목입니다. 예: "이번 주 먼저 먹을 것", "최근 추가한 상품".
   sectionTitle: {
+    ...typography.sectionTitle,
     color: "#18201c",
-    fontSize: 18,
-    fontWeight: "900"
   },
   // 오른쪽 "더보기 >" 텍스트입니다.
   moreText: {
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 13,
-    fontWeight: "900"
   },
   // "이번 주 먼저 먹을 것" 카드 3개를 가로로 배치하는 줄입니다.
   priorityRow: {
-    flexDirection: "row",
     gap: 10
   },
   homeAdSlot: {
@@ -425,21 +453,13 @@ const styles = StyleSheet.create({
     gap: 12
   },
   repurchasePanelTitle: {
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   repurchasePanelText: {
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 12,
-    lineHeight: 18,
     marginTop: 5
-  },
-  repurchasePanelMore: {
-    color: "#1f7a5a",
-    fontSize: 12,
-    fontWeight: "900",
-    paddingTop: 2
   },
   repurchaseList: {
     gap: 10,
@@ -469,19 +489,17 @@ const styles = StyleSheet.create({
     gap: 10
   },
   repurchaseItemName: {
+    ...typography.bodyStrong,
     flex: 1,
     color: "#18201c",
-    fontSize: 14,
-    fontWeight: "900"
   },
   repurchaseDday: {
+    ...typography.captionStrong,
     color: "#ef8b1f",
-    fontSize: 13,
-    fontWeight: "900"
   },
   repurchaseMeta: {
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 12,
     marginTop: 4
   },
   purchaseButton: {
@@ -496,22 +514,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#eef4f1"
   },
   purchaseButtonText: {
+    ...typography.captionStrong,
     color: "#fff",
-    fontSize: 12,
-    fontWeight: "900"
   },
   purchaseButtonTextMuted: {
     color: "#68716b"
   },
   // 이번 주 카드 한 장입니다. 카드 높이, 테두리, 내부 여백을 담당합니다.
   priorityCard: {
-    flex: 1,
     minHeight: 138,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "#e6e4df",
     backgroundColor: "#fff",
     padding: 12
+  },
+  priorityCardPressed: {
+    opacity: 0.72
   },
   // 이번 주 카드 상단 줄입니다. 이미지와 보관 상태 배지를 배치합니다.
   priorityTopRow: {
@@ -530,18 +549,26 @@ const styles = StyleSheet.create({
   },
   // 이번 주 카드의 상품명입니다.
   priorityName: {
+    ...typography.bodyStrong,
     color: "#18201c",
-    fontSize: 14,
-    fontWeight: "900",
     marginTop: 12,
     minHeight: 38
   },
+  // D-day와 보관 위치 태그를 카드 하단의 한 줄에 배치합니다.
+  priorityDdayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    columnGap: 6,
+    rowGap: 4
+  },
   // D-day 텍스트입니다. 기본은 주황색이고, 만료/당일은 아래 dDayDanger가 덮어씁니다.
   dDay: {
+    ...typography.label,
     color: "#ef8b1f",
-    fontSize: 15,
-    fontWeight: "900",
-    marginTop: 5
+    marginTop: 5,
+    flexShrink: 0
   },
   // 위험 상태 D-day 색상입니다. 예: 오늘, D+1.
   dDayDanger: {
@@ -549,16 +576,15 @@ const styles = StyleSheet.create({
   },
   // 냉장/냉동/실온 같은 보관 위치 배지입니다.
   storagePill: {
+    ...typography.badge,
     alignSelf: "flex-start",
+    flexShrink: 0,
     color: "#1f7a5a",
     backgroundColor: "#edf7f2",
     borderRadius: 6,
     overflow: "hidden",
     paddingHorizontal: 7,
     paddingVertical: 3,
-    fontSize: 11,
-    fontWeight: "900",
-    marginTop: 2
   },
   // 최근 추가한 상품 목록을 감싸는 흰색 리스트 카드입니다.
   recentList: {
@@ -592,21 +618,19 @@ const styles = StyleSheet.create({
   },
   // 최근 목록 상품명입니다.
   recentName: {
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   // 최근 목록의 보관 위치와 등록일 텍스트입니다.
   recentMeta: {
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 12,
     marginTop: 4
   },
   // 최근 목록 오른쪽 D-day 텍스트입니다.
   recentDay: {
+    ...typography.label,
     color: "#ef8b1f",
-    fontSize: 14,
-    fontWeight: "900"
   },
   // 상품이 없을 때 보여주는 빈 카드입니다.
   emptyCard: {
@@ -627,15 +651,13 @@ const styles = StyleSheet.create({
   },
   // 빈 카드의 제목입니다.
   emptyTitle: {
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   // 빈 카드의 설명 문구입니다.
   emptyText: {
+    ...typography.body,
     color: "#68716b",
-    fontSize: 13,
-    lineHeight: 20,
     marginTop: 6
   }
 });

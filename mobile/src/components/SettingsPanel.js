@@ -1,13 +1,19 @@
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { typography } from "../theme/typography";
 
 const settingsTabs = [
   { id: "alert", label: "알림", icon: require("../../assets/settings/setting-alert.png") },
   { id: "share", label: "가족", icon: require("../../assets/settings/setting-share.png") },
-  { id: "feedback", label: "개선", icon: require("../../assets/settings/setting-ai.png") }
+  { id: "feedback", label: "학습", icon: require("../../assets/settings/setting-ai.png") },
+  { id: "account", label: "계정" }
 ];
 const reminderOptions = [0, 1, 2, 3, 4, 5, 6, 7];
 const notificationHourOptions = Array.from({ length: 24 }, (_, index) => index);
 const notificationMinuteOptions = Array.from({ length: 60 }, (_, index) => index);
+const googleAuthIcon = require("../../assets/auth/google-logo.png");
+const kakaoAuthIcon = require("../../assets/auth/kakaotalk-logo.png");
+const naverAuthIcon = require("../../assets/auth/naver-logo.png");
 
 export default function SettingsPanel({
   settingsTab,
@@ -16,7 +22,6 @@ export default function SettingsPanel({
   setReminderDays,
   notificationSettings,
   setNotificationSettings,
-  notificationStatus,
   shareFamilyDigest,
   familyCodeInput,
   setFamilyCodeInput,
@@ -30,12 +35,91 @@ export default function SettingsPanel({
   feedbackSettings,
   setFeedbackSettings,
   feedbackStatus,
-  appVersion
+  authUser,
+  authReady,
+  authBusy,
+  authProviderBusy,
+  authStatus,
+  googleLoginConfigured,
+  kakaoLoginConfigured,
+  naverLoginConfigured,
+  loginWithGoogle,
+  loginWithKakao,
+  loginWithNaver,
+  logout
 }) {
+  const [authSheetVisible, setAuthSheetVisible] = useState(false);
+  const socialLoginConfigured = googleLoginConfigured || kakaoLoginConfigured || naverLoginConfigured;
+
+  useEffect(() => {
+    if (authUser) setAuthSheetVisible(false);
+  }, [authUser]);
+
   return (
     <View style={styles.settingsBox}>
+      <Modal visible={authSheetVisible} transparent animationType="fade" onRequestClose={() => setAuthSheetVisible(false)}>
+        <Pressable style={styles.authSheetBackdrop} onPress={() => setAuthSheetVisible(false)}>
+          <ScrollView
+            contentContainerStyle={styles.authSheetScrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Pressable style={styles.authSheetCard} onPress={() => {}}>
+              <View style={styles.authSheetHero}>
+                <View style={styles.authSheetHeroGlow} />
+                <View style={styles.authSheetAvatar}>
+                  <PersonGlyph />
+                </View>
+              </View>
+              <Text style={styles.authSheetTitle}>로그인 / 회원가입</Text>
+              <Text style={styles.authSheetSubtitle}>5초만에 간편하게 시작하세요</Text>
+
+              <Pressable
+                style={styles.authProviderButton}
+                onPress={loginWithGoogle}
+                disabled={!authReady || authBusy || !googleLoginConfigured}
+              >
+                <AuthProviderLogo source={googleAuthIcon} small />
+                <Text style={styles.authProviderButtonText}>
+                  {authProviderBusy === "google" ? "로그인 중..." : "Google로 계속"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.authProviderButton,
+                  (!authReady || authBusy || !kakaoLoginConfigured) && styles.authProviderButtonDisabled
+                ]}
+                onPress={loginWithKakao}
+                disabled={!authReady || authBusy || !kakaoLoginConfigured}
+              >
+                <AuthProviderLogo source={kakaoAuthIcon} />
+                <Text style={styles.authProviderButtonText}>
+                  {authProviderBusy === "kakao" ? "로그인 중..." : "카카오로 계속"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.authProviderButton,
+                  (!authReady || authBusy || !naverLoginConfigured) && styles.authProviderButtonDisabled
+                ]}
+                onPress={loginWithNaver}
+                disabled={!authReady || authBusy || !naverLoginConfigured}
+              >
+                <AuthProviderLogo source={naverAuthIcon} />
+                <Text style={styles.authProviderButtonText}>
+                  {authProviderBusy === "naver" ? "로그인 중..." : "네이버로 계속"}
+                </Text>
+              </Pressable>
+            </Pressable>
+          </ScrollView>
+        </Pressable>
+      </Modal>
+
       <ScrollView
         horizontal
+        style={styles.settingsTabsScroller}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.settingsTopTabs}
       >
@@ -45,11 +129,27 @@ export default function SettingsPanel({
             style={[styles.settingsTabButton, settingsTab === tab.id && styles.settingsTabButtonActive]}
             onPress={() => setSettingsTab(tab.id)}
           >
-            <Image
-              source={tab.icon}
-              resizeMode="contain"
-              style={[styles.settingsTabIcon, settingsTab === tab.id && styles.settingsTabIconActive]}
-            />
+            {tab.icon ? (
+              <Image
+                source={tab.icon}
+                resizeMode="contain"
+                style={[
+                  styles.settingsTabIcon,
+                  tab.id === "alert" && styles.settingsTabIconAlert,
+                  tab.id === "feedback" && styles.settingsTabIconFeedback,
+                  tab.id === "account" && styles.settingsTabIconAccount,
+                  settingsTab === tab.id && styles.settingsTabIconActive
+                ]}
+              />
+            ) : (
+              <View style={[styles.accountTabIcon, settingsTab === tab.id && styles.accountTabIconActive]}>
+                <Image
+                  source={require("../../assets/settings/account.png")}
+                  resizeMode="contain"
+                  style={styles.accountTabImage}
+                />
+              </View>
+            )}
             <Text
               style={[styles.settingsTabText, settingsTab === tab.id && styles.settingsTabTextActive]}
             >
@@ -59,26 +159,27 @@ export default function SettingsPanel({
         ))}
       </ScrollView>
 
-      <View style={[settingsTab !== "alert" && styles.hiddenSettingSection]}>
+      {settingsTab === "alert" ? (
+      <View>
         <Text style={styles.settingGroupTitle}>알림</Text>
-        <Text style={styles.label}>임박 알림기준</Text>
-        <Text style={styles.settingDescription}>
-          {reminderDays === 0 ? "당일 상품만 임박으로 표시합니다." : `만료 ${reminderDays}일 전부터 임박으로 표시합니다.`}
-        </Text>
-        <ChoicePills
-          options={reminderOptions}
-          value={reminderDays}
-          onChange={setReminderDays}
-          formatLabel={(value) => (value === 0 ? "당일" : `${value}일 전`)}
-        />
+        <View style={styles.reminderBox}>
+          <Text style={styles.label}>임박 알림기준</Text>
+          <Text style={styles.settingDescription}>
+            {reminderDays === 0 ? "당일 상품만 임박으로 표시합니다." : `만료 ${reminderDays}일 전부터 임박으로 표시합니다.`}
+          </Text>
+          <ReminderWheel
+            options={reminderOptions}
+            value={reminderDays}
+            onChange={setReminderDays}
+          />
+        </View>
         <View style={[styles.dailyAlertBox, notificationSettings.enabled && styles.dailyAlertBoxActive]}>
           <Pressable
             style={styles.dailyAlertHeader}
             onPress={() => setNotificationSettings((current) => ({ ...current, enabled: !current.enabled }))}
           >
             <View style={styles.dailyAlertCopy}>
-              <Text style={styles.dailyAlertTitle}>하루 알림</Text>
-              <Text style={styles.settingDescription}>임박/만료 상품이 있을 때 하루 한 번 알려줍니다.</Text>
+              <Text style={styles.dailyAlertTitle}>임박·만료 상품을 하루 한 번 알려드려요.</Text>
             </View>
             <View style={[styles.toggleSwitch, notificationSettings.enabled && styles.toggleSwitchActive]}>
               <View style={[styles.toggleKnob, notificationSettings.enabled && styles.toggleKnobActive]} />
@@ -86,27 +187,24 @@ export default function SettingsPanel({
           </Pressable>
           <View style={styles.timePickerRow}>
             <TimeSelect
-              label="시간"
               value={notificationSettings.hour}
               options={notificationHourOptions}
               formatValue={(value) => `${String(value).padStart(2, "0")}시`}
               onChange={(hour) => setNotificationSettings((current) => ({ ...current, hour }))}
             />
             <TimeSelect
-              label="분"
               value={notificationSettings.minute}
               options={notificationMinuteOptions}
               formatValue={(value) => `${String(value).padStart(2, "0")}분`}
               onChange={(minute) => setNotificationSettings((current) => ({ ...current, minute }))}
             />
           </View>
-          <Text style={styles.notificationStatus}>
-            {notificationSettings.enabled ? `${String(notificationSettings.hour).padStart(2, "0")}:${String(notificationSettings.minute).padStart(2, "0")} · ${notificationStatus}` : "알림이 꺼져 있습니다."}
-          </Text>
         </View>
       </View>
+      ) : null}
 
-      <View style={[settingsTab !== "share" && styles.hiddenSettingSection]}>
+      {settingsTab === "share" ? (
+      <View>
         <Text style={styles.settingGroupTitle}>가족 공유</Text>
         <View style={styles.shareBox}>
           <View style={styles.shareCopy}>
@@ -150,18 +248,20 @@ export default function SettingsPanel({
           <Text style={styles.notificationStatus}>{familyStatus}</Text>
         </View>
       </View>
+      ) : null}
 
-      <View style={[settingsTab !== "feedback" && styles.hiddenSettingSection]}>
-        <Text style={styles.settingGroupTitle}>학습 개선</Text>
-        <View style={[styles.dailyAlertBox, feedbackSettings.enabled && styles.dailyAlertBoxActive]}>
+      {settingsTab === "feedback" ? (
+      <View>
+        <Text style={styles.settingGroupTitle}>상품 인식</Text>
+        <View style={[styles.dailyAlertBox, styles.feedbackBox, feedbackSettings.enabled && styles.dailyAlertBoxActive]}>
           <Pressable
             style={styles.dailyAlertHeader}
             onPress={() => setFeedbackSettings((current) => ({ ...current, enabled: !current.enabled }))}
           >
             <View style={styles.dailyAlertCopy}>
-              <Text style={styles.dailyAlertTitle}>학습 개선 데이터 전송</Text>
+              <Text style={styles.dailyAlertTitle}>인식 품질 향상 참여</Text>
               <Text style={styles.settingDescription}>
-                선택하거나 제외한 OCR 결과를 익명으로 보내 상품 추출을 개선합니다.
+                선택하거나 제외한 인식 결과를 익명으로 보내 상품 인식을 더 정확하게 만듭니다.
               </Text>
             </View>
             <View style={[styles.toggleSwitch, feedbackSettings.enabled && styles.toggleSwitchActive]}>
@@ -171,35 +271,153 @@ export default function SettingsPanel({
           <Text style={styles.notificationStatus}>{feedbackStatus}</Text>
         </View>
       </View>
+      ) : null}
 
-      <Text style={styles.appVersionText}>{appVersion}</Text>
+      {settingsTab === "account" ? (
+      <View>
+        <Text style={styles.settingGroupTitle}>계정</Text>
+        <View style={styles.accountBox}>
+          {authUser ? (
+            <>
+              <View style={styles.accountProfileRow}>
+                {authUser.avatarUrl ? (
+                  <Image source={{ uri: authUser.avatarUrl }} style={styles.accountAvatar} />
+                ) : (
+                  <View style={styles.accountAvatar}>
+                    <PersonGlyph size="large" active />
+                  </View>
+                )}
+                <View style={styles.accountProfileCopy}>
+                  <Text style={styles.dailyAlertTitle}>{authUser.displayName || "사용자"}</Text>
+                  {authUser.email ? <Text style={styles.accountEmail}>{authUser.email}</Text> : null}
+                </View>
+              </View>
+              <Text style={styles.settingDescription}>
+                이 계정으로 수정한 상품 분류와 제외 설정을 기억합니다.
+              </Text>
+              <Pressable
+                style={[styles.accountSecondaryButton, authBusy && styles.accountButtonDisabled]}
+                disabled={authBusy}
+                onPress={logout}
+              >
+                <Text style={styles.accountSecondaryButtonText}>{authBusy ? "처리 중..." : "로그아웃"}</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.dailyAlertTitle}>내 상품 설정 이어 쓰기</Text>
+              <Text style={styles.settingDescription}>
+                소셜 계정으로 로그인하면 수정한 상품 분류와 제외 설정을 다른 기기에서도 이어서 사용할 수 있어요.
+              </Text>
+              <Pressable
+                style={[
+                  styles.accountPrimaryButton,
+                  (!authReady || authBusy || !socialLoginConfigured) && styles.accountButtonDisabled
+                ]}
+                disabled={!authReady || authBusy || !socialLoginConfigured}
+                onPress={() => setAuthSheetVisible(true)}
+              >
+                <Text style={styles.accountPrimaryButtonText}>
+                  {!socialLoginConfigured
+                    ? "소셜 로그인 설정 필요"
+                    : authBusy
+                      ? "계정 확인 중..."
+                      : "로그인 / 회원가입"}
+                </Text>
+              </Pressable>
+            </>
+          )}
+          <Text style={styles.notificationStatus}>{authReady ? authStatus : "로그인 정보를 확인하는 중입니다."}</Text>
+        </View>
+      </View>
+      ) : null}
+
     </View>
   );
 }
 
-function ChoicePills({ options, value, onChange, formatLabel = (option) => option }) {
+function PersonGlyph({ active = false, size = "normal" }) {
+  const isLarge = size === "large";
   return (
-    <View style={styles.choiceWrap}>
-      {options.map((option) => {
-        const active = option === value;
-        return (
-          <Pressable key={option} style={[styles.choice, active && styles.choiceActive]} onPress={() => onChange(option)}>
-            <Text style={[styles.choiceText, active && styles.choiceTextActive]}>{formatLabel(option)}</Text>
-          </Pressable>
-        );
-      })}
+    <View style={[styles.personGlyph, isLarge && styles.personGlyphLarge]}>
+      <View style={[styles.personHead, active && styles.personHeadActive]} />
+      <View style={[styles.personShoulders, active && styles.personShouldersActive]} />
     </View>
   );
 }
 
-function TimeSelect({ label, value, options, formatValue, onChange }) {
+function AuthProviderLogo({ source, small = false }) {
+  return (
+    <Image
+      source={source}
+      resizeMode="contain"
+      style={[styles.authProviderLogoImage, small && styles.authProviderLogoImageSmall]}
+    />
+  );
+}
+
+function ReminderWheel({ options, value, onChange }) {
+  const scrollRef = useRef(null);
+  const itemHeight = 44;
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(options.indexOf(value), 0) * itemHeight,
+        animated: false
+      });
+    });
+  }, [options, value]);
+
+  function selectFromOffset(offsetY) {
+    const index = Math.max(0, Math.min(options.length - 1, Math.round(offsetY / itemHeight)));
+    onChange(options[index]);
+  }
+
+  return (
+    <View style={styles.reminderWheel}>
+      <View pointerEvents="none" style={styles.reminderWheelSelection} />
+      <ScrollView
+        ref={scrollRef}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={itemHeight}
+        decelerationRate="fast"
+        nestedScrollEnabled
+        contentContainerStyle={styles.reminderWheelContent}
+        onMomentumScrollEnd={(event) => selectFromOffset(event.nativeEvent.contentOffset.y)}
+      >
+        {options.map((option) => {
+          const active = option === value;
+          return (
+            <Pressable
+              key={option}
+              style={styles.reminderWheelItem}
+              onPress={() => {
+                onChange(option);
+                scrollRef.current?.scrollTo({
+                  y: options.indexOf(option) * itemHeight,
+                  animated: true
+                });
+              }}
+            >
+              <Text style={[styles.reminderWheelText, active && styles.reminderWheelTextActive]}>
+                {option === 0 ? "당일" : `${option}일 전`}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+function TimeSelect({ value, options, formatValue, onChange }) {
   const currentIndex = options.indexOf(value);
   const decreaseDisabled = currentIndex <= 0;
   const increaseDisabled = currentIndex >= options.length - 1;
 
   return (
     <View style={styles.timeSelect}>
-      <Text style={styles.timeSelectLabel}>{label}</Text>
       <View style={styles.timeSelectControls}>
         <Pressable style={[styles.timeStepButton, decreaseDisabled && styles.timeStepButtonDisabled]} disabled={decreaseDisabled} onPress={() => onChange(options[currentIndex - 1])}>
           <Text style={[styles.timeStepText, decreaseDisabled && styles.timeStepTextDisabled]}>-</Text>
@@ -230,9 +448,13 @@ const styles = StyleSheet.create({
     paddingTop: 2,
     paddingBottom: 28
   },
+  settingsTabsScroller: {
+    height: 112,
+    flexGrow: 0,
+    flexShrink: 0
+  },
   settingsTabButton: {
     width: 78,
-    height: 82,
     minHeight: 82,
     borderRadius: 18,
     alignItems: "center",
@@ -256,73 +478,104 @@ const styles = StyleSheet.create({
   settingsTabIconActive: {
     opacity: 1
   },
+  settingsTabIconAlert: {
+    width: 32,
+    height: 32,
+    marginTop: 4
+  },
+  settingsTabIconFeedback: {
+    width: 42,
+    height: 42,
+    marginTop: 0
+  },
+  settingsTabIconAccount: {
+    width: 34,
+    height: 34,
+    marginTop: 2
+  },
+  accountTabIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent"
+  },
+  accountTabIconActive: {
+    backgroundColor: "transparent"
+  },
+  accountTabImage: {
+    width: 34,
+    height: 34
+  },
   settingsTabText: {
+    ...typography.captionStrong,
     color: "#545d58",
-    fontSize: 13,
-    fontWeight: "900"
   },
   settingsTabTextActive: {
     color: "#1f7a5a"
   },
-  hiddenSettingSection: {
-    display: "none"
-  },
   settingDescription: {
+    ...typography.body,
     color: "#606a64",
-    fontSize: 14,
-    lineHeight: 21,
     marginTop: 4
   },
   settingGroupTitle: {
+    ...typography.sectionTitle,
     color: "#14583f",
-    fontSize: 28,
-    fontWeight: "900",
     marginBottom: 24
   },
   label: {
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 17,
-    fontWeight: "900",
     marginBottom: 6
   },
-  appVersionText: {
-    color: "#8a938d",
-    fontSize: 12,
-    fontWeight: "800",
-    marginTop: 14
+  reminderBox: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#e3e8e5",
+    backgroundColor: "#fff",
+    padding: 16
   },
   notificationStatus: {
+    ...typography.badge,
     color: "#14583f",
-    fontSize: 12,
-    fontWeight: "900",
     marginTop: 8
   },
   dailyAlertBox: {
     marginTop: 24,
     borderRadius: 22,
-    backgroundColor: "#f3fbf8",
+    backgroundColor: "#fff",
     padding: 18,
-    borderWidth: 0
+    borderWidth: 1,
+    borderColor: "#e3e8e5"
   },
   dailyAlertBoxActive: {
     borderColor: "#b9dfcf",
-    backgroundColor: "#f4fbf8"
+    backgroundColor: "#fff"
+  },
+  feedbackBox: {
+    marginTop: 0,
+    borderRadius: 18,
+    borderColor: "#e6ebe8",
+    padding: 16
   },
   dailyAlertHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    gap: 12
+    gap: 16
   },
   dailyAlertCopy: {
-    flex: 1
+    flex: 1,
+    paddingTop: 2
   },
   dailyAlertTitle: {
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 18,
-    fontWeight: "900"
   },
   toggleSwitch: {
+    flexShrink: 0,
     width: 52,
     height: 30,
     borderRadius: 15,
@@ -342,33 +595,38 @@ const styles = StyleSheet.create({
   toggleKnobActive: {
     transform: [{ translateX: 22 }]
   },
-  choiceWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 18
+  reminderWheel: {
+    height: 132,
+    marginTop: 14,
+    borderRadius: 16,
+    backgroundColor: "#f7faf8",
+    overflow: "hidden"
   },
-  choice: {
-    minHeight: 44,
-    width: "22.7%",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#e1e6e3",
-    backgroundColor: "#fff",
-    justifyContent: "center",
+  reminderWheelContent: {
+    paddingVertical: 44
+  },
+  reminderWheelSelection: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    top: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#e4f4ed"
+  },
+  reminderWheelItem: {
+    height: 44,
     alignItems: "center",
-    paddingHorizontal: 14
+    justifyContent: "center"
   },
-  choiceActive: {
-    backgroundColor: "#1f7a5a",
-    borderColor: "#1f7a5a"
+  reminderWheelText: {
+    ...typography.label,
+    color: "#8a938d",
   },
-  choiceText: {
-    color: "#18201c",
-    fontWeight: "900"
-  },
-  choiceTextActive: {
-    color: "#fff"
+  reminderWheelTextActive: {
+    color: "#14583f",
+    fontSize: 16,
+    fontWeight: "800"
   },
   aiCreditBox: {
     marginTop: 0,
@@ -386,14 +644,13 @@ const styles = StyleSheet.create({
     gap: 10
   },
   aiCreditPill: {
+    ...typography.badge,
     minWidth: 70,
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 999,
     backgroundColor: "#1f7a5a",
     color: "#fff",
-    fontSize: 12,
-    fontWeight: "900",
     textAlign: "center"
   },
   aiCreditGrid: {
@@ -407,15 +664,13 @@ const styles = StyleSheet.create({
     padding: 10
   },
   aiCreditLabel: {
+    ...typography.badge,
     color: "#6c7771",
-    fontSize: 11,
-    fontWeight: "800",
     marginBottom: 3
   },
   aiCreditValue: {
+    ...typography.cardTitle,
     color: "#12362a",
-    fontSize: 17,
-    fontWeight: "900"
   },
   aiCreditButton: {
     minHeight: 44,
@@ -427,9 +682,8 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   aiCreditButtonText: {
+    ...typography.label,
     color: "#14583f",
-    fontSize: 14,
-    fontWeight: "900"
   },
   planBox: {
     paddingTop: 2,
@@ -443,15 +697,13 @@ const styles = StyleSheet.create({
     gap: 12
   },
   planEyebrow: {
+    ...typography.captionStrong,
     color: "#6c7771",
-    fontSize: 12,
-    fontWeight: "900",
     marginBottom: 2
   },
   planTitle: {
+    ...typography.sectionTitle,
     color: "#102019",
-    fontSize: 28,
-    fontWeight: "900"
   },
   planRow: {
     flexDirection: "row",
@@ -459,9 +711,8 @@ const styles = StyleSheet.create({
     gap: 8
   },
   planChip: {
+    ...typography.captionStrong,
     color: "#14583f",
-    fontSize: 13,
-    fontWeight: "900",
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#dde5e1",
@@ -491,8 +742,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   shareButtonText: {
+    ...typography.label,
     color: "#fff",
-    fontWeight: "900"
   },
   familySyncBox: {
     marginTop: 14,
@@ -504,14 +755,13 @@ const styles = StyleSheet.create({
     padding: 16
   },
   familyCodeInput: {
+    ...typography.cardTitle,
     minHeight: 44,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#d9d2c6",
     backgroundColor: "#fff",
     color: "#18201c",
-    fontSize: 16,
-    fontWeight: "900",
     letterSpacing: 0,
     paddingHorizontal: 12
   },
@@ -529,8 +779,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12
   },
   familyPrimaryButtonText: {
+    ...typography.label,
     color: "#fff",
-    fontWeight: "900"
   },
   familyGhostButton: {
     flex: 1,
@@ -544,8 +794,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12
   },
   familyGhostButtonText: {
+    ...typography.label,
     color: "#14583f",
-    fontWeight: "900"
   },
   familyDangerButton: {
     flex: 1,
@@ -559,11 +809,203 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12
   },
   familyDangerButtonText: {
+    ...typography.label,
     color: "#a73727",
-    fontWeight: "900"
+  },
+  accountBox: {
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e6ebe8",
+    padding: 16,
+    gap: 12
+  },
+  accountProfileRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
+  },
+  accountAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent"
+  },
+  accountProfileCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  accountEmail: {
+    ...typography.caption,
+    color: "#606a64",
+    marginTop: 2
+  },
+  accountPrimaryButton: {
+    minHeight: 46,
+    borderRadius: 10,
+    backgroundColor: "#1f7a5a",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14
+  },
+  accountPrimaryButtonText: {
+    ...typography.label,
+    color: "#fff",
+  },
+  accountSecondaryButton: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d8dfdb",
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14
+  },
+  accountSecondaryButtonText: {
+    ...typography.label,
+    color: "#4f5a54",
+  },
+  accountButtonDisabled: {
+    opacity: 0.48
+  },
+  authSheetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.48)",
+    justifyContent: "center"
+  },
+  authSheetScrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingVertical: 12
+  },
+  authSheetCard: {
+    marginHorizontal: 16,
+    borderRadius: 26,
+    backgroundColor: "#fff",
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 18
+  },
+  authSheetHero: {
+    height: 84,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4
+  },
+  authSheetHeroGlow: {
+    position: "absolute",
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(31, 122, 90, 0.12)",
+    shadowColor: "#1f7a5a",
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 }
+  },
+  authSheetAvatar: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent"
+  },
+  authSheetTitle: {
+    ...typography.sectionTitle,
+    textAlign: "center",
+    color: "#151b18",
+    marginBottom: 8
+  },
+  authSheetSubtitle: {
+    ...typography.body,
+    textAlign: "center",
+    color: "#59635d",
+    marginBottom: 12
+  },
+  authProviderButton: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#dde4e0",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    marginBottom: 9,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4
+  },
+  authProviderButtonDisabled: {
+    opacity: 0.55
+  },
+  authProviderLogoImage: {
+    width: 28,
+    height: 28,
+    marginRight: 16
+  },
+  authProviderLogoImageSmall: {
+    width: 23,
+    height: 23,
+    marginLeft: 3,
+    marginRight: 18
+  },
+  authProviderButtonText: {
+    ...typography.bodyStrong,
+    color: "#1c2320"
+  },
+  personGlyph: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "flex-start",
+    backgroundColor: "transparent"
+  },
+  personGlyphLarge: {
+    width: 28,
+    height: 28
+  },
+  personHead: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: "#1f7a5a",
+    backgroundColor: "transparent",
+    marginTop: 1
+  },
+  personHeadActive: {
+    borderColor: "#1f7a5a"
+  },
+  personShoulders: {
+    width: 10,
+    height: 6,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
+    borderWidth: 1,
+    borderColor: "#1f7a5a",
+    borderBottomWidth: 0,
+    marginTop: 3,
+    backgroundColor: "transparent"
+  },
+  personShouldersActive: {
+    borderColor: "#1f7a5a"
   },
   timePickerRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 0,
     marginTop: 18,
     borderRadius: 18,
@@ -574,13 +1016,8 @@ const styles = StyleSheet.create({
   },
   timeSelect: {
     flex: 1,
-    gap: 8,
-    padding: 14
-  },
-  timeSelectLabel: {
-    color: "#18201c",
-    fontSize: 14,
-    fontWeight: "900"
+    minWidth: 130,
+    padding: 10
   },
   timeSelectControls: {
     minHeight: 50,
@@ -593,9 +1030,8 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   timeSelectValue: {
+    ...typography.label,
     color: "#14583f",
-    fontSize: 16,
-    fontWeight: "900"
   },
   timeStepButton: {
     width: 42,
@@ -610,7 +1046,7 @@ const styles = StyleSheet.create({
   timeStepText: {
     color: "#14583f",
     fontSize: 21,
-    fontWeight: "900"
+    fontWeight: "800"
   },
   timeStepTextDisabled: {
     color: "#b8b1a7"

@@ -42,7 +42,7 @@ Play Console 업로드용 최종 AAB를 만들려면 다음 중 하나를 선택
 Expo/EAS가 Android 업로드 키를 관리하게 하는 방식입니다. 키 관리 실수를 줄일 수 있어서 현재 프로젝트에는 이 방식이 가장 편합니다.
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile"
+cd "C:\Workspace\FreshKeeper\mobile"
 eas build -p android --profile production
 ```
 

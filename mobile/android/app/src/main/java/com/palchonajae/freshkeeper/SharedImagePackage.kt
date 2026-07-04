@@ -1,4 +1,4 @@
-package com.wooyoung43.freshkeeper
+package com.palchonajae.freshkeeper
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

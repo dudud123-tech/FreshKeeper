@@ -1,8 +1,39 @@
 ﻿const MAX_LINES = 300;
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
 const MAX_TEXT_LENGTH = 140;
 const MAX_FAMILY_ITEMS = 500;
 const MAX_AI_OCR_LINES = 180;
 const MAX_AI_CANDIDATES = 30;
+const MAX_CLASSIFICATION_NAMES = 30;
+const MAX_CLASSIFICATION_FEEDBACK_ITEMS = 30;
+const MIN_COMMUNITY_VOTES = 3;
+const MIN_COMMUNITY_AGREEMENT = 0.6;
+const DEFAULT_CLASSIFICATION = {
+  category: "기타",
+  storage: "냉장",
+  expiryDays: 7,
+  source: "default",
+  confidence: 0
+};
+const PRODUCT_CATEGORIES = new Set([
+  "유제품",
+  "육류/생선",
+  "채소/과일",
+  "신선식품",
+  "냉동식품",
+  "가공식품",
+  "건어물/건조식품",
+  "소스류",
+  "음료",
+  "간식",
+  "약",
+  "기타"
+]);
+const PRODUCT_STORAGE_TYPES = new Set(["냉장", "냉동", "실온"]);
+const AUTH_SESSION_DAYS = 30;
+const GOOGLE_JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
+const KAKAO_JWKS = createRemoteJWKSet(new URL("https://kauth.kakao.com/.well-known/jwks.json"));
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const DEFAULT_GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite";
 const WORKERS_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct";
@@ -104,7 +135,7 @@ const AI_CANDIDATE_ALLOW_HINTS = [
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type"
+  "Access-Control-Allow-Headers": "Content-Type, Authorization"
 };
 
 export default {
@@ -132,8 +163,44 @@ export default {
       return handleOcrFeedback(request, env);
     }
 
+    if (request.method === "POST" && url.pathname === "/api/auth/google") {
+      return handleGoogleLogin(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/kakao") {
+      return handleKakaoLogin(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/naver") {
+      return handleNaverLogin(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/auth/session") {
+      return handleGetAuthSession(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/logout") {
+      return handleLogout(request, env);
+    }
+
     if (request.method === "POST" && url.pathname === "/api/receipt-candidates") {
       return handleReceiptCandidates(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/product-classifications/resolve") {
+      return handleResolveProductClassifications(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/product-classifications/feedback") {
+      return handleProductClassificationFeedback(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/product-exclusions/resolve") {
+      return handleResolveProductExclusions(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/product-exclusions") {
+      return handleUpdateProductExclusions(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/api/family-groups") {
@@ -152,6 +219,639 @@ export default {
     return json({ ok: false, error: "not_found" }, 404);
   }
 };
+
+async function handleGoogleLogin(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const idToken = safeString(payload?.idToken, 5000);
+  const clientId = normalizeClientId(payload?.clientId);
+  if (!idToken || !clientId) return json({ ok: false, error: "invalid_login_payload" }, 400);
+
+  const audiences = googleClientAudiences(env);
+  if (!audiences.length) return json({ ok: false, error: "google_auth_not_configured" }, 503);
+
+  let claims;
+  try {
+    const verified = await jwtVerify(idToken, GOOGLE_JWKS, {
+      issuer: ["https://accounts.google.com", "accounts.google.com"],
+      audience: audiences
+    });
+    claims = verified.payload;
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "google_login_rejected",
+      error: safeString(error?.code || error?.message, 120)
+    }));
+    return json({ ok: false, error: "invalid_google_token" }, 401);
+  }
+
+  const providerSubject = safeString(claims?.sub, 255);
+  const email = safeString(claims?.email, 254);
+  const emailVerified = claims?.email_verified === true;
+  if (!providerSubject || !email || !emailVerified) {
+    return json({ ok: false, error: "unverified_google_account" }, 401);
+  }
+
+  const now = new Date().toISOString();
+  const existing = await env.DB.prepare(
+    `SELECT id FROM accounts WHERE provider = 'google' AND provider_subject = ?`
+  ).bind(providerSubject).first();
+  const accountId = existing?.id || crypto.randomUUID();
+
+  await env.DB.prepare(
+    `INSERT INTO accounts
+      (id, provider, provider_subject, email, display_name, avatar_url, created_at, updated_at)
+     VALUES (?, 'google', ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(provider, provider_subject) DO UPDATE SET
+       email = excluded.email,
+       display_name = excluded.display_name,
+       avatar_url = excluded.avatar_url,
+       updated_at = excluded.updated_at`
+  ).bind(
+    accountId,
+    providerSubject,
+    email,
+    safeString(claims?.name, 120),
+    safeString(claims?.picture, 500),
+    now,
+    now
+  ).run();
+
+  await bindAccountDevice(env.DB, accountId, clientId, now);
+  const session = await createAuthSession(env.DB, accountId, now);
+  const account = await getAccountById(env.DB, accountId);
+
+  return json({
+    ok: true,
+    token: session.token,
+    expiresAt: session.expiresAt,
+    user: publicAccount(account),
+    migrated: true
+  });
+}
+
+async function handleKakaoLogin(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const idToken = safeString(payload?.idToken, 5000);
+  const clientId = normalizeClientId(payload?.clientId);
+  if (!idToken || !clientId) return json({ ok: false, error: "invalid_login_payload" }, 400);
+
+  const nativeAppKey = safeString(env.KAKAO_NATIVE_APP_KEY, 255);
+  if (!nativeAppKey) return json({ ok: false, error: "kakao_auth_not_configured" }, 503);
+
+  let claims;
+  try {
+    const verified = await jwtVerify(idToken, KAKAO_JWKS, {
+      issuer: "https://kauth.kakao.com",
+      audience: nativeAppKey
+    });
+    claims = verified.payload;
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "kakao_login_rejected",
+      error: safeString(error?.code || error?.message, 120)
+    }));
+    return json({ ok: false, error: "invalid_kakao_token" }, 401);
+  }
+
+  const providerSubject = safeString(claims?.sub, 255);
+  if (!providerSubject) return json({ ok: false, error: "invalid_kakao_account" }, 401);
+
+  const now = new Date().toISOString();
+  const existing = await env.DB.prepare(
+    `SELECT id FROM accounts WHERE provider = 'kakao' AND provider_subject = ?`
+  ).bind(providerSubject).first();
+  const accountId = existing?.id || crypto.randomUUID();
+
+  await env.DB.prepare(
+    `INSERT INTO accounts
+      (id, provider, provider_subject, email, display_name, avatar_url, created_at, updated_at)
+     VALUES (?, 'kakao', ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(provider, provider_subject) DO UPDATE SET
+       email = excluded.email,
+       display_name = excluded.display_name,
+       avatar_url = excluded.avatar_url,
+       updated_at = excluded.updated_at`
+  ).bind(
+    accountId,
+    providerSubject,
+    safeString(claims?.email, 254) || null,
+    safeString(claims?.nickname, 120),
+    safeString(claims?.picture, 500),
+    now,
+    now
+  ).run();
+
+  await bindAccountDevice(env.DB, accountId, clientId, now);
+  const session = await createAuthSession(env.DB, accountId, now);
+  const account = await getAccountById(env.DB, accountId);
+
+  return json({
+    ok: true,
+    token: session.token,
+    expiresAt: session.expiresAt,
+    user: publicAccount(account),
+    migrated: true
+  });
+}
+
+async function handleNaverLogin(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const accessToken = safeString(payload?.accessToken, 5000);
+  const clientId = normalizeClientId(payload?.clientId);
+  if (!accessToken || !clientId) return json({ ok: false, error: "invalid_login_payload" }, 400);
+
+  let profileResult;
+  try {
+    const profileResponse = await fetch("https://openapi.naver.com/v1/nid/me", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      },
+      redirect: "manual"
+    });
+    if (!profileResponse.ok) {
+      console.warn(JSON.stringify({
+        event: "naver_login_rejected",
+        status: profileResponse.status
+      }));
+      return json({ ok: false, error: "invalid_naver_token" }, 401);
+    }
+    profileResult = await profileResponse.json();
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "naver_profile_request_failed",
+      error: safeString(error?.message, 120)
+    }));
+    return json({ ok: false, error: "naver_profile_unavailable" }, 503);
+  }
+
+  const profile = profileResult?.response;
+  const providerSubject = safeString(profile?.id, 255);
+  if (profileResult?.resultcode !== "00" || !providerSubject) {
+    return json({ ok: false, error: "invalid_naver_account" }, 401);
+  }
+
+  const now = new Date().toISOString();
+  const existing = await env.DB.prepare(
+    `SELECT id FROM accounts WHERE provider = 'naver' AND provider_subject = ?`
+  ).bind(providerSubject).first();
+  const accountId = existing?.id || crypto.randomUUID();
+
+  await env.DB.prepare(
+    `INSERT INTO accounts
+      (id, provider, provider_subject, email, display_name, avatar_url, created_at, updated_at)
+     VALUES (?, 'naver', ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(provider, provider_subject) DO UPDATE SET
+       email = excluded.email,
+       display_name = excluded.display_name,
+       avatar_url = excluded.avatar_url,
+       updated_at = excluded.updated_at`
+  ).bind(
+    accountId,
+    providerSubject,
+    safeString(profile?.email, 254) || null,
+    safeString(profile?.nickname || profile?.name, 120),
+    safeString(profile?.profile_image, 500),
+    now,
+    now
+  ).run();
+
+  await bindAccountDevice(env.DB, accountId, clientId, now);
+  const session = await createAuthSession(env.DB, accountId, now);
+  const account = await getAccountById(env.DB, accountId);
+
+  return json({
+    ok: true,
+    token: session.token,
+    expiresAt: session.expiresAt,
+    user: publicAccount(account),
+    migrated: true
+  });
+}
+
+async function handleGetAuthSession(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const session = await authenticatedSession(request, env.DB);
+  if (!session) return json({ ok: false, error: "unauthorized" }, 401);
+  return json({
+    ok: true,
+    expiresAt: session.expires_at,
+    user: publicAccount(session)
+  });
+}
+
+async function handleLogout(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const token = bearerToken(request);
+  if (!token) return json({ ok: true });
+  await env.DB.prepare(
+    `UPDATE auth_sessions SET revoked_at = ? WHERE token_hash = ?`
+  ).bind(new Date().toISOString(), await sha256(token)).run();
+  return json({ ok: true });
+}
+
+async function createAuthSession(db, accountId, createdAt) {
+  const token = randomToken();
+  const expiresAtDate = new Date(createdAt);
+  expiresAtDate.setUTCDate(expiresAtDate.getUTCDate() + AUTH_SESSION_DAYS);
+  const expiresAt = expiresAtDate.toISOString();
+
+  await db.prepare(
+    `INSERT INTO auth_sessions (id, account_id, token_hash, created_at, expires_at, revoked_at)
+     VALUES (?, ?, ?, ?, ?, NULL)`
+  ).bind(crypto.randomUUID(), accountId, await sha256(token), createdAt, expiresAt).run();
+  return { token, expiresAt };
+}
+
+async function authenticatedSession(request, db) {
+  const token = bearerToken(request);
+  if (!token) return null;
+  return db.prepare(
+    `SELECT s.account_id, s.expires_at, a.provider, a.email, a.display_name, a.avatar_url
+     FROM auth_sessions s
+     JOIN accounts a ON a.id = s.account_id
+     WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
+     LIMIT 1`
+  ).bind(await sha256(token), new Date().toISOString()).first();
+}
+
+async function bindAccountDevice(db, accountId, clientId, now) {
+  const accountSubjectKey = `account:${accountId}`;
+  const deviceSubjectKey = `device:${clientId}`;
+  await db.batch([
+    db.prepare(
+      `DELETE FROM product_classification_preferences
+       WHERE subject_key = ? AND normalized_name IN (
+         SELECT normalized_name FROM product_classification_preferences WHERE subject_key = ?
+       )`
+    ).bind(accountSubjectKey, deviceSubjectKey),
+    db.prepare(
+      `UPDATE product_classification_preferences
+       SET subject_key = ?, account_id = ?, updated_at = ?
+       WHERE subject_key = ?`
+    ).bind(accountSubjectKey, accountId, now, deviceSubjectKey),
+    db.prepare(
+      `DELETE FROM product_candidate_exclusions
+       WHERE subject_key = ? AND normalized_name IN (
+         SELECT normalized_name FROM product_candidate_exclusions WHERE subject_key = ?
+       )`
+    ).bind(accountSubjectKey, deviceSubjectKey),
+    db.prepare(
+      `UPDATE product_candidate_exclusions
+       SET subject_key = ?, account_id = ?, updated_at = ?
+       WHERE subject_key = ?`
+    ).bind(accountSubjectKey, accountId, now, deviceSubjectKey),
+    db.prepare(
+      `INSERT INTO account_devices (client_id, account_id, linked_at, last_seen_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(client_id) DO UPDATE SET
+         account_id = excluded.account_id,
+         last_seen_at = excluded.last_seen_at`
+    ).bind(clientId, accountId, now, now)
+  ]);
+}
+
+function googleClientAudiences(env) {
+  return String(env.GOOGLE_WEB_CLIENT_ID || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function bearerToken(request) {
+  const match = request.headers.get("Authorization")?.match(/^Bearer\s+([A-Za-z0-9_-]{32,})$/i);
+  return match?.[1] || "";
+}
+
+function randomToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return toBase64Url(bytes);
+}
+
+function toBase64Url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function getAccountById(db, accountId) {
+  return db.prepare(
+    `SELECT id AS account_id, provider, email, display_name, avatar_url FROM accounts WHERE id = ?`
+  ).bind(accountId).first();
+}
+
+function publicAccount(row) {
+  return {
+    id: row?.account_id || "",
+    provider: row?.provider || "",
+    email: row?.email || "",
+    displayName: row?.display_name || "",
+    avatarUrl: row?.avatar_url || ""
+  };
+}
+
+async function handleResolveProductClassifications(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const names = normalizeClassificationNames(payload?.names);
+  if (!names.length) return json({ ok: false, error: "no_names" }, 400);
+
+  const clientId = normalizeClientId(payload?.clientId);
+  const session = await authenticatedSession(request, env.DB);
+  const accountId = session?.account_id || "";
+  const subjectKey = classificationSubjectKey(clientId, accountId);
+  const statements = [];
+  const keywordResult = await env.DB.prepare(
+    `SELECT normalized_keyword, display_keyword, category, storage, expiry_days, priority
+     FROM product_classification_keyword_rules
+     ORDER BY priority DESC, length(normalized_keyword) DESC`
+  ).all();
+  const keywordRules = keywordResult?.results || [];
+
+  for (const item of names) {
+    statements.push(
+      env.DB.prepare(
+        `SELECT final_category, final_storage, final_expiry_days, updated_at
+         FROM product_classification_preferences
+         WHERE subject_key = ? AND normalized_name = ?
+         LIMIT 1`
+      ).bind(subjectKey, item.normalizedName),
+      env.DB.prepare(
+        `SELECT final_category, final_storage, final_expiry_days
+         FROM product_classification_preferences
+         WHERE normalized_name = ?
+         LIMIT 200`
+      ).bind(item.normalizedName),
+      env.DB.prepare(
+        `SELECT display_name, category, storage, expiry_days, source, updated_at
+         FROM product_classification_catalog
+         WHERE normalized_name = ?
+         LIMIT 1`
+      ).bind(item.normalizedName)
+    );
+  }
+
+  let queryResults;
+  try {
+    queryResults = await env.DB.batch(statements);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "product_classification_resolve_failed",
+      error: safeString(error?.message, 300),
+      nameCount: names.length
+    }));
+    return json({ ok: false, error: "classification_query_failed" }, 500);
+  }
+
+  const classifications = names.map((item, index) => {
+    const resultOffset = index * 3;
+    const personal = queryResults[resultOffset]?.results?.[0];
+    const communityRows = queryResults[resultOffset + 1]?.results || [];
+    const catalog = queryResults[resultOffset + 2]?.results?.[0];
+
+    if (personal) {
+      return {
+        name: item.name,
+        normalizedName: item.normalizedName,
+        category: personal.final_category,
+        storage: personal.final_storage,
+        expiryDays: personal.final_expiry_days,
+        source: accountId ? "user-personal" : "device-personal",
+        confidence: 1,
+        sampleCount: 1
+      };
+    }
+
+    const community = chooseCommunityClassification(communityRows);
+    if (community) {
+      return {
+        name: item.name,
+        normalizedName: item.normalizedName,
+        ...community
+      };
+    }
+
+    if (catalog) {
+      return {
+        name: item.name,
+        normalizedName: item.normalizedName,
+        category: catalog.category,
+        storage: catalog.storage,
+        expiryDays: catalog.expiry_days,
+        source: catalog.source || "catalog",
+        confidence: 0.8,
+        sampleCount: 0
+      };
+    }
+
+    const keywordRule = keywordRules.find((rule) =>
+      rule.normalized_keyword && item.normalizedName.includes(rule.normalized_keyword)
+    );
+    if (keywordRule) {
+      return {
+        name: item.name,
+        normalizedName: item.normalizedName,
+        category: keywordRule.category,
+        storage: keywordRule.storage,
+        expiryDays: keywordRule.expiry_days,
+        source: "server-keyword-rule",
+        confidence: 0.65,
+        sampleCount: 0
+      };
+    }
+
+    return {
+      name: item.name,
+      normalizedName: item.normalizedName,
+      ...DEFAULT_CLASSIFICATION,
+      sampleCount: 0
+    };
+  });
+
+  return json({ ok: true, classifications });
+}
+
+async function handleProductClassificationFeedback(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const clientId = normalizeClientId(payload?.clientId);
+  if (!clientId) return json({ ok: false, error: "invalid_client_id" }, 400);
+
+  const session = await authenticatedSession(request, env.DB);
+  const accountId = session?.account_id || "";
+  const subjectKey = classificationSubjectKey(clientId, accountId);
+  const items = normalizeClassificationFeedbackItems(payload?.items);
+  if (!items.length) return json({ ok: false, error: "no_valid_items" }, 400);
+
+  const now = new Date().toISOString();
+  const statements = items.map((item) =>
+    env.DB.prepare(
+      `INSERT INTO product_classification_preferences
+        (subject_key, account_id, client_id, normalized_name, original_name,
+         predicted_category, predicted_storage, predicted_expiry_days, predicted_source,
+         final_category, final_storage, final_expiry_days, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(subject_key, normalized_name) DO UPDATE SET
+         account_id = excluded.account_id,
+         client_id = excluded.client_id,
+         original_name = excluded.original_name,
+         predicted_category = excluded.predicted_category,
+         predicted_storage = excluded.predicted_storage,
+         predicted_expiry_days = excluded.predicted_expiry_days,
+         predicted_source = excluded.predicted_source,
+         final_category = excluded.final_category,
+         final_storage = excluded.final_storage,
+         final_expiry_days = excluded.final_expiry_days,
+         updated_at = excluded.updated_at`
+    ).bind(
+      subjectKey,
+      accountId || null,
+      clientId,
+      item.normalizedName,
+      item.name,
+      item.predictedCategory,
+      item.predictedStorage,
+      item.predictedExpiryDays,
+      item.predictedSource,
+      item.finalCategory,
+      item.finalStorage,
+      item.finalExpiryDays,
+      now,
+      now
+    )
+  );
+
+  try {
+    await env.DB.batch(statements);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "product_classification_feedback_failed",
+      error: safeString(error?.message, 300),
+      itemCount: items.length
+    }));
+    return json({ ok: false, error: "classification_feedback_failed" }, 500);
+  }
+
+  return json({ ok: true, savedCount: items.length });
+}
+
+async function handleResolveProductExclusions(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const clientId = normalizeClientId(payload?.clientId);
+  if (!clientId) return json({ ok: false, error: "invalid_client_id" }, 400);
+  const names = normalizeExclusionNames(payload?.names);
+  if (!names.length) return json({ ok: true, excludedNames: [] });
+
+  const session = await authenticatedSession(request, env.DB);
+  const subjectKey = classificationSubjectKey(clientId, session?.account_id || "");
+  const placeholders = names.map(() => "?").join(", ");
+  const result = await env.DB.prepare(
+    `SELECT normalized_name
+     FROM product_candidate_exclusions
+     WHERE subject_key = ? AND normalized_name IN (${placeholders})`
+  ).bind(subjectKey, ...names.map((item) => item.normalizedName)).all();
+
+  return json({
+    ok: true,
+    excludedNames: (result?.results || []).map((row) => row.normalized_name)
+  });
+}
+
+async function handleUpdateProductExclusions(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const clientId = normalizeClientId(payload?.clientId);
+  if (!clientId) return json({ ok: false, error: "invalid_client_id" }, 400);
+  const exclude = normalizeExclusionNames(payload?.exclude);
+  const include = normalizeExclusionNames(payload?.include);
+  if (!exclude.length && !include.length) {
+    return json({ ok: true, excludedCount: 0, includedCount: 0 });
+  }
+
+  const session = await authenticatedSession(request, env.DB);
+  const accountId = session?.account_id || "";
+  const subjectKey = classificationSubjectKey(clientId, accountId);
+  const now = new Date().toISOString();
+  const statements = [];
+
+  for (const item of exclude) {
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO product_candidate_exclusions
+          (subject_key, account_id, client_id, normalized_name, original_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(subject_key, normalized_name) DO UPDATE SET
+           original_name = excluded.original_name,
+           updated_at = excluded.updated_at`
+      ).bind(subjectKey, accountId || null, clientId, item.normalizedName, item.name, now, now)
+    );
+  }
+
+  for (const item of include) {
+    statements.push(
+      env.DB.prepare(
+        `DELETE FROM product_candidate_exclusions
+         WHERE subject_key = ? AND normalized_name = ?`
+      ).bind(subjectKey, item.normalizedName)
+    );
+  }
+
+  await env.DB.batch(statements);
+  return json({ ok: true, excludedCount: exclude.length, includedCount: include.length });
+}
 
 async function handleReceiptCandidates(request, env) {
   const requestId = crypto.randomUUID();
@@ -913,8 +1613,9 @@ function normalizeAiCandidates(candidates, lines = [], localCandidates = []) {
 
   for (const candidate of candidates) {
     const name = cleanAiProductName(candidate?.name);
-    const key = name.replace(/\s/g, "").toLowerCase();
-    if (!name || !isLikelyAiProductName(name) || !isSupportedByReceiptText(name, lines, localCandidates) || seen.has(key)) continue;
+    const key = receiptCandidateKey(name);
+    const duplicate = [...seen].some((previousKey) => isNearReceiptCandidateKey(previousKey, key));
+    if (!name || !isLikelyAiProductName(name) || !isSupportedByReceiptText(name, lines, localCandidates) || duplicate) continue;
     seen.add(key);
     results.push({
       name,
@@ -931,6 +1632,7 @@ function cleanAiProductName(value) {
   const text = safeString(value, 80)
     .replace(/^[\s*•·\-+]+/, "")
     .replace(/^[\[\](){}]+|[\[\](){}]+$/g, "")
+    .replace(/\s*(?:IRC|RC)\s*$/i, "")
     .replace(/\s{2,}/g, " ")
     .trim();
   if (text.length < 2) return "";
@@ -990,8 +1692,9 @@ function normalizeLocalAiFallback(localCandidates = [], lines = []) {
 
   for (const value of localCandidates) {
     const name = cleanAiProductName(value);
-    const key = name.replace(/\s/g, "").toLowerCase();
-    if (!name || !isLikelyAiProductName(name) || !isSupportedByReceiptText(name, lines, []) || seen.has(key)) continue;
+    const key = receiptCandidateKey(name);
+    const duplicate = [...seen].some((previousKey) => isNearReceiptCandidateKey(previousKey, key));
+    if (!name || !isLikelyAiProductName(name) || !isSupportedByReceiptText(name, lines, []) || duplicate) continue;
     seen.add(key);
     results.push({
       name,
@@ -1057,6 +1760,163 @@ function normalizeEvidenceText(value) {
   return safeString(value, 160)
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function receiptCandidateKey(value) {
+  return normalizeEvidenceText(value)
+    .replace(/(?:irc|rc)$/i, "")
+    .replace(/\d+(?:g|kg|ml|l|개|입|종|팩|봉|ea|x)?/gi, "");
+}
+
+function isNearReceiptCandidateKey(left, right) {
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  return shorter.length >= 4 && longer.includes(shorter) && shorter.length / longer.length >= 0.65;
+}
+
+function normalizeProductName(value) {
+  return safeString(value, 140)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function normalizeClassificationNames(values) {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set();
+  const results = [];
+
+  for (const value of values.slice(0, MAX_CLASSIFICATION_NAMES)) {
+    const name = safeString(value, 140);
+    const normalizedName = normalizeProductName(name);
+    if (normalizedName.length < 2 || seen.has(normalizedName)) continue;
+    seen.add(normalizedName);
+    results.push({ name, normalizedName });
+  }
+
+  return results;
+}
+
+function normalizeExclusionNames(values) {
+  return normalizeClassificationNames(values).map((item) => ({
+    ...item,
+    normalizedName: item.normalizedName.replace(/(?:irc|rc)$/i, "")
+  })).filter((item) => item.normalizedName.length >= 2);
+}
+
+function normalizeClassificationFeedbackItems(values) {
+  if (!Array.isArray(values)) return [];
+  const results = [];
+  const seen = new Set();
+
+  for (const value of values.slice(0, MAX_CLASSIFICATION_FEEDBACK_ITEMS)) {
+    const name = safeString(value?.name, 140);
+    const normalizedName = normalizeProductName(name);
+    const finalCategory = normalizeProductCategory(value?.finalCategory);
+    const finalStorage = normalizeProductStorage(value?.finalStorage);
+    const finalExpiryDays = normalizeExpiryDays(value?.finalExpiryDays);
+    if (
+      normalizedName.length < 2 ||
+      seen.has(normalizedName) ||
+      !finalCategory ||
+      !finalStorage ||
+      finalExpiryDays === null
+    ) {
+      continue;
+    }
+
+    seen.add(normalizedName);
+    results.push({
+      name,
+      normalizedName,
+      predictedCategory: normalizeProductCategory(value?.predictedCategory),
+      predictedStorage: normalizeProductStorage(value?.predictedStorage),
+      predictedExpiryDays: normalizeExpiryDays(value?.predictedExpiryDays),
+      predictedSource: safeString(value?.predictedSource, 40),
+      finalCategory,
+      finalStorage,
+      finalExpiryDays
+    });
+  }
+
+  return results;
+}
+
+function normalizeProductCategory(value) {
+  const category = safeString(value, 40);
+  return PRODUCT_CATEGORIES.has(category) ? category : "";
+}
+
+function normalizeProductStorage(value) {
+  const storage = safeString(value, 20);
+  return PRODUCT_STORAGE_TYPES.has(storage) ? storage : "";
+}
+
+function normalizeExpiryDays(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.min(3650, Math.round(number)));
+}
+
+function normalizeClientId(value) {
+  const clientId = safeString(value, 100);
+  return /^[A-Za-z0-9:_-]{12,100}$/.test(clientId) ? clientId : "";
+}
+
+function classificationSubjectKey(clientId, accountId) {
+  if (accountId) return `account:${accountId}`;
+  if (clientId) return `device:${clientId}`;
+  return "anonymous";
+}
+
+function chooseCommunityClassification(rows) {
+  if (!Array.isArray(rows) || rows.length < MIN_COMMUNITY_VOTES) return null;
+
+  const categoryWinner = mostCommonValue(rows.map((row) => row.final_category));
+  if (!categoryWinner || categoryWinner.count / rows.length < MIN_COMMUNITY_AGREEMENT) return null;
+
+  const categoryRows = rows.filter((row) => row.final_category === categoryWinner.value);
+  const storageWinner = mostCommonValue(categoryRows.map((row) => row.final_storage));
+  if (!storageWinner || storageWinner.count / categoryRows.length < MIN_COMMUNITY_AGREEMENT) return null;
+
+  const matchingRows = categoryRows.filter((row) => row.final_storage === storageWinner.value);
+  const expiryValues = matchingRows
+    .map((row) => normalizeExpiryDays(row.final_expiry_days))
+    .filter((value) => value !== null)
+    .sort((left, right) => left - right);
+  if (!expiryValues.length) return null;
+
+  const middle = Math.floor(expiryValues.length / 2);
+  const expiryDays = expiryValues.length % 2
+    ? expiryValues[middle]
+    : Math.round((expiryValues[middle - 1] + expiryValues[middle]) / 2);
+
+  return {
+    category: categoryWinner.value,
+    storage: storageWinner.value,
+    expiryDays,
+    source: "community-consensus",
+    confidence: Math.round((categoryWinner.count / rows.length) * 100) / 100,
+    sampleCount: rows.length
+  };
+}
+
+function mostCommonValue(values) {
+  const counts = new Map();
+  for (const value of values) {
+    if (!value) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+
+  let winner = null;
+  for (const [value, count] of counts) {
+    if (!winner || count > winner.count || (count === winner.count && value.localeCompare(winner.value, "ko") < 0)) {
+      winner = { value, count };
+    }
+  }
+  return winner;
 }
 
 function normalizeBox(box) {

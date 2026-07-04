@@ -12,18 +12,35 @@ export class ReceiptAiError extends Error {
 }
 
 export function mergeReceiptCandidates(primaryCandidates, fallbackCandidates = []) {
-  const seen = new Set();
+  const seen = [];
   const results = [];
 
   [...primaryCandidates, ...fallbackCandidates].forEach((name) => {
-    const normalized = String(name || "").trim();
-    const key = normalized.replace(/\s/g, "").toLowerCase();
-    if (!normalized || seen.has(key)) return;
-    seen.add(key);
+    const normalized = String(name || "").replace(/\s*(?:IRC|RC)\s*$/i, "").trim();
+    const key = receiptCandidateKey(normalized);
+    if (!normalized || seen.some((previousKey) => isNearReceiptCandidateKey(previousKey, key))) return;
+    seen.push(key);
     results.push(normalized);
   });
 
   return results.slice(0, 30);
+}
+
+function receiptCandidateKey(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "")
+    .replace(/(?:irc|rc)$/i, "")
+    .replace(/\d+(?:g|kg|ml|l|개|입|종|팩|봉|ea|x)?/gi, "");
+}
+
+function isNearReceiptCandidateKey(left, right) {
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  return shorter.length >= 4 && longer.includes(shorter) && shorter.length / longer.length >= 0.65;
 }
 
 export async function requestAiReceiptCandidates({ lines, localCandidates, appVersion }) {

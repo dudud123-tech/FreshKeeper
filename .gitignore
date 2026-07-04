@@ -12,7 +12,9 @@ mobile/.expo/
 dist/
 mobile/dist/
 mobile/dist-test/
+mobile/dist-typography-check/
 cloudflare/worker/.wrangler/
+cloudflare/worker/.generated/
 
 # OS / editor
 .DS_Store
@@ -21,7 +23,12 @@ Thumbs.db
 mobile/.idea/
 
 # Local secrets
+.env
+.env.local
+.env.*.local
 mobile/tools/인증키.txt
+client_secret_*.json
+mobile/client_secret_*.json
 
 # Downloaded model/source artifacts for local experiments
 mobile/tools/dbnet-lab/models/
@@ -29,3 +36,10 @@ mobile/android/app/src/main/assets/index.android.bundle
 
 # Local note editor state
 FreshKeeper/.obsidian/
+/.obsidian/
+/파일/
+
+# Local screenshots and generated data snapshots
+mobile/type-*.png
+mobile/tools/food-safety-api-data/food-safety-i1250-20*.csv
+mobile/tools/food-safety-api-data/food-safety-i1250-20*.json

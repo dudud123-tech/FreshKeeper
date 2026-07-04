@@ -5,8 +5,16 @@ import { Alert, Image } from "react-native";
 import { recognizeReceiptImage } from "../ocr";
 import { parseReceiptLines } from "../receiptParser";
 import { buildOcrFeedbackPayload, feedbackFingerprint, sendOcrFeedback } from "../services/ocrFeedbackApi";
+import {
+  filterExcludedProductNames,
+  normalizeProductName,
+  resolveProductClassifications,
+  setProductExclusion,
+  sendProductClassificationFeedback
+} from "../services/productClassificationApi";
 import { extractCommerceProductImages } from "../utils/commerceImageExtractor";
-import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
+import { daysUntil, todayIso } from "../utils/date";
+import { suggestedExpiryDate } from "../utils/expiryPresets";
 import { chooseItemImage } from "../utils/itemImagePicker";
 import { buildOcrCoordinateOptions, chooseBestOcrCoordinateOption, draftNameForOcrLine, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
 import { detectReceiptAiTextLineBoxes } from "../utils/receiptAiTextDetector";
@@ -89,6 +97,7 @@ export function useReceiptFlow({
   const [feedbackStatus, setFeedbackStatus] = useState("학습 개선 데이터 자동 전송 켜짐");
   const [feedbackUploadKey, setFeedbackUploadKey] = useState("");
   const feedbackUploadInFlightRef = useRef(false);
+  const classificationRequestRef = useRef(0);
 
   const activeOcrCoordinateSize = useMemo(() => {
     return ocrCoordinateOptions[ocrCoordinateModeIndex]?.size || ocrCoordinateSize || receiptImageSize;
@@ -216,6 +225,10 @@ export function useReceiptFlow({
         setSelectedOcrLineIds(commerceImageResult.selectedLineIds);
       }
       setCommerceCropBoxes(commerceImageResult.cropBoxes || []);
+      nextDrafts = await filterExcludedProductNames(nextDrafts);
+      setSelectedOcrLineIds(
+        lines.filter((line) => isOcrLineInDrafts(line, nextDrafts)).map((line) => line.id)
+      );
       setReceiptDrafts(nextDrafts, commerceImageResult.imageMap || {});
       if (imageKind === "paper") {
         setReceiptSelectorMode("highlight");
@@ -512,6 +525,7 @@ export function useReceiptFlow({
       return;
     }
 
+    void setProductExclusion(name, false).catch(() => undefined);
     setSelectedOcrLineIds((current) => [...current, line.id]);
     setReceiptDrafts([...drafts, name]);
     setReceiptStatus("선택한 줄을 상품 후보에 추가했습니다.");
@@ -532,6 +546,7 @@ export function useReceiptFlow({
     if (cropBox.lineId) {
       setSelectedOcrLineIds((current) => (current.includes(cropBox.lineId) ? current : [...current, cropBox.lineId]));
     }
+    void setProductExclusion(draftName, false).catch(() => undefined);
     setReceiptDrafts([...drafts, draftName], cropBox.imageUri ? { [draftName]: cropBox.imageUri } : {});
     setReceiptStatus("사진과 상품명을 함께 후보에 추가했습니다.");
   }
@@ -545,13 +560,13 @@ export function useReceiptFlow({
   }
 
   function defaultDraftForm(draftName, overrides = {}) {
-    const category = overrides.category || suggestCategory(draftName);
-    const storage = overrides.storage || suggestedStorage(draftName, category, "냉장");
     return {
-      category,
-      storage,
+      category: "기타",
+      storage: "냉장",
       expiryType: defaultExpiryType,
-      expiry: suggestedExpiryDate(draftName, category, storage),
+      expiry: todayIso(7),
+      classificationPending: true,
+      classificationPrediction: null,
       ...overrides
     };
   }
@@ -569,6 +584,46 @@ export function useReceiptFlow({
       uniqueDrafts.forEach((draft) => {
         nextForms[draft] = current[draft] || defaultDraftForm(draft, imageMap[draft] ? { imageUri: imageMap[draft] } : {});
       });
+      return nextForms;
+    });
+    void hydrateDraftClassifications(uniqueDrafts);
+  }
+
+  async function hydrateDraftClassifications(draftNames) {
+    if (!draftNames.length) return;
+    const requestId = classificationRequestRef.current + 1;
+    classificationRequestRef.current = requestId;
+    const resultMap = await resolveProductClassifications(draftNames);
+    if (classificationRequestRef.current !== requestId) return;
+
+    setDraftForms((current) => {
+      const nextForms = { ...current };
+      for (const draftName of draftNames) {
+        const currentForm = nextForms[draftName];
+        if (!currentForm || currentForm.classificationTouched) continue;
+        const result = resultMap[normalizeProductName(draftName)];
+        if (!result) {
+          nextForms[draftName] = {
+            ...currentForm,
+            classificationPending: false
+          };
+          continue;
+        }
+
+        nextForms[draftName] = {
+          ...currentForm,
+          category: result.category,
+          storage: result.storage,
+          expiry: todayIso(result.expiryDays),
+          classificationPending: false,
+          classificationPrediction: {
+            category: result.category,
+            storage: result.storage,
+            expiryDays: result.expiryDays,
+            source: result.source
+          }
+        };
+      }
       return nextForms;
     });
   }
@@ -604,6 +659,7 @@ export function useReceiptFlow({
     });
     setTotalHighlighted(true);
     uploadCurrentOcrFeedback("auto", [draftName], [draftName]);
+    uploadProductClassificationFeedback([classificationFeedbackItem(draftName, draftForm)]);
   }
 
   function addAllDrafts() {
@@ -634,6 +690,11 @@ export function useReceiptFlow({
     setTotalHighlighted(true);
     goToPage(inventoryPage);
     uploadCurrentOcrFeedback("auto", finalDrafts, initialDrafts.length ? initialDrafts : drafts);
+    uploadProductClassificationFeedback(
+      finalDrafts.map((draftName) =>
+        classificationFeedbackItem(draftName, draftForms[draftName] || defaultDraftForm(draftName))
+      )
+    );
     setInitialDrafts([]);
   }
 
@@ -644,6 +705,7 @@ export function useReceiptFlow({
   }
 
   function removeDraft(draftName) {
+    void setProductExclusion(draftName, true).catch(() => undefined);
     setDrafts((current) => current.filter((draft) => draft !== draftName));
     setExcludedDrafts((current) => current.filter((draft) => draft !== draftName));
     setSelectedOcrLineIds((current) => {
@@ -659,11 +721,15 @@ export function useReceiptFlow({
   }
 
   function updateDraftForm(draftName, updates) {
+    const classificationTouched = ["category", "storage", "expiry"].some((key) =>
+      Object.prototype.hasOwnProperty.call(updates, key)
+    );
     setDraftForms((current) => ({
       ...current,
       [draftName]: {
         ...defaultDraftForm(draftName, current[draftName]),
-        ...updates
+        ...updates,
+        classificationTouched: current[draftName]?.classificationTouched || classificationTouched
       }
     }));
   }
@@ -682,8 +748,10 @@ export function useReceiptFlow({
   function toggleDraftExcluded(draftName) {
     setExcludedDrafts((current) => {
       if (current.includes(draftName)) {
+        void setProductExclusion(draftName, false).catch(() => undefined);
         return current.filter((draft) => draft !== draftName);
       }
+      void setProductExclusion(draftName, true).catch(() => undefined);
       return [...current, draftName];
     });
   }
@@ -696,11 +764,33 @@ export function useReceiptFlow({
       drafts.forEach((draftName) => {
         nextForms[draftName] = {
           ...defaultDraftForm(draftName, nextForms[draftName]),
-          ...updates
+          ...updates,
+          classificationTouched: true
         };
       });
       return nextForms;
     });
+  }
+
+  function classificationFeedbackItem(draftName, draftForm) {
+    const prediction = draftForm.classificationPrediction || {};
+    if (draftForm.classificationPending && !draftForm.classificationTouched) return null;
+    if (!draftForm.classificationTouched && (!prediction.source || prediction.source === "default")) return null;
+    return {
+      name: draftName,
+      predictedCategory: prediction.category || "",
+      predictedStorage: prediction.storage || "",
+      predictedExpiryDays: prediction.expiryDays,
+      predictedSource: prediction.source || "default",
+      finalCategory: draftForm.category || "기타",
+      finalStorage: draftForm.storage || "냉장",
+      finalExpiryDays: Math.max(0, daysUntil(draftForm.expiry || todayIso(7)))
+    };
+  }
+
+  function uploadProductClassificationFeedback(items) {
+    if (!feedbackSettings.enabled) return;
+    void sendProductClassificationFeedback(items).catch(() => undefined);
   }
 
   async function uploadCurrentOcrFeedback(source = "manual", selectedNamesOverride = null, ruleCandidateNamesOverride = null) {

@@ -16,7 +16,7 @@
 PC에 Node.js와 npm이 설치되어 있어야 합니다.
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile"
+cd "C:\Workspace\FreshKeeper\mobile"
 npm install
 npm start
 ```
@@ -34,7 +34,7 @@ Expo Go에는 이 네이티브 인식 모듈이 포함되어 있지 않으므로
 실제 영수증으로 테스트하려면 개발 빌드가 필요합니다.
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile"
+cd "C:\Workspace\FreshKeeper\mobile"
 npm install
 npx expo prebuild --platform android
 npx expo run:android

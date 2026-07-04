@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import { typography } from "../theme/typography";
 import { ChoiceGroup, DateButton, Field, PrimaryButton } from "./CommonControls";
 import { daysUntil } from "../utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
@@ -14,10 +15,8 @@ const directRegisterIcon = require("../../assets/actions/action-direct-register.
 const inventoryEditIcon = require("../../assets/actions/inventory-edit.png");
 const resetIcon = require("../../assets/actions/action-reset.png");
 const storageTabIcon = require("../../assets/tabs/tab-box.png");
-const defaultItemImage = require("../../assets/foods/category-etc.png");
 
 export default function AddItemPage({
-  width,
   mode,
   setMode,
   name,
@@ -72,6 +71,9 @@ export default function AddItemPage({
   pickDraftImage,
   addDraft
 }) {
+  // 화면 너비와 글자 크기에 맞춰 카드/레이아웃이 깨지지 않도록 조정한다.
+  const { fontScale, width } = useWindowDimensions();
+  const compactModeCards = fontScale >= 1.4 && width < 430;
   const [isReceiptPreviewAdjusting, setReceiptPreviewAdjusting] = useState(false);
   const [editingDraft, setEditingDraft] = useState("");
   const selectedDraftCount = drafts.filter((draft) => !excludedDrafts?.includes(draft)).length;
@@ -84,22 +86,25 @@ export default function AddItemPage({
   return (
     <>
             <ScrollView
-              style={{ width }}
+              style={styles.screen}
               contentContainerStyle={styles.page}
               keyboardShouldPersistTaps="handled"
               scrollEnabled={!isReceiptPreviewAdjusting}
             >
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
+                  {/* 상단 모드는 영수증 등록 / 직접 등록을 바꾸는 버튼이다. */}
                   <View style={styles.modeCards}>
                     <AddModeCard
                       active={mode === "receipt"}
+                      compact={compactModeCards}
                       icon={photoRegisterIcon}
                       title={"\uc0ac\uc9c4\ub4f1\ub85d"}
                       onPress={() => setMode("receipt")}
                     />
                     <AddModeCard
                       active={mode === "manual"}
+                      compact={compactModeCards}
                       icon={directRegisterIcon}
                       title={"\uc9c1\uc811\ub4f1\ub85d"}
                       onPress={() => setMode("manual")}
@@ -109,6 +114,7 @@ export default function AddItemPage({
 
                 {mode === "manual" ? (
                   <View style={styles.form}>
+                    {/* 직접 등록에서는 상품명 왼쪽에 대표 이미지를 붙여 둔다. */}
                     <Field label={"\uc0c1\ud488\uba85"}>
                       <View style={styles.manualNameRow}>
                         <Pressable
@@ -118,14 +124,18 @@ export default function AddItemPage({
                           delayLongPress={300}
                         >
                           <Image
-                            source={manualImageUri ? { uri: manualImageUri } : defaultItemImage}
-                            resizeMode="cover"
-                            style={styles.manualNameImage}
+                            source={manualImageUri ? { uri: manualImageUri } : galleryIcon}
+                            resizeMode={manualImageUri ? "cover" : "contain"}
+                            style={[
+                              styles.manualNameImage,
+                              !manualImageUri && styles.manualNamePlaceholderImage
+                            ]}
                           />
                         </Pressable>
                         <TextInput
                           value={name}
                           onChangeText={(value) => {
+                            // 상품명이 바뀌면 카테고리/보관/소비기한 추천도 같이 갱신한다.
                             const nextCategory = suggestCategory(value);
                             const nextStorage = suggestedStorage(value, nextCategory, storage);
                             setName(value);
@@ -138,6 +148,7 @@ export default function AddItemPage({
                         />
                       </View>
                     </Field>
+                    {/* 카테고리와 보관 방식은 따로 수정할 수 있게 분리해 둔다. */}
                     <ChoiceGroup
                       label={"\uce74\ud14c\uace0\ub9ac"}
                       options={categories}
@@ -182,6 +193,7 @@ export default function AddItemPage({
                   </View>
                 ) : (
                   <View style={styles.form}>
+                    {/* 영수증 모드에서는 카메라/갤러리 진입 버튼부터 보여 준다. */}
                     <Pressable style={styles.receiptActionButton} onPress={takeReceiptPhoto}>
                       <View style={styles.receiptActionIconWrap}>
                         <Image source={cameraIcon} resizeMode="contain" style={styles.receiptHeroIcon} />
@@ -202,6 +214,7 @@ export default function AddItemPage({
                       </View>
                     </Pressable>
 
+                    {/* 영수증 이미지가 있으면 미리보기를 보여 주고 다시 고를 수 있게 한다. */}
                     {receiptImage ? (
                       <View style={styles.receiptPreviewCard}>
                         <Pressable
@@ -228,6 +241,7 @@ export default function AddItemPage({
                     ) : null}
 
                     <View style={styles.registerPanel}>
+                      {/* OCR 결과와 자동 인식된 초안 상품들이 모이는 영역이다. */}
                       {drafts.length > 0 ? (
                         <>
                           <View style={styles.discoveredHeader}>
@@ -255,6 +269,7 @@ export default function AddItemPage({
                           </View>
                           <View style={styles.draftList}>
                             {drafts.map((draft) => {
+                              // 각 초안 상품은 여기서 바로 개별 수정할 수 있다.
                               const isDraftExcluded = excludedDrafts?.includes(draft);
                               const draftCategory = draftForms[draft]?.category || suggestCategory(draft);
                               const draftStorage = draftForms[draft]?.storage || suggestedStorage(draft, draftCategory, "\ub0c9\uc7a5");
@@ -362,6 +377,7 @@ export default function AddItemPage({
               onRequestClose={() => setReceiptImageTypeChooserVisible?.(false)}
             >
               <View style={styles.imageTypeModalBackdrop}>
+                {/* 들어온 이미지가 실물 사진인지, 영수증 캡처인지 구분하는 팝업이다. */}
                 <View style={styles.imageTypeModalCard}>
                   <View style={styles.imageTypeIconHalo}>
                     <Image source={galleryIcon} resizeMode="contain" style={styles.imageTypeHeroIcon} />
@@ -404,6 +420,7 @@ function ReceiptPreview({
   isAdjusting,
   setIsAdjusting
 }) {
+  // 영수증 이미지 위에 OCR 박스와 확대/이동 조작을 얹는 미리보기 컴포넌트다.
   const [isZoomed, setIsZoomed] = useState(false);
   const scaleValue = useSharedValue(1);
   const translateXValue = useSharedValue(0);
@@ -574,6 +591,7 @@ function ReceiptPreview({
 }
 
 function ddayLabel(expiry) {
+  // 소비기한을 D-day 형태로 화면에 표시한다.
   const days = daysUntil(expiry);
   if (days < 0) return { label: `D+${Math.abs(days)}`, tone: "expired" };
   if (days === 0) return { label: "D-day", tone: "urgent" };
@@ -582,33 +600,53 @@ function ddayLabel(expiry) {
 }
 
 function formatDotDate(value) {
+  // 날짜를 2026.07.04 형식으로 보여주기 위한 변환 함수다.
   return typeof value === "string" ? value.replace(/-/g, ".") : "";
 }
 
 function storageBadgeStyle(storage) {
+  // 보관 방식에 따라 색상을 다르게 쓰는 헬퍼다.
   if (storage === "\ub0c9\ub3d9") return styles.storageBadgeFrozen;
   if (storage === "\uc2e4\uc628") return styles.storageBadgeRoom;
   return styles.storageBadgeCold;
 }
 
 function ocrBoxStyleForLine(line, selected) {
+  // OCR 박스의 출처와 선택 상태에 따라 테두리 색을 바꾼다.
   if (selected) return styles.ocrBoxSelected;
   if (line?.boxSource === "dbnet-text-line") return styles.ocrBoxDbNet;
   return line?.boxSource === "opencv-text-line" ? styles.ocrBoxOpenCv : styles.ocrBoxUnselected;
 }
 
-function AddModeCard({ active, icon, title, onPress }) {
+function AddModeCard({ active, compact, icon, title, onPress }) {
+  // 상단 모드 전환 카드 컴포넌트다.
   return (
-    <Pressable style={[styles.addModeCard, active ? styles.addModeCardActive : null]} onPress={onPress}>
-      <Image source={icon} resizeMode="contain" style={styles.addModeIcon} />
-      <Text style={[styles.addModeTitle, active ? styles.addModeTitleActive : null]}>{title}</Text>
+    <Pressable
+      style={[styles.addModeCard, compact ? styles.addModeCardCompact : null, active ? styles.addModeCardActive : null]}
+      onPress={onPress}
+    >
+      {/* 위의 모드 상태와 아이콘/라벨이 맞도록 관리한다. */}
+      <Image
+        source={icon}
+        resizeMode="contain"
+        style={[styles.addModeIcon, compact ? styles.addModeIconCompact : null]}
+      />
+      <Text
+        maxFontSizeMultiplier={1.35}
+        numberOfLines={1}
+        style={[styles.addModeTitle, active ? styles.addModeTitleActive : null]}
+      >
+        {title}
+      </Text>
     </Pressable>
   );
 }
 
 function ImageTypeOption({ icon, label, onPress }) {
+  // 이미지 종류 선택 팝업 안의 한 줄 선택지다.
   return (
     <Pressable style={styles.imageTypeOption} onPress={onPress}>
+      {/* 아이콘 박스 크기는 여기서 조정한다. 테두리 크기와 이미지 크기를 같이 본다. */}
       <View style={styles.imageTypeOptionIconWrap}>
         <Image source={icon} resizeMode="contain" style={styles.imageTypeOptionIcon} />
       </View>
@@ -619,6 +657,7 @@ function ImageTypeOption({ icon, label, onPress }) {
 }
 
 function ReceiptStep({ number, title, description, children }) {
+  // 영수증 조정/안내 단계가 있을 때 쓰는 공통 섹션이다.
   return (
     <View style={styles.receiptStep}>
       <View style={styles.receiptStepHeader}>
@@ -634,16 +673,24 @@ function ReceiptStep({ number, title, description, children }) {
 }
 
 const styles = StyleSheet.create({
+  // 화면 최상단 스크롤 영역 전체.
+  screen: {
+    flex: 1,
+    alignSelf: "stretch"
+  },
   page: {
+    // 스크롤 안쪽 좌우/하단 여백.
     paddingHorizontal: 16,
     paddingBottom: 140
   },
   section: {
+    // 상단 모드 카드와 본문을 담는 기본 컨테이너.
     backgroundColor: "transparent",
     padding: 0,
     marginTop: 0
   },
   sectionHeader: {
+    // 상단 모드 카드 줄의 배치.
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -651,11 +698,13 @@ const styles = StyleSheet.create({
     marginBottom: 10
   },
   modeCards: {
+    // 상단 모드 카드 두 개를 나란히 배치한다.
     flexDirection: "row",
     flex: 1,
     gap: 12
   },
   addModeCard: {
+    // "사진등록", "직접등록" 카드 공통 스타일.
     flex: 1,
     minHeight: 64,
     borderRadius: 14,
@@ -675,31 +724,47 @@ const styles = StyleSheet.create({
     elevation: 1
   },
   addModeCardActive: {
+    // 현재 선택된 모드 카드의 강조 상태.
     borderWidth: 2,
     borderColor: "#1f7a5a",
     backgroundColor: "#f7fcfa"
   },
+  addModeCardCompact: {
+    // 글자가 큰 환경에서 카드 간격을 줄이는 보정값.
+    gap: 4,
+    paddingHorizontal: 6
+  },
   addModeIcon: {
+    // 모드 카드 안 아이콘 기본 크기.
     width: 38,
     height: 38
   },
+  addModeIconCompact: {
+    // 모드 카드 아이콘의 작은 버전.
+    width: 26,
+    height: 26
+  },
   addModeTitle: {
+    // 모드 카드 제목 텍스트.
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 16,
-    fontWeight: "900"
   },
   addModeTitleActive: {
+    // 선택된 모드 제목 색상.
     color: "#14583f"
   },
   form: {
+    // 각 등록 모드의 본문 입력 묶음.
     gap: 10
   },
   manualNameRow: {
+    // 직접 등록에서 이미지와 상품명을 같은 줄에 배치한다.
     flexDirection: "row",
     alignItems: "center",
     gap: 10
   },
   manualNameImageButton: {
+    // 상품명 왼쪽의 대표 이미지 버튼.
     width: 54,
     height: 54,
     borderRadius: 12,
@@ -709,13 +774,21 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   manualNameImage: {
+    // 대표 이미지가 버튼 크기를 꽉 채우도록 한다.
     width: "100%",
     height: "100%"
   },
+  manualNamePlaceholderImage: {
+    // 기본 갤러리 아이콘은 버튼 가장자리에 붙지 않도록 여백을 둔다.
+    width: "78%",
+    height: "78%"
+  },
   manualNameInput: {
+    // 상품명 입력칸은 나머지 공간을 모두 차지한다.
     flex: 1
   },
   manualImageBox: {
+    // 직접 등록에서 큰 이미지 미리보기/편집용 박스.
     minHeight: 92,
     borderRadius: 16,
     borderWidth: 1,
@@ -727,6 +800,7 @@ const styles = StyleSheet.create({
     padding: 12
   },
   manualImagePreview: {
+    // 이미지 미리보기 썸네일 영역.
     width: 68,
     height: 68,
     borderRadius: 14,
@@ -736,21 +810,25 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   manualImage: {
+    // 썸네일 이미지 채움.
     width: "100%",
     height: "100%"
   },
   manualImagePlaceholder: {
+    // 이미지가 없을 때 보이는 기본 아이콘.
     width: 52,
     height: 52,
     opacity: 0.88
   },
   manualImageActions: {
+    // 이미지 선택/삭제 버튼들이 들어가는 영역.
     flex: 1,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8
   },
   manualImageButton: {
+    // 이미지 선택 버튼 공통 스타일.
     minHeight: 38,
     borderRadius: 10,
     borderWidth: 1,
@@ -762,15 +840,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10
   },
   manualImageButtonIcon: {
+    // 이미지 선택 버튼 안의 작은 아이콘.
     width: 18,
     height: 18
   },
   manualImageButtonText: {
+    // 이미지 선택 버튼 텍스트.
+    ...typography.captionStrong,
     color: "#14583f",
-    fontSize: 12,
-    fontWeight: "900"
   },
   manualImageClearButton: {
+    // 현재 이미지를 지우는 버튼.
     minHeight: 38,
     borderRadius: 10,
     backgroundColor: "#fff1ee",
@@ -779,11 +859,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10
   },
   manualImageClearText: {
+    // 이미지 삭제 버튼 텍스트.
+    ...typography.captionStrong,
     color: "#a83a2f",
-    fontSize: 12,
-    fontWeight: "900"
   },
   receiptActionButton: {
+    // 영수증 촬영/스캔 진입 버튼 카드.
     minHeight: 86,
     borderRadius: 14,
     borderWidth: 1,
@@ -798,14 +879,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12
   },
   receiptActionIconWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    // 촬영/갤러리 아이콘을 둘 원형 배경.
+    width: 60,
+    height: 60,
+    borderRadius: 36,
     backgroundColor: "#edf7f2",
     alignItems: "center",
     justifyContent: "center"
   },
   receiptHeroButton: {
+    // 큰 영수증 안내 버튼이 있던 경우의 공통 스타일.
     minHeight: 198,
     borderRadius: 16,
     borderWidth: 1,
@@ -818,24 +901,25 @@ const styles = StyleSheet.create({
     paddingVertical: 24
   },
   receiptHeroIcon: {
-    width: 34,
-    height: 34
+    // 촬영/스캔 버튼 안의 큰 아이콘.
+    width: 50,
+    height: 50
   },
   receiptHeroTitle: {
+    // 촬영/스캔 카드의 제목 텍스트.
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900",
     flexShrink: 1
   },
   receiptHeroText: {
+    // 촬영/스캔 카드의 설명 텍스트.
+    ...typography.caption,
     color: "#8a938d",
-    fontSize: 12,
-    fontWeight: "700",
     marginTop: 4,
-    flexShrink: 1,
-    lineHeight: 17
+    flexShrink: 1
   },
   galleryButton: {
+    // 갤러리 진입 버튼이 필요할 때 쓰는 공통 스타일.
     minHeight: 66,
     borderRadius: 12,
     borderWidth: 1,
@@ -849,25 +933,27 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   galleryIcon: {
+    // 갤러리 버튼 안의 아이콘.
     width: 28,
     height: 28
   },
   galleryText: {
+    // 갤러리 버튼 제목 텍스트.
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   galleryCopy: {
+    // 버튼 오른쪽의 제목/설명 묶음.
     flex: 1,
     gap: 3
   },
   galleryHint: {
+    // 갤러리 버튼 보조 설명 텍스트.
+    ...typography.caption,
     color: "#8a938d",
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 17
   },
   imageTypeModalBackdrop: {
+    // 이미지 종류 선택 팝업의 반투명 배경.
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.55)",
     alignItems: "center",
@@ -875,6 +961,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24
   },
   imageTypeModalCard: {
+    // 이미지 종류 선택 팝업 본체.
     width: "100%",
     maxWidth: 360,
     borderRadius: 18,
@@ -890,19 +977,22 @@ const styles = StyleSheet.create({
     elevation: 8
   },
   imageTypeIconHalo: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    // 팝업 상단의 큰 아이콘 원형 배경.
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     backgroundColor: "#edf8f2",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12
   },
   imageTypeHeroIcon: {
-    width: 38,
-    height: 38
+    // 팝업 상단 대표 아이콘.
+    width: 55,
+    height: 55
   },
   imageTypeQuestionBadge: {
+    // 우측 상단 물음표 뱃지.
     position: "absolute",
     right: 8,
     top: 8,
@@ -916,29 +1006,31 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   imageTypeQuestionText: {
+    // 물음표 뱃지 글자.
+    ...typography.captionStrong,
     color: "#fff",
-    fontSize: 13,
-    fontWeight: "900"
   },
   imageTypeTitle: {
+    // 팝업 제목.
+    ...typography.sectionTitle,
     color: "#18201c",
-    fontSize: 17,
-    fontWeight: "900",
     textAlign: "center"
   },
   imageTypeSubtitle: {
+    // 팝업 설명문.
+    ...typography.caption,
     color: "#8a938d",
-    fontSize: 12,
-    fontWeight: "700",
     marginTop: 5,
     marginBottom: 16,
     textAlign: "center"
   },
   imageTypeOptions: {
+    // 팝업 선택지 목록.
     width: "100%",
     gap: 8
   },
   imageTypeOption: {
+    // 팝업 안의 한 줄 선택지.
     minHeight: 48,
     borderRadius: 10,
     borderWidth: 1,
@@ -950,30 +1042,34 @@ const styles = StyleSheet.create({
     gap: 10
   },
   imageTypeOptionIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
+    // 선택지 왼쪽 아이콘 배경 상자.
+    width: 35,
+    height: 35,
+    borderRadius: 12,
     backgroundColor: "#edf8f2",
     alignItems: "center",
     justifyContent: "center"
   },
   imageTypeOptionIcon: {
-    width: 18,
-    height: 18
+    // 선택지 왼쪽 실제 아이콘 크기.
+    width: 28,
+    height: 28
   },
   imageTypeOptionText: {
+    // 선택지 가운데 문구.
+    ...typography.label,
     flex: 1,
     color: "#18201c",
-    fontSize: 14,
-    fontWeight: "800"
   },
   imageTypeChevron: {
+    // 선택지 오른쪽 화살표.
     color: "#1f7a5a",
     fontSize: 22,
     fontWeight: "700",
     marginTop: -2
   },
   recognizedPanel: {
+    // 인식된 상품 패널 전체.
     gap: 10,
     borderRadius: 14,
     borderWidth: 1,
@@ -982,6 +1078,7 @@ const styles = StyleSheet.create({
     padding: 14
   },
   receiptPreviewCard: {
+    // 영수증 미리보기 카드.
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#e6e4df",
@@ -989,6 +1086,7 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   receiptPreviewHeader: {
+    // 미리보기 카드 상단 헤더.
     minHeight: 86,
     flexDirection: "row",
     alignItems: "center",
@@ -996,6 +1094,7 @@ const styles = StyleSheet.create({
     padding: 14
   },
   receiptThumbWrap: {
+    // 영수증 썸네일 배경 상자.
     width: 58,
     height: 58,
     borderRadius: 10,
@@ -1003,24 +1102,26 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   receiptThumb: {
+    // 썸네일 이미지 채움.
     width: "100%",
     height: "100%",
     resizeMode: "cover"
   },
   receiptPreviewCopy: {
+    // 영수증 썸네일 옆의 제목/상세 텍스트 묶음이다.
     flex: 1,
     gap: 5
   },
   receiptPreviewTitle: {
+    // "영수증 이미지"처럼 상단 제목에 쓰는 스타일이다.
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   receiptPreviewMeta: {
+    // "쿠팡 주문내역" / "촬영/캡처 이미지" 같은 보조 배지 스타일이다.
+    ...typography.captionStrong,
     alignSelf: "flex-start",
     color: "#1f7a5a",
-    fontSize: 12,
-    fontWeight: "900",
     backgroundColor: "#edf7f2",
     borderRadius: 6,
     overflow: "hidden",
@@ -1028,29 +1129,31 @@ const styles = StyleSheet.create({
     paddingVertical: 4
   },
   receiptPreviewToggle: {
+    // 오른쪽의 "보기 >" 텍스트다. 미리보기 열기 힌트 역할을 한다.
+    ...typography.label,
     color: "#1f7a5a",
-    fontSize: 14,
-    fontWeight: "900"
   },
   receiptPreviewBody: {
+    // 영수증 미리보기 안쪽 본문 영역이다. OCR 박스와 안내가 들어간다.
     gap: 10,
     paddingHorizontal: 12,
     paddingBottom: 12
   },
   recognizedHeader: {
+    // 인식된 상품 목록의 상단 제목과 편집 버튼을 가로로 배치한다.
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between"
   },
   panelTitle: {
+    // 카드나 섹션의 공통 제목 스타일이다.
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   editText: {
+    // "수정" 같은 보조 액션 텍스트에 쓰는 스타일이다.
+    ...typography.captionStrong,
     color: "#1f7a5a",
-    fontSize: 13,
-    fontWeight: "900"
   },
   recognizedList: {
     gap: 10
@@ -1062,32 +1165,30 @@ const styles = StyleSheet.create({
     gap: 10
   },
   checkBadge: {
+    ...typography.captionStrong,
     width: 18,
-    height: 18,
+    minHeight: 18,
     borderRadius: 4,
     overflow: "hidden",
     backgroundColor: "#1f7a5a",
     color: "#fff",
-    fontSize: 12,
-    fontWeight: "900",
     textAlign: "center",
-    lineHeight: 18
   },
   recognizedName: {
+    ...typography.bodyStrong,
     flex: 1,
     color: "#18201c",
-    fontSize: 14,
-    fontWeight: "800"
   },
   recognizedStorage: {
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 12,
-    fontWeight: "800"
   },
   registerPanel: {
+    // OCR 결과, 초안 목록, 누락 상품 안내를 담는 하단 영역.
     gap: 10
   },
   discoveredHeader: {
+    // "선택된 상품" 같은 섹션 제목 영역.
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1095,16 +1196,15 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   discoveredTitle: {
+    ...typography.screenTitle,
     color: "#18201c",
-    fontSize: 20,
-    fontWeight: "900"
   },
   label: {
+    ...typography.label,
     color: "#68716b",
-    fontSize: 13,
-    fontWeight: "800"
   },
   input: {
+    // 공통 텍스트 입력창 기본 스타일.
     minHeight: 46,
     borderWidth: 1,
     borderColor: "#e2ddd3",
@@ -1115,6 +1215,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   receiptStep: {
+    // 영수증 관련 보조 단계가 있으면 묶는 카드 구역.
     gap: 10,
     paddingTop: 14,
     marginTop: 8,
@@ -1127,14 +1228,12 @@ const styles = StyleSheet.create({
     gap: 10
   },
   receiptStepBadge: {
+    ...typography.captionStrong,
     width: 26,
-    height: 26,
+    minHeight: 26,
     borderRadius: 13,
     backgroundColor: "#1f7a5a",
     color: "#fff",
-    fontSize: 13,
-    fontWeight: "900",
-    lineHeight: 26,
     textAlign: "center"
   },
   receiptStepCopy: {
@@ -1142,38 +1241,40 @@ const styles = StyleSheet.create({
     gap: 3
   },
   receiptStepTitle: {
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 16,
-    fontWeight: "900"
   },
   receiptStepDescription: {
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 12,
-    lineHeight: 18
   },
   receiptActions: {
+    // 영수증 작업 버튼들을 세로로 쌓는 영역.
     gap: 10
   },
   status: {
+    // 인식/처리 상태 문구 스타일.
+    ...typography.caption,
     color: "#14583f",
-    fontSize: 13,
-    lineHeight: 19
   },
   receiptEmptyText: {
+    // 영수증을 아직 고르지 않았을 때 보여 주는 안내 문구.
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 13,
-    lineHeight: 19,
     paddingVertical: 8
   },
   manualInlineGroups: {
+    // 직접 등록에서 보관 방식 같은 짧은 그룹을 한 줄로 배치한다.
     flexDirection: "row",
     gap: 10,
     alignItems: "flex-start"
   },
   inlineGroupWide: {
+    // 오른쪽 칸보다 조금 넓게 가져가는 그룹 폭.
     flex: 1.05
   },
   receiptImageWrap: {
+    // 영수증 이미지 미리보기 영역의 바깥 프레임.
     width: "100%",
     height: 280,
     borderRadius: 8,
@@ -1181,6 +1282,7 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   receiptAdjustButton: {
+    // 미리보기 우측 상단의 이미지 조정 버튼.
     position: "absolute",
     top: 10,
     right: 10,
@@ -1195,68 +1297,83 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12
   },
   receiptAdjustButtonActive: {
+    // 이미지 조정 모드가 켜졌을 때의 버튼 상태.
     borderColor: "#1f7a5a",
     backgroundColor: "#1f7a5a"
   },
   receiptAdjustButtonText: {
+    // 이미지 조정 버튼 안의 글자.
+    ...typography.captionStrong,
     color: "#14583f",
-    fontSize: 12,
-    fontWeight: "900"
   },
   receiptAdjustButtonTextActive: {
+    // 이미지 조정 중일 때 글자색 반전.
     color: "#fff"
   },
   receiptImageCanvas: {
+    // 실제 이미지와 OCR 박스를 함께 올려두는 캔버스.
     width: "100%",
     height: "100%",
     position: "relative"
   },
   receiptImage: {
+    // 영수증 원본 이미지 자체.
     width: "100%",
     height: "100%",
     resizeMode: "contain"
   },
   ocrBox: {
+    // OCR 인식 영역 공통 테두리.
     position: "absolute",
     borderWidth: 1,
     borderRadius: 4
   },
   ocrBoxSelected: {
+    // 사용자가 선택한 OCR 영역.
     borderColor: "#1f7a5a",
     backgroundColor: "rgba(31, 122, 90, 0.045)"
   },
   ocrBoxUnselected: {
+    // 기본 OCR 영역.
     borderColor: "#7d857f",
     backgroundColor: "rgba(104, 113, 107, 0.015)"
   },
   ocrBoxOpenCv: {
+    // OpenCV 계열 OCR 결과 영역.
     borderColor: "#2f80ed",
     backgroundColor: "rgba(47, 128, 237, 0.055)"
   },
   ocrBoxDbNet: {
+    // DBNet 계열 OCR 결과 영역.
     borderColor: "#8b5cf6",
     backgroundColor: "rgba(139, 92, 246, 0.07)"
   },
   cropDebugBox: {
+    // 자동 인식된 상품 후보 박스의 공통 테두리.
     position: "absolute",
     borderWidth: 2,
     borderRadius: 6
   },
   cropDebugBoxUnselected: {
+    // 선택되지 않은 후보 박스.
     borderColor: "rgba(79, 91, 84, 0.5)",
     backgroundColor: "rgba(240, 240, 236, 0.18)"
   },
   cropDebugBoxSelected: {
+    // 선택된 후보 박스.
     borderColor: "#1f7a5a",
     backgroundColor: "rgba(31, 122, 90, 0.16)"
   },
   receiptToolRow: {
+    // 조정 도구 줄 전체.
     gap: 8
   },
   coordinateControlWrap: {
+    // 좌표/조정 관련 컨트롤 묶음.
     gap: 8
   },
   coordinateToggleButton: {
+    // 좌표 조절 모드를 켜고 끄는 버튼.
     alignSelf: "flex-start",
     minHeight: 32,
     borderRadius: 999,
@@ -1266,16 +1383,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12
   },
   coordinateToggleText: {
+    // 좌표 조절 버튼의 글자.
+    ...typography.captionStrong,
     color: "#14583f",
-    fontSize: 12,
-    fontWeight: "900"
   },
   coordinateChipRow: {
+    // 좌표 선택 칩들을 한 줄에 펼친다.
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8
   },
   coordinateChip: {
+    // 좌표 선택용 작은 버튼.
     minHeight: 36,
     flexGrow: 1,
     flexBasis: "22%",
@@ -1288,18 +1407,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8
   },
   coordinateChipActive: {
+    // 선택된 좌표 칩.
     borderColor: "#1f7a5a",
     backgroundColor: "#edf7f2"
   },
   coordinateChipText: {
+    // 좌표 칩 안의 기본 글자.
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 12,
-    fontWeight: "900"
   },
   coordinateChipTextActive: {
+    // 선택된 좌표 칩의 글자색.
     color: "#14583f"
   },
   coordinateButton: {
+    // 좌표 조정 확인/실행 버튼.
     minHeight: 40,
     borderRadius: 8,
     borderWidth: 1,
@@ -1311,13 +1433,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   coordinateButtonText: {
+    // 좌표 버튼 글자.
+    ...typography.label,
     color: "#14583f",
-    fontWeight: "900"
   },
   draftList: {
+    // OCR 초안 상품 목록 전체.
     gap: 10
   },
   draftItem: {
+    // 초안 상품 한 줄 카드.
     minHeight: 84,
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1331,9 +1456,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   draftItemExcluded: {
+    // 선택 해제된 초안 상품의 흐린 상태.
     opacity: 0.48
   },
   draftCheckButton: {
+    // 초안 상품 선택 체크박스.
     width: 18,
     height: 18,
     borderRadius: 4,
@@ -1342,17 +1469,18 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   draftCheckButtonOff: {
+    // 체크가 꺼진 상태의 체크박스.
     borderWidth: 1.5,
     borderColor: "#cfd8d2",
     backgroundColor: "#fff"
   },
   draftCheckText: {
+    // 체크박스 안의 체크 표시.
+    ...typography.badge,
     color: "#fff",
-    fontSize: 11,
-    fontWeight: "900",
-    lineHeight: 14
   },
   draftImage: {
+    // 초안 상품 썸네일 이미지.
     width: 58,
     height: 58,
     borderRadius: 12,
@@ -1360,38 +1488,44 @@ const styles = StyleSheet.create({
     overflow: "hidden"
   },
   draftText: {
+    // 초안 상품명과 보관 배지 묶음.
     flex: 1,
     gap: 6
   },
   storageBadge: {
+    // 냉장/냉동/실온 배지 공통 스타일.
+    ...typography.captionStrong,
     alignSelf: "flex-start",
-    fontSize: 12,
-    fontWeight: "900",
     borderRadius: 6,
     overflow: "hidden",
     paddingHorizontal: 7,
     paddingVertical: 3
   },
   storageBadgeCold: {
+    // 냉장 배지 색상.
     color: "#2779b8",
     backgroundColor: "#eaf4fb"
   },
   storageBadgeFrozen: {
+    // 냉동 배지 색상.
     color: "#5b57c8",
     backgroundColor: "#eeedff"
   },
   storageBadgeRoom: {
+    // 실온 배지 색상.
     color: "#b56b16",
     backgroundColor: "#fff3dc"
   },
   draftExpiryBox: {
+    // D-day와 날짜를 세로로 보여 주는 칸.
     alignItems: "center",
     minWidth: 64,
     gap: 4
   },
   dateMiniButton: {
+    // 초안 상품 옆의 작은 수정 버튼.
     width: 44,
-    height: 44,
+    minHeight: 44,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#e6e4df",
@@ -1401,10 +1535,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0
   },
   dateMiniIcon: {
+    // 작은 수정 버튼 아이콘 크기.
     width: 20,
     height: 20
   },
   draftEditPanel: {
+    // 초안 상품별 상세 수정 패널.
     flexBasis: "100%",
     gap: 10,
     borderTopWidth: 1,
@@ -1413,6 +1549,7 @@ const styles = StyleSheet.create({
     marginTop: 2
   },
   editBanner: {
+    // "수정 중" 상태를 알려 주는 배지.
     alignSelf: "flex-start",
     borderRadius: 999,
     backgroundColor: "#fff4eb",
@@ -1420,20 +1557,22 @@ const styles = StyleSheet.create({
     paddingVertical: 5
   },
   editBannerText: {
+    // 수정 중 배지의 텍스트.
+    ...typography.captionStrong,
     color: "#ad5a18",
-    fontSize: 12,
-    fontWeight: "900"
   },
   editNameText: {
+    // 수정 중인 상품명 표시.
+    ...typography.cardTitle,
     color: "#18201c",
-    fontSize: 15,
-    fontWeight: "900"
   },
   draftEditActions: {
+    // 수정 패널의 완료 버튼 정렬.
     flexDirection: "row",
     justifyContent: "flex-end"
   },
   draftEditDoneButton: {
+    // 수정 완료 버튼.
     minHeight: 42,
     minWidth: 92,
     borderRadius: 10,
@@ -1443,11 +1582,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16
   },
   draftEditDoneText: {
+    // 수정 완료 버튼 글자.
+    ...typography.label,
     color: "#fff",
-    fontSize: 14,
-    fontWeight: "900"
   },
   bulkBox: {
+    // 여러 초안을 한 번에 저장할 때 쓰는 요약 카드.
     minHeight: 72,
     marginTop: 4,
     marginBottom: 4,
@@ -1465,6 +1605,7 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   bulkCountBox: {
+    // 선택된 상품 수를 보여 주는 작은 박스.
     width: 64,
     minHeight: 56,
     borderRadius: 12,
@@ -1473,18 +1614,20 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   bulkCount: {
+    // 선택된 초안 개수 숫자.
     color: "#1f7a5a",
     fontSize: 22,
-    fontWeight: "900",
+    fontWeight: "800",
     lineHeight: 26
   },
   bulkCountLabel: {
+    // 선택됨 라벨.
+    ...typography.badge,
     color: "#68716b",
-    fontSize: 11,
-    fontWeight: "800",
     marginTop: 2
   },
   bulkResetButton: {
+    // 선택 상태를 초기화하는 버튼.
     width: 58,
     minHeight: 56,
     borderRadius: 12,
@@ -1493,17 +1636,19 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   bulkResetIcon: {
+    // 초기화 버튼 아이콘.
     width: 25,
     height: 25,
     tintColor: "#1f7a5a"
   },
   bulkResetText: {
+    // 초기화 버튼 글자.
+    ...typography.badge,
     color: "#68716b",
-    fontSize: 11,
-    fontWeight: "800",
     marginTop: 2
   },
   bulkSubmitButton: {
+    // 선택된 초안들을 보관함에 넣는 메인 버튼.
     flex: 1,
     minHeight: 56,
     borderRadius: 13,
@@ -1515,45 +1660,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14
   },
   bulkSubmitIcon: {
+    // 보관함 저장 버튼 아이콘.
     width: 22,
-    height: 22,
+    minHeight: 22,
     tintColor: "#fff"
   },
   bulkSubmitText: {
+    // 보관함 저장 버튼 텍스트.
+    ...typography.cardTitle,
     color: "#fff",
-    fontSize: 15,
-    fontWeight: "900"
   },
   bulkSubmitChevron: {
+    // 보관함 저장 버튼 오른쪽 화살표.
     color: "#fff",
     fontSize: 24,
-    fontWeight: "900",
+    fontWeight: "800",
     lineHeight: 26,
     marginLeft: 2
   },
   itemName: {
+    // 초안/목록의 상품명 텍스트.
+    ...typography.body,
     color: "#18201c",
-    fontSize: 14,
-    fontWeight: "500",
     flexShrink: 1
   },
   ddayText: {
+    // D-day 표시 텍스트 공통 스타일.
+    ...typography.cardTitle,
     color: "#f08a24",
-    fontSize: 17,
-    fontWeight: "900"
   },
   ddayExpired: {
+    // 이미 지난 소비기한 색상.
     color: "#d94343"
   },
   ddaySafe: {
+    // 여유가 있는 소비기한 색상.
     color: "#4f9a37"
   },
   expiryDateText: {
+    // 실제 소비기한 날짜 텍스트.
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 12,
-    fontWeight: "800"
   },
   missingProductButton: {
+    // 초안 목록이 있어도 누락 상품을 직접 추가하는 버튼.
     minHeight: 56,
     borderRadius: 14,
     borderWidth: 1,
@@ -1563,14 +1713,14 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   missingProductText: {
+    // 누락 상품 직접 추가 버튼 텍스트.
+    ...typography.cardTitle,
     color: "#1f7a5a",
-    fontSize: 15,
-    fontWeight: "900"
   },
   meta: {
+    // 카드 아래에 붙는 부가 설명 텍스트 공통 스타일.
+    ...typography.caption,
     color: "#68716b",
-    fontSize: 13,
-    lineHeight: 19,
     marginTop: 4
   },
 });

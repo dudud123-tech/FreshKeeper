@@ -1,4 +1,4 @@
-package com.wooyoung43.freshkeeper
+package com.palchonajae.freshkeeper
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

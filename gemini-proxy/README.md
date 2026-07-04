@@ -11,7 +11,7 @@ Gemini API key를 앱이나 Cloudflare Worker에 직접 넣지 않기 위한 작
 ## 로컬 실행
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\gemini-proxy"
+cd "C:\Workspace\FreshKeeper\gemini-proxy"
 $env:GEMINI_API_KEY="Gemini API 키"
 $env:GEMINI_PROXY_TOKEN="Worker와 공유할 임의의 비밀 토큰"
 npm start
@@ -20,7 +20,7 @@ npm start
 다른 PowerShell 창에서 테스트:
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\gemini-proxy"
+cd "C:\Workspace\FreshKeeper\gemini-proxy"
 .\test-local.ps1 -Token "Worker와 공유할 임의의 비밀 토큰"
 ```
 
@@ -30,7 +30,7 @@ Google Cloud SDK가 설치되어 있어야 합니다.
 또한 Google Cloud 프로젝트에 결제 계정이 연결되어 있어야 Cloud Run / Cloud Build API를 켤 수 있습니다.
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\gemini-proxy"
+cd "C:\Workspace\FreshKeeper\gemini-proxy"
 .\deploy-cloud-run.ps1
 ```
 
@@ -52,7 +52,7 @@ Google Cloud Run 결제 설정이 부담스럽다면 `apps-script` 폴더의 Goo
 프록시를 배포한 뒤 Cloudflare Worker에 아래 secret을 넣습니다.
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\cloudflare\worker"
+cd "C:\Workspace\FreshKeeper\cloudflare\worker"
 npx.cmd wrangler secret put GEMINI_PROXY_URL
 npx.cmd wrangler secret put GEMINI_PROXY_TOKEN
 npx.cmd wrangler deploy

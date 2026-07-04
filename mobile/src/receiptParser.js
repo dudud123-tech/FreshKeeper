@@ -10,6 +10,7 @@ const noiseWords = [
   "tel",
   "매장",
   "영수증",
+  "주문내역",
   "교환",
   "환불",
   "고객",
@@ -61,9 +62,21 @@ const noiseWords = [
   "건전지",
   "충전기",
   "케이블",
+  "샛별배송",
+  "배송완료",
+  "배송조회",
+  "배송주문관리",
+  "바로구매",
+  "장바구니",
+  "전체상품장바구니담기",
+  "주문한상품",
+  "로켓프레시",
+  "후기작성",
+  "전체상품다시담기",
+  "주문상품",
   "화장품",
   "샴푸",
-  "린스",
+  "헤어린스",
   "세제"
 ];
 
@@ -144,10 +157,16 @@ const foodHints = [
 ];
 
 export function parseReceiptLines(text) {
-  const lines = text
+  const normalizedLines = text
     .split(/\n+/)
     .map((line, index) => ({ index, raw: line, normalized: normalizeLine(line) }))
     .filter((line) => line.normalized);
+  const isKurlyOrder = normalizedLines.some((line) =>
+    /(샛별배송|전체\s*상품\s*다시\s*담기|후기\s*작성)/.test(line.normalized)
+  );
+  const lines = isKurlyOrder
+    ? normalizedLines.filter((line, index, allLines) => !isKurlySubtitleLine(line, allLines[index - 1]))
+    : normalizedLines;
 
   const scored = lines
     .map((line, index, allLines) => scoreLine(line, index, allLines.length))
@@ -190,22 +209,53 @@ function scoreLine(line, visualIndex, totalLines) {
 }
 
 function dedupeCandidates(candidates) {
-  const seen = new Set();
+  const seen = [];
   const results = [];
 
   for (const candidate of candidates) {
-    const key = candidate.name
-      .replace(/\s/g, "")
-      .replace(/[ㄱ-ㅎㅏ-ㅣ]/g, "")
-      .replace(/\d+(g|G|ml|ML|개|입|ea|EA|x|X)?/g, "")
-      .toLowerCase();
+    const key = candidateKey(candidate.name);
 
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
+    if (!key) continue;
+    const duplicateIndex = seen.findIndex((previousKey) => isNearDuplicateKey(previousKey, key));
+    if (duplicateIndex >= 0) {
+      if (candidate.index < results[duplicateIndex].index) {
+        seen[duplicateIndex] = key;
+        results[duplicateIndex] = candidate;
+      }
+      continue;
+    }
+    seen.push(key);
     results.push(candidate);
   }
 
   return results;
+}
+
+function isKurlySubtitleLine(line, previousLine) {
+  if (!previousLine) return false;
+  if (hasPricePattern(previousLine.normalized) || hasPricePattern(line.normalized)) return false;
+  const previousBrand = previousLine.normalized.match(/^\[([^\]]{1,20})\]/)?.[1];
+  const currentBrand = line.normalized.match(/^\[([^\]]{1,20})\]/)?.[1];
+  return Boolean(previousBrand && currentBrand && previousBrand === currentBrand);
+}
+
+function candidateKey(value) {
+  return value
+    .replace(/\s/g, "")
+    .replace(/(?:IRC|RC)$/i, "")
+    .replace(/[ㄱ-ㅎㅏ-ㅣ]/g, "")
+    .replace(/\d+(g|G|kg|KG|ml|ML|개|입|종|팩|봉|ea|EA|x|X)?/g, "")
+    .replace(/[()[\].,\-]/g, "")
+    .replace(/택$/g, "")
+    .toLowerCase();
+}
+
+function isNearDuplicateKey(a, b) {
+  if (a === b) return true;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length > b.length ? a : b;
+  if (shorter.length < 5) return false;
+  return longer.includes(shorter) && shorter.length / longer.length >= 0.68;
 }
 
 function cleanProductName(line) {
@@ -217,10 +267,12 @@ function cleanProductName(line) {
     .replace(/\s+\d+\s*[xX]\s*\d{1,3}(?:,\d{3})+\s*$/g, "")
     .replace(/\s+\d{1,3}(?:,\d{3})+\s*원?\s*$/g, "")
     .replace(/\s+\d+\s*원\s*$/g, "")
+    .replace(/\s+[-−]\d[\d,]*\s*원?\s*$/g, "")
     .replace(/(?<=[가-힣])\s+(?=[가-힣])/g, "")
     .replace(/(?<=[가-힣])\s+(?=\d)/g, "")
     .replace(/(?<=\d)\s+(?=[가-힣A-Za-z])/g, "")
     .replace(/\b[0-9A-Z]{1,2}\b$/i, "")
+    .replace(/\s*(?:IRC|RC)\s*$/i, "")
     .replace(/[ㄱ-ㅎㅏ-ㅣ]+$/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();

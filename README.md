@@ -7,7 +7,7 @@
 모바일 앱 버전은 `mobile` 폴더에 있습니다.
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile"
+cd "C:\Workspace\FreshKeeper\mobile"
 npm install
 npm start
 ```
@@ -48,14 +48,14 @@ Codex 안에서 실행할 때는 서버가 터미널을 계속 점유하지 않�
 모바일 Expo 앱도 PowerShell 실행 정책에 걸리지 않도록 `npm` 대신 `npx.cmd`를 쓰는 실행 스크립트를 추가했습니다.
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile"
+cd "C:\Workspace\FreshKeeper\mobile"
 .\start-expo.ps1
 ```
 
 PowerShell 실행 정책 때문에 `.ps1` 실행이 막히면 배치 파일을 사용하세요.
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile"
+cd "C:\Workspace\FreshKeeper\mobile"
 .\start-expo.bat
 ```
 

@@ -1,16 +1,17 @@
 import { StatusBar } from "expo-status-bar";
+import { Children } from "react";
 import {
   Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   View
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { typography } from "../theme/typography";
 
 // 하단 탭 메뉴 정의입니다. page 번호는 ScrollView의 페이지 순서와 맞아야 합니다.
 const bottomNavItems = [
@@ -22,21 +23,42 @@ const bottomNavItems = [
 
 // 앱 전체 화면 뼈대입니다. 상단 헤더, 좌우 페이지 전환 영역, 하단 탭을 담당합니다.
 export default function AppShell({
-  width,
   page,
-  pagerRef,
-  pagerEnabled = true,
   onPageChange,
-  onMomentumPageChange,
+  hideBottomNav = false,
   children,
   overlays
 }) {
   return (
+    <SafeAreaProvider>
+      <AppShellLayout
+        page={page}
+        onPageChange={onPageChange}
+        hideBottomNav={hideBottomNav}
+        overlays={overlays}
+      >
+        {children}
+      </AppShellLayout>
+    </SafeAreaProvider>
+  );
+}
+
+function AppShellLayout({
+  page,
+  onPageChange,
+  hideBottomNav,
+  children,
+  overlays
+}) {
+  const pages = Children.toArray(children);
+  const insets = useSafeAreaInsets();
+
+  return (
     <GestureHandlerRootView style={styles.gestureRoot}>
-      <SafeAreaView style={styles.safeArea}>
+      <View style={styles.safeArea}>
         <StatusBar style="dark" />
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
-          <View style={styles.container}>
+          <View style={[styles.container, { paddingTop: insets.top }]}>
             {page === 0 ? (
             // 홈 화면 전용 헤더입니다. 홈에서는 뒤로가기 없이 앱 이름만 중앙에 보여줍니다.
             <View style={styles.header}>
@@ -50,42 +72,35 @@ export default function AppShell({
                 <Pressable style={styles.backButton} onPress={() => onPageChange(0)}>
                   <Text style={styles.backIcon}>‹</Text>
                 </Pressable>
-                <Text style={styles.pageTitle}>{bottomNavItems.find((item) => item.page === page)?.title}</Text>
+                <Text maxFontSizeMultiplier={1.5} numberOfLines={1} style={styles.pageTitle}>
+                  {bottomNavItems.find((item) => item.page === page)?.title}
+                </Text>
                 <View style={styles.backButton} />
               </View>
             )}
 
-            <ScrollView
-              ref={pagerRef}
-              horizontal
-              pagingEnabled
-              scrollEnabled={pagerEnabled}
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              onMomentumScrollEnd={(event) => {
-                onMomentumPageChange(Math.round(event.nativeEvent.contentOffset.x / width));
-              }}
-              style={styles.pager}
-            >
-              {children}
-            </ScrollView>
+            <View style={styles.pageSlot}>
+              {pages[page]}
+            </View>
 
             {/* 하단 고정 탭 메뉴입니다. 홈/등록/보관함/설정 페이지 이동을 담당합니다. */}
-            <View style={styles.bottomNav}>
-              {bottomNavItems.map((item) => (
-                <BottomNavItem
-                  key={item.page}
-                  active={page === item.page}
-                  icon={item.icon}
-                  label={item.label}
-                  onPress={() => onPageChange(item.page)}
-                />
-              ))}
-            </View>
+            {!hideBottomNav ? (
+              <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+                {bottomNavItems.map((item) => (
+                  <BottomNavItem
+                    key={item.page}
+                    active={page === item.page}
+                    icon={item.icon}
+                    label={item.label}
+                    onPress={() => onPageChange(item.page)}
+                  />
+                ))}
+              </View>
+            ) : null}
           </View>
         </KeyboardAvoidingView>
         {overlays}
-      </SafeAreaView>
+      </View>
     </GestureHandlerRootView>
   );
 }
@@ -93,15 +108,23 @@ export default function AppShell({
 // 하단 탭 버튼 한 개입니다. 아이콘과 라벨 색상은 active 상태에 따라 달라집니다.
 function BottomNavItem({ active, icon, label, onPress }) {
   return (
-    <Pressable style={styles.bottomNavItem} onPress={onPress}>
+    <Pressable
+      style={styles.bottomNavItem}
+      hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+      onPress={onPress}
+    >
       <Image source={icon} resizeMode="contain" style={[styles.bottomNavIcon, active && styles.bottomNavIconActive]} />
-      <Text style={[styles.bottomNavLabel, active && styles.bottomNavLabelActive]}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.1} style={[styles.bottomNavLabel, active && styles.bottomNavLabelActive]}>{label}</Text>
     </Pressable>
   );
 }
 
 // 각 페이지 내부에서 공통으로 사용하는 레이아웃 스타일입니다.
 export const appShellStyles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    alignSelf: "stretch"
+  },
   // 페이지 공통 좌우 여백과 하단 탭에 가리지 않도록 주는 아래 여백입니다.
   page: {
     paddingHorizontal: 16,
@@ -134,8 +157,7 @@ const styles = StyleSheet.create({
   },
   // 실제 앱 콘텐츠 컨테이너입니다. Android 상태바 아래 시작 위치를 paddingTop으로 조정합니다.
   container: {
-    flex: 1,
-    paddingTop: Platform.OS === "android" ? 50 : 20
+    flex: 1
   },
   // 홈 화면 상단 헤더입니다. 앱 이름 위치, 상단 여백, 배너와의 간격을 조정합니다.
   header: {
@@ -170,9 +192,8 @@ const styles = StyleSheet.create({
   },
   // 등록/보관함/설정 페이지의 가운데 제목입니다.
   pageTitle: {
+    ...typography.screenTitle,
     color: "#18201c",
-    fontSize: 16,
-    fontWeight: "900"
   },
   // 홈 헤더 안에서 앱 이름을 중앙에 배치하는 줄입니다.
   brandRow: {
@@ -184,31 +205,25 @@ const styles = StyleSheet.create({
   },
   // 예전에 사용하던 보조 문구 스타일입니다. 다시 문구를 붙일 때 재사용할 수 있습니다.
   eyebrow: {
+    ...typography.captionStrong,
     color: "#14583f",
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 18,
     marginTop: 0
   },
   // 홈 화면 앱 이름 스타일입니다. "오 늘 까 지 야" 크기와 굵기를 조정합니다.
   title: {
+    ...typography.screenTitle,
     color: "#18201c",
-    fontSize: 18,
-    fontWeight: "900",
-    lineHeight: 28
   },
-  // 좌우로 넘기는 페이지 영역입니다. children으로 홈/등록/보관함/설정이 들어옵니다.
-  pager: {
+  // 현재 선택된 페이지만 그리는 영역입니다. Android 화면 크기 설정에 따른 가로 pager 오차를 피합니다.
+  pageSlot: {
     flex: 1
   },
   // 하단 탭 바 전체입니다. 높이, 위아래 여백, 상단 구분선, 배경색을 담당합니다.
   bottomNav: {
     flexDirection: "row",
     alignItems: "center",
-    minHeight: Platform.OS === "android" ? 102 : 84,
     paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: Platform.OS === "android" ? 26 : 16,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "#e7e5df",
     backgroundColor: "#fff"
@@ -219,7 +234,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    transform: [{ translateY: Platform.OS === "android" ? -14 : -2 }]
+    minHeight: 60
   },
   // 하단 탭 아이콘 기본 크기와 비활성 색상입니다.
   bottomNavIcon: {
@@ -233,9 +248,8 @@ const styles = StyleSheet.create({
   },
   // 하단 탭 라벨 기본 스타일입니다.
   bottomNavLabel: {
+    ...typography.captionStrong,
     color: "#68716b",
-    fontSize: 12,
-    fontWeight: "800"
   },
   // 현재 선택된 하단 탭 라벨 색상입니다.
   bottomNavLabelActive: {

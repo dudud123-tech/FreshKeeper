@@ -77,19 +77,31 @@ npx.cmd eas build:list --platform android --limit 1
 
 Avoid plain `npm` in PowerShell when it fails with `PSSecurityException`.
 
+## Cloudflare Worker Fetch Redirects
+
+Cloudflare Workers `fetch()` does not support `redirect: "error"`. It throws
+before sending the request. Use `redirect: "manual"` when redirects must not be
+followed. This was verified with the Naver profile API: the unsupported value
+caused `naver_profile_unavailable`, while `"manual"` returned the expected API
+response.
+
 ## Play Store AAB Builds
+
+Do not build or install an APK during ordinary code changes unless the user explicitly asks for it. For JavaScript-only UI changes, rely on Metro; for native changes, leave the source ready for the user's next native build.
+
+On Windows, Release CMake output can exceed the 260-character path limit under the OneDrive workspace. A `subst` drive is not sufficient because CMake canonicalizes dependency paths back to `C:\Users\...`. The verified workaround is to copy `mobile` to a genuinely short physical path such as `C:\fk`, remove copied `node_modules\**\android\build` caches plus `android\app\.cxx`, `android\app\build`, and Gradle caches, then build from `C:\fk\android`. Preserve package runtime `build` folders such as `expo-modules-autolinking\build`. If long generated caches resist deletion, use the verified extended form `\\?\C:\fk\...` with `[System.IO.Directory]::Delete(path, $true)`.
 
 For local AAB generation checks:
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile\android"
+cd "C:\Workspace\FreshKeeper\mobile\android"
 .\gradlew.bat bundleRelease
 ```
 
 The local output is:
 
 ```text
-C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile\android\app\build\outputs\bundle\release\app-release.aab
+C:\Workspace\FreshKeeper\mobile\android\app\build\outputs\bundle\release\app-release.aab
 ```
 
 Important: the current local Android release build may still be debug-keystore signed. Treat local `bundleRelease` as a build sanity check, not necessarily a Play upload final.
@@ -97,7 +109,7 @@ Important: the current local Android release build may still be debug-keystore s
 For Play-upload-oriented builds, prefer EAS production:
 
 ```powershell
-cd "C:\Users\dudu1\OneDrive\Documents\freshkeeper\mobile"
+cd "C:\Workspace\FreshKeeper\mobile"
 npx.cmd eas build -p android --profile production
 ```
 
@@ -106,3 +118,15 @@ If the command times out locally, check server-side build state instead of rerun
 ```powershell
 npx.cmd eas build:list --platform android --limit 1
 ```
+
+## Android Display Size Changes
+
+Samsung의 화면 크게/작게 변경은 `density` configuration change를 발생시킵니다. React Native 0.81/Fabric에서는 DisplayMetrics만 갱신하면 텍스트 측정과 터치 좌표가 이전 density에 남을 수 있습니다.
+
+- `MainActivity`의 `android:configChanges`에 `density|fontScale|fontWeightAdjustment`를 포함합니다.
+- `onConfigurationChanged()`에서 `DisplayMetricsHolder.initDisplayMetrics(this)`를 먼저 호출하고 루트 레이아웃을 요청합니다.
+- `useWindowDimensions()`의 width/height/scale을 key로 사용해 `App` 아래 View 트리만 다시 생성합니다. 앱 상태와 JS 런타임은 유지하면서 Text/Gesture/SafeArea 네이티브 캐시를 교체합니다.
+
+SM-S948N에서 위 방식 적용 후 화면 크게/작게 1~5단계의 텍스트와 터치가 모두 정상 동작하는 것을 검증했습니다.
+
+설정처럼 세로 `ScrollView` 안에 가로 탭 `ScrollView`가 있고 활성 내용의 높이가 짧으면 가로 영역이 세로로 늘어날 수 있습니다. 탭 스크롤에 명시적인 `height`와 `flexGrow: 0`, `flexShrink: 0`을 지정합니다. SM-S948N에서 가족/인식 제목의 시작 bounds가 동일해지는 것으로 검증했습니다.

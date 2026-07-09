@@ -1,0 +1,50 @@
+# EAS Build runs from the mobile app but archives the Git root in this repo.
+# Keep only source files needed for the mobile build context.
+
+# Dependencies are installed on EAS Build.
+node_modules/
+mobile/node_modules/
+cloudflare/worker/node_modules/
+
+# Local Android/Expo build outputs and caches.
+mobile/.expo/
+mobile/.expo-export-check/
+mobile/.eas-inspect-archive/
+mobile/android/.gradle/
+mobile/android/app/.cxx/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/**/build/
+
+# Local APK/AAB artifacts and export folders.
+dist/
+mobile/dist/
+mobile/dist-test/
+mobile/dist-typography-check/
+*.apk
+*.aab
+*.apks
+
+# Non-mobile workspaces are not needed for Android EAS builds.
+cloudflare/
+gemini-proxy/
+파일/
+.obsidian/
+
+# OS/editor/local files.
+.idea/
+mobile/.idea/
+.vscode/
+FreshKeeper.code-workspace
+*.log
+Thumbs.db
+.DS_Store
+
+# Local-only generated/test artifacts.
+mobile/type-*.png
+mobile/tools/food-safety-api-data/food-safety-i1250-20*.csv
+mobile/tools/food-safety-api-data/food-safety-i1250-20*.json
+mobile/tools/dbnet-lab/models/
+mobile/tools/인증키.txt
+client_secret_*.json
+mobile/client_secret_*.json

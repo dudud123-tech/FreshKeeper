@@ -11,6 +11,13 @@ const categoryImageSources = {
 };
 
 export function getFoodImageSource(item) {
-  if (item?.imageUri) return { uri: item.imageUri };
+  if (item?.imageUri) {
+    const source = { uri: item.imageUri };
+    if (/\/api\/family-groups\/.+\/image$/i.test(item.imageUri)) {
+      source.headers = getCachedAuthHeaders();
+    }
+    return source;
+  }
   return categoryImageSources[item?.category] || categoryImageSources["기타"];
 }
+import { getCachedAuthHeaders } from "../services/authApi";

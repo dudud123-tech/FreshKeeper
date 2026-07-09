@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
 
 const settingsTabs = [
@@ -14,6 +14,7 @@ const notificationMinuteOptions = Array.from({ length: 60 }, (_, index) => index
 const googleAuthIcon = require("../../assets/auth/google-logo.png");
 const kakaoAuthIcon = require("../../assets/auth/kakaotalk-logo.png");
 const naverAuthIcon = require("../../assets/auth/naver-logo.png");
+const shareMaterialIcon = require("../../assets/actions/share-material.png");
 
 export default function SettingsPanel({
   settingsTab,
@@ -23,15 +24,23 @@ export default function SettingsPanel({
   notificationSettings,
   setNotificationSettings,
   shareFamilyDigest,
+  shareFamilyCode,
   familyCodeInput,
   setFamilyCodeInput,
   normalizeFamilyCode,
   createFamilyShareCode,
   connectFamilyShareCode,
   familySettings,
+  setFamilySettings,
   pullFamilyItems,
   disconnectFamilyShare,
   familyStatus,
+  familyItemCount,
+  familyMembers,
+  familyJoinRequests,
+  removeFamilyMember,
+  checkFamilyJoinRequest,
+  decideFamilyJoinRequest,
   feedbackSettings,
   setFeedbackSettings,
   feedbackStatus,
@@ -46,7 +55,8 @@ export default function SettingsPanel({
   loginWithGoogle,
   loginWithKakao,
   loginWithNaver,
-  logout
+  logout,
+  removeAccount
 }) {
   const [authSheetVisible, setAuthSheetVisible] = useState(false);
   const socialLoginConfigured = googleLoginConfigured || kakaoLoginConfigured || naverLoginConfigured;
@@ -161,7 +171,6 @@ export default function SettingsPanel({
 
       {settingsTab === "alert" ? (
       <View>
-        <Text style={styles.settingGroupTitle}>알림</Text>
         <View style={styles.reminderBox}>
           <Text style={styles.label}>임박 알림기준</Text>
           <Text style={styles.settingDescription}>
@@ -205,54 +214,232 @@ export default function SettingsPanel({
 
       {settingsTab === "share" ? (
       <View>
-        <Text style={styles.settingGroupTitle}>가족 공유</Text>
-        <View style={styles.shareBox}>
-          <View style={styles.shareCopy}>
-            <Text style={styles.dailyAlertTitle}>가족에게 공유</Text>
-            <Text style={styles.settingDescription}>임박/만료 상품을 카카오톡이나 문자로 보낼 수 있습니다.</Text>
-          </View>
-          <Pressable style={styles.shareButton} onPress={shareFamilyDigest}>
-            <Text style={styles.shareButtonText}>공유하기</Text>
-          </Pressable>
-        </View>
-        <View style={styles.familySyncBox}>
-          <View style={styles.shareCopy}>
-            <Text style={styles.dailyAlertTitle}>같이 쓰는 보관함</Text>
-            <Text style={styles.settingDescription}>로그인 없이 공유코드가 같은 가족끼리 보관 목록을 맞춰 둡니다.</Text>
-          </View>
-          <TextInput
-            value={familyCodeInput}
-            onChangeText={(value) => setFamilyCodeInput(normalizeFamilyCode(value))}
-            placeholder="공유코드"
-            autoCapitalize="characters"
-            style={styles.familyCodeInput}
-          />
-          <View style={styles.familyActionRow}>
-            <Pressable style={styles.familyGhostButton} onPress={createFamilyShareCode}>
-              <Text style={styles.familyGhostButtonText}>새 코드</Text>
-            </Pressable>
-            <Pressable style={styles.familyPrimaryButton} onPress={connectFamilyShareCode}>
-              <Text style={styles.familyPrimaryButtonText}>연결</Text>
+        {!authUser ? (
+          <View style={styles.familySyncBox}>
+            <View style={styles.shareCopy}>
+              <Text style={styles.dailyAlertTitle}>로그인이 필요합니다</Text>
+              <Text style={styles.settingDescription}>
+                가족 보관함은 로그인한 사용자만 만들거나 참여할 수 있습니다.
+              </Text>
+            </View>
+            <Pressable style={styles.familyPrimaryButton} onPress={() => setAuthSheetVisible(true)}>
+              <Text style={styles.familyPrimaryButtonText}>로그인 / 회원가입</Text>
             </Pressable>
           </View>
-          {familySettings.enabled ? (
-            <View style={styles.familyActionRow}>
-              <Pressable style={styles.familyGhostButton} onPress={() => pullFamilyItems(familySettings.code, { mergeLocal: true })}>
-                <Text style={styles.familyGhostButtonText}>새로고침</Text>
-              </Pressable>
-              <Pressable style={styles.familyDangerButton} onPress={disconnectFamilyShare}>
-                <Text style={styles.familyDangerButtonText}>연결 해제</Text>
+        ) : (
+          <>
+            <View style={styles.shareBox}>
+              <View style={styles.shareCopy}>
+                <Text style={styles.dailyAlertTitle}>상품 알림 보내기</Text>
+                <Text style={styles.settingDescription}>임박 상품을 카카오톡·문자로 알려요.</Text>
+              </View>
+              <Pressable
+                style={[styles.familyGhostButton, styles.familyStandaloneButton]}
+                onPress={shareFamilyDigest}
+              >
+                <Text style={styles.familyGhostButtonText}>알림 보내기</Text>
               </Pressable>
             </View>
-          ) : null}
-          <Text style={styles.notificationStatus}>{familyStatus}</Text>
-        </View>
+            {familySettings.enabled ? (
+              <View style={styles.familyMembersCard}>
+                {familySettings.role === "owner" && familyJoinRequests.length > 0 ? (
+                  <View style={styles.familyRequestsSection}>
+                    <Text style={styles.familyRequestTitle}>가입 요청 {familyJoinRequests.length}명</Text>
+                    {familyJoinRequests.map((request) => (
+                      <View key={request.id} style={styles.familyRequestRow}>
+                        {request.avatarUrl ? (
+                          <Image source={{ uri: request.avatarUrl }} style={styles.familyMemberAvatar} />
+                        ) : (
+                          <View style={styles.familyMemberAvatarFallback}>
+                            <PersonGlyph active />
+                          </View>
+                        )}
+                        <Text style={styles.familyRequestName}>{request.displayName || "사용자"}</Text>
+                        <Pressable
+                          style={styles.familyRejectButton}
+                          onPress={() => decideFamilyJoinRequest(request.id, "reject")}
+                        >
+                          <Text style={styles.familyRejectButtonText}>거절</Text>
+                        </Pressable>
+                        <Pressable
+                          style={styles.familyApproveButton}
+                          onPress={() => decideFamilyJoinRequest(request.id, "approve")}
+                        >
+                          <Text style={styles.familyApproveButtonText}>승인</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                <Text style={styles.familyMembersTitle}>함께 쓰는 가족 {familyMembers.length}명</Text>
+                {familyMembers.map((member) => {
+                  const canRemove = familySettings.role === "owner" && !member.isMe && member.role !== "owner";
+                  return (
+                    <Pressable
+                      key={member.id}
+                      style={styles.familyMemberRow}
+                      disabled={!canRemove}
+                      onPress={() => Alert.alert(
+                        "가족 멤버 내보내기",
+                        `${member.displayName || "가족"}님을 공유 보관함에서 내보낼까요?`,
+                        [
+                          { text: "취소", style: "cancel" },
+                          {
+                            text: "내보내기",
+                            style: "destructive",
+                            onPress: () => removeFamilyMember(member.id)
+                          }
+                        ]
+                      )}
+                    >
+                      {member.avatarUrl ? (
+                        <Image source={{ uri: member.avatarUrl }} style={styles.familyMemberAvatar} />
+                      ) : (
+                        <View style={styles.familyMemberAvatarFallback}>
+                          <PersonGlyph active />
+                        </View>
+                      )}
+                      <View style={styles.familyMemberCopy}>
+                        <Text style={styles.familyMemberName}>
+                          {member.isMe ? `나 (${member.displayName || "사용자"})` : member.displayName || "가족"}
+                        </Text>
+                        <Text style={styles.familyMemberRole}>
+                          {member.role === "owner" ? "그룹 관리자" : "멤버"}
+                        </Text>
+                      </View>
+                      {canRemove ? <Text style={styles.familyMemberChevron}>›</Text> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+            <View style={styles.familySyncBox}>
+              <View style={styles.shareCopy}>
+                <Text style={styles.dailyAlertTitle}>같이 쓰는 보관함</Text>
+              </View>
+              {!familySettings.enabled ? (
+                familySettings.pendingCode ? (
+                  <>
+                    <View style={styles.familyConnectedInfo}>
+                      <View style={styles.familyConnectedTopRow}>
+                        <Text style={styles.familyConnectedCode}>{familySettings.pendingCode}</Text>
+                        <Text style={styles.familyPendingBadge}>승인 대기</Text>
+                      </View>
+                    </View>
+                    <Pressable
+                      style={[styles.familyGhostButton, styles.familyStandaloneButton]}
+                      onPress={() => checkFamilyJoinRequest(familySettings.pendingCode)}
+                    >
+                      <Text style={styles.familyGhostButtonText}>승인 상태 확인</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                <>
+                  <Pressable
+                    style={styles.familyConsentRow}
+                    onPress={() => setFamilySettings((current) => ({
+                      ...current,
+                      consentAccepted: !current.consentAccepted
+                    }))}
+                  >
+                    <View style={[styles.familyConsentCheck, familySettings.consentAccepted && styles.familyConsentCheckActive]}>
+                      <Text style={styles.familyConsentCheckText}>{familySettings.consentAccepted ? "✓" : ""}</Text>
+                    </View>
+                    <Text style={styles.familyConsentText}>가족 공유 데이터 저장 및 사진 업로드에 동의합니다.</Text>
+                  </Pressable>
+                  <TextInput
+                    value={familyCodeInput}
+                    onChangeText={(value) => setFamilyCodeInput(normalizeFamilyCode(value))}
+                    placeholder="참여할 공유 코드"
+                    autoCapitalize="characters"
+                    style={styles.familyCodeInput}
+                  />
+                  <Pressable style={[styles.familyGhostButton, styles.familyStandaloneButton]} onPress={createFamilyShareCode}>
+                    <Text style={styles.familyGhostButtonText}>새 가족 보관함 만들기</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.familyPrimaryButton, styles.familyStandaloneButton]}
+                    onPress={() => Alert.alert(
+                      "기존 상품을 어떻게 할까요?",
+                      "공유 보관함의 상품으로 교체하거나, 이 휴대폰의 상품도 공유 보관함에 추가할 수 있습니다.",
+                      [
+                        { text: "취소", style: "cancel" },
+                        { text: "서버 목록 사용", onPress: () => connectFamilyShareCode("replace") },
+                        { text: "내 상품도 추가", onPress: () => connectFamilyShareCode("add") }
+                      ]
+                    )}
+                  >
+                    <Text style={styles.familyPrimaryButtonText}>공유 코드로 참여</Text>
+                  </Pressable>
+                </>
+                )
+              ) : (
+                <>
+                  <View style={styles.familyConnectedInfo}>
+                    <View style={styles.familyConnectedTopRow}>
+                      <Text style={styles.familyConnectedCode}>{familySettings.code}</Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="가족 공유 코드 보내기"
+                        hitSlop={8}
+                        style={styles.familyCodeShareButton}
+                        onPress={() => shareFamilyCode(familySettings.code)}
+                      >
+                        <Image source={shareMaterialIcon} resizeMode="contain" style={styles.familyCodeShareIcon} />
+                      </Pressable>
+                    </View>
+                    <Text style={styles.familyItemCount}>서버 상품 {familyItemCount}개</Text>
+                  </View>
+                  <View style={styles.familyActionRow}>
+                    <Pressable
+                      style={styles.familyGhostButton}
+                      onPress={() => Alert.alert(
+                        "서버 목록 다시 불러오기",
+                        "이 휴대폰의 목록을 서버에 저장된 최신 가족 보관함 목록으로 교체합니다.",
+                        [
+                          { text: "취소", style: "cancel" },
+                          { text: "다시 불러오기", onPress: () => pullFamilyItems(familySettings.code) }
+                        ]
+                      )}
+                    >
+                      <Text style={styles.familyGhostButtonText}>서버에서 불러오기</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.familyDangerButton}
+                      onPress={() => Alert.alert(
+                        familySettings.role === "owner" ? "가족 그룹 삭제" : "가족 그룹 나가기",
+                        familySettings.role === "owner"
+                          ? "공유된 상품 정보와 사진이 서버에서 모두 삭제되며 복구할 수 없습니다."
+                          : "이 계정에서 가족 공유 연결을 해제합니다.",
+                        [
+                          { text: "취소", style: "cancel" },
+                          {
+                            text: familySettings.role === "owner" ? "삭제" : "나가기",
+                            style: "destructive",
+                            onPress: disconnectFamilyShare
+                          }
+                        ]
+                      )}
+                    >
+                      <Text style={styles.familyDangerButtonText}>
+                        {familySettings.role === "owner" ? "그룹 삭제" : "그룹 나가기"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+              <Text style={styles.familyRetentionText}>90일 미사용 시 자동 삭제됩니다.</Text>
+              {!familySettings.enabled || /실패|삭제|해제|내보냈/.test(familyStatus) ? (
+                <Text style={styles.notificationStatus}>{familyStatus}</Text>
+              ) : null}
+            </View>
+          </>
+        )}
       </View>
       ) : null}
 
       {settingsTab === "feedback" ? (
       <View>
-        <Text style={styles.settingGroupTitle}>상품 인식</Text>
         <View style={[styles.dailyAlertBox, styles.feedbackBox, feedbackSettings.enabled && styles.dailyAlertBoxActive]}>
           <Pressable
             style={styles.dailyAlertHeader}
@@ -268,14 +455,13 @@ export default function SettingsPanel({
               <View style={[styles.toggleKnob, feedbackSettings.enabled && styles.toggleKnobActive]} />
             </View>
           </Pressable>
-          <Text style={styles.notificationStatus}>{feedbackStatus}</Text>
+          {feedbackStatus ? <Text style={styles.notificationStatus}>{feedbackStatus}</Text> : null}
         </View>
       </View>
       ) : null}
 
       {settingsTab === "account" ? (
       <View>
-        <Text style={styles.settingGroupTitle}>계정</Text>
         <View style={styles.accountBox}>
           {authUser ? (
             <>
@@ -301,6 +487,20 @@ export default function SettingsPanel({
                 onPress={logout}
               >
                 <Text style={styles.accountSecondaryButtonText}>{authBusy ? "처리 중..." : "로그아웃"}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.accountDeleteButton, authBusy && styles.accountButtonDisabled]}
+                disabled={authBusy}
+                onPress={() => Alert.alert(
+                  "계정과 데이터 삭제",
+                  "소유한 가족 그룹, 공유 상품과 사진, 계정 설정이 모두 삭제되며 복구할 수 없습니다.",
+                  [
+                    { text: "취소", style: "cancel" },
+                    { text: "삭제", style: "destructive", onPress: removeAccount }
+                  ]
+                )}
+              >
+                <Text style={styles.accountDeleteButtonText}>계정 및 서버 데이터 삭제</Text>
               </Pressable>
             </>
           ) : (
@@ -446,10 +646,10 @@ const styles = StyleSheet.create({
   settingsTopTabs: {
     gap: 9,
     paddingTop: 2,
-    paddingBottom: 28
+    paddingBottom: 14
   },
   settingsTabsScroller: {
-    height: 112,
+    height: 98,
     flexGrow: 0,
     flexShrink: 0
   },
@@ -519,11 +719,6 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: "#606a64",
     marginTop: 4
-  },
-  settingGroupTitle: {
-    ...typography.sectionTitle,
-    color: "#14583f",
-    marginBottom: 24
   },
   label: {
     ...typography.cardTitle,
@@ -732,19 +927,6 @@ const styles = StyleSheet.create({
   shareCopy: {
     gap: 2
   },
-  shareButton: {
-    minHeight: 42,
-    borderRadius: 8,
-    backgroundColor: "#1f7a5a",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  shareButtonText: {
-    ...typography.label,
-    color: "#fff",
-  },
   familySyncBox: {
     marginTop: 14,
     gap: 12,
@@ -753,6 +935,64 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e6ebe8",
     padding: 16
+  },
+  familyMembersCard: {
+    marginTop: 14,
+    gap: 4,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e6ebe8",
+    padding: 16
+  },
+  familyRequestsSection: {
+    gap: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#edf1ef",
+    paddingBottom: 12,
+    marginBottom: 8
+  },
+  familyRequestTitle: {
+    ...typography.cardTitle,
+    color: "#a34b37",
+    marginBottom: 2
+  },
+  familyRequestRow: {
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  familyRequestName: {
+    ...typography.label,
+    flex: 1,
+    color: "#18201c"
+  },
+  familyRejectButton: {
+    minWidth: 48,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e7b8ad",
+    backgroundColor: "#fff4f1",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  familyRejectButtonText: {
+    ...typography.captionStrong,
+    color: "#a34b37"
+  },
+  familyApproveButton: {
+    minWidth: 48,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: "#1f7a5a",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  familyApproveButtonText: {
+    ...typography.captionStrong,
+    color: "#fff"
   },
   familyCodeInput: {
     ...typography.cardTitle,
@@ -765,9 +1005,131 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     paddingHorizontal: 12
   },
+  familyConsentRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10
+  },
+  familyConsentCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#b8c7c0",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff"
+  },
+  familyConsentCheckActive: {
+    borderColor: "#1f7a5a",
+    backgroundColor: "#1f7a5a"
+  },
+  familyConsentCheckText: {
+    ...typography.captionStrong,
+    color: "#fff"
+  },
+  familyConsentText: {
+    ...typography.caption,
+    flex: 1,
+    color: "#4f5b55",
+  },
   familyActionRow: {
     flexDirection: "row",
     gap: 8
+  },
+  familyConnectedInfo: {
+    borderRadius: 12,
+    backgroundColor: "#f3f8f5",
+    padding: 12,
+    gap: 3
+  },
+  familyConnectedTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10
+  },
+  familyConnectedCode: {
+    ...typography.cardTitle,
+    color: "#14583f",
+    letterSpacing: 1
+  },
+  familyCodeShareButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#e6f4ee",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  familyCodeShareIcon: {
+    width: 20,
+    height: 20,
+    tintColor: "#14583f"
+  },
+  familyItemCount: {
+    ...typography.captionStrong,
+    color: "#4f6b5f"
+  },
+  familyPendingBadge: {
+    ...typography.captionStrong,
+    color: "#a36b13",
+    backgroundColor: "#fff5d9",
+    borderRadius: 8,
+    overflow: "hidden",
+    paddingHorizontal: 9,
+    paddingVertical: 5
+  },
+  familyRetentionText: {
+    ...typography.caption,
+    color: "#78817c"
+  },
+  familyStandaloneButton: {
+    flex: 0,
+    width: "100%"
+  },
+  familyMembersTitle: {
+    ...typography.cardTitle,
+    color: "#18201c",
+    marginBottom: 4
+  },
+  familyMemberRow: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 6
+  },
+  familyMemberAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#edf7f2"
+  },
+  familyMemberAvatarFallback: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#edf7f2",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  familyMemberCopy: {
+    flex: 1,
+    gap: 1
+  },
+  familyMemberName: {
+    ...typography.label,
+    color: "#18201c"
+  },
+  familyMemberRole: {
+    ...typography.caption,
+    color: "#78817c"
+  },
+  familyMemberChevron: {
+    fontSize: 26,
+    lineHeight: 28,
+    color: "#77817b"
   },
   familyPrimaryButton: {
     flex: 1,
@@ -867,6 +1229,20 @@ const styles = StyleSheet.create({
   accountSecondaryButtonText: {
     ...typography.label,
     color: "#4f5a54",
+  },
+  accountDeleteButton: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e4b6b1",
+    backgroundColor: "#fff8f7",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14
+  },
+  accountDeleteButtonText: {
+    ...typography.label,
+    color: "#a33a32",
   },
   accountButtonDisabled: {
     opacity: 0.48

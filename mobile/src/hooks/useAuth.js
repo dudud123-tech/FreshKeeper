@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  deleteAccount,
   isGoogleLoginConfigured,
   isKakaoLoginConfigured,
   isNaverLoginConfigured,
@@ -143,6 +144,23 @@ export function useAuth() {
     }
   }
 
+  async function removeAccount() {
+    if (authBusy) return;
+    try {
+      setAuthBusy(true);
+      setAuthProviderBusy("delete");
+      await deleteAccount();
+      await signOutAccount();
+      setUser(null);
+      setAuthStatus("계정과 서버 데이터를 삭제했습니다.");
+    } catch (error) {
+      setAuthStatus(`계정 삭제에 실패했습니다. (${String(error?.message || "알 수 없는 오류").slice(0, 100)})`);
+    } finally {
+      setAuthBusy(false);
+      setAuthProviderBusy("");
+    }
+  }
+
   return {
     user,
     authReady,
@@ -155,6 +173,7 @@ export function useAuth() {
     loginWithGoogle,
     loginWithKakao,
     loginWithNaver,
-    logout
+    logout,
+    removeAccount
   };
 }

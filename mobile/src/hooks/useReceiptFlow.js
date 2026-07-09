@@ -94,7 +94,7 @@ export function useReceiptFlow({
   const [bulkDraftForm, setBulkDraftForm] = useState({ expiry: suggestedExpiryDate("", "기타", "냉장") });
   const [receiptStatus, setReceiptStatus] = useState("영수증을 촬영하거나 주문내역 캡처를 불러오면 상품 후보를 자동으로 만듭니다.");
   const [feedbackSettings, setFeedbackSettings] = useState(DEFAULT_FEEDBACK_SETTINGS);
-  const [feedbackStatus, setFeedbackStatus] = useState("학습 개선 데이터 자동 전송 켜짐");
+  const [feedbackStatus, setFeedbackStatus] = useState("");
   const [feedbackUploadKey, setFeedbackUploadKey] = useState("");
   const feedbackUploadInFlightRef = useRef(false);
   const classificationRequestRef = useRef(0);

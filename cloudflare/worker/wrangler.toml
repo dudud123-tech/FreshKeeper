@@ -11,3 +11,10 @@ migrations_dir = "migrations"
 
 [ai]
 binding = "AI"
+
+[[r2_buckets]]
+binding = "FAMILY_IMAGES"
+bucket_name = "freshkeeper-family-images"
+
+[triggers]
+crons = [ "20 18 * * *" ]

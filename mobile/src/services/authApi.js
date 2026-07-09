@@ -212,6 +212,24 @@ export async function getAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+export function getCachedAuthHeaders() {
+  return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {};
+}
+
+export async function deleteAccount() {
+  const token = await authToken();
+  if (!token) throw new Error("auth_required");
+  const response = await fetch(`${AUTH_API_BASE}/account`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) {
+    const body = await safeJson(response);
+    throw new Error(body?.error || `account_delete_failed_${response.status}`);
+  }
+  await clearStoredAuth();
+}
+
 async function authToken() {
   if (sessionToken) return sessionToken;
   sessionToken = await authStorageGet(AUTH_TOKEN_KEY) || "";

@@ -122,7 +122,8 @@ export default function App() {
     loginWithGoogle,
     loginWithKakao,
     loginWithNaver,
-    logout
+    logout,
+    removeAccount
   } = useAuth();
   const [, setTotalHighlighted] = useState(false);
   const [latestRegisteredId, setLatestRegisteredId] = useState("");
@@ -196,19 +197,27 @@ export default function App() {
     familyCodeInput,
     setFamilyCodeInput,
     familyStatus,
+    familyItemCount,
+    familyMembers,
+    familyJoinRequests,
     normalizeFamilyCode,
     normalizeFamilySettings,
     shareFamilyDigest,
+    shareFamilyCode,
     createFamilyShareCode,
     connectFamilyShareCode,
     pullFamilyItems,
-    disconnectFamilyShare
+    disconnectFamilyShare,
+    removeMember,
+    checkFamilyJoinRequest,
+    decideJoinRequest
   } = useFamilySync({
     items,
     setItems,
     settingsReady,
     reminderDays,
-    defaultExpiryType: DEFAULT_EXPIRY_TYPE
+    defaultExpiryType: DEFAULT_EXPIRY_TYPE,
+    authUser
   });
   const [launchVisible, setLaunchVisible] = useState(!launchScreenShown);
   const sharedImageInFlightRef = useRef(false);
@@ -520,15 +529,23 @@ export default function App() {
                 notificationSettings={notificationSettings}
                 setNotificationSettings={setNotificationSettings}
                 shareFamilyDigest={shareFamilyDigest}
+                shareFamilyCode={shareFamilyCode}
                 familyCodeInput={familyCodeInput}
                 setFamilyCodeInput={setFamilyCodeInput}
                 normalizeFamilyCode={normalizeFamilyCode}
                 createFamilyShareCode={createFamilyShareCode}
                 connectFamilyShareCode={connectFamilyShareCode}
                 familySettings={familySettings}
+                setFamilySettings={setFamilySettings}
                 pullFamilyItems={pullFamilyItems}
                 disconnectFamilyShare={disconnectFamilyShare}
                 familyStatus={familyStatus}
+                familyItemCount={familyItemCount}
+                familyMembers={familyMembers}
+                familyJoinRequests={familyJoinRequests}
+                removeFamilyMember={removeMember}
+                checkFamilyJoinRequest={checkFamilyJoinRequest}
+                decideFamilyJoinRequest={decideJoinRequest}
                 feedbackSettings={feedbackSettings}
                 setFeedbackSettings={setFeedbackSettings}
                 feedbackStatus={feedbackStatus}
@@ -544,6 +561,7 @@ export default function App() {
                 loginWithKakao={loginWithKakao}
                 loginWithNaver={loginWithNaver}
                 logout={logout}
+                removeAccount={removeAccount}
               />
             </ScrollView>
     </AppShell>

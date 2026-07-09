@@ -49,8 +49,8 @@
 | 구분 | 항목 | 상태 | 담당 | 파일/메모 |
 |---|---|---:|---|---|
 | 개인정보 | 개인정보처리방침 초안 | 완료 | Codex | `privacy-policy-ko.md` |
-| 개인정보 | 개발자 이메일 입력 | 대기 | 사용자 | 실제 문의 이메일 필요 |
-| 개인정보 | 개인정보처리방침 공개 URL 게시 | 대기 | 사용자/Codex | Play Console 입력용 URL 필요 |
+| 개인정보 | 개발자 이메일 입력 | 완료 | 사용자 | `palchonajae@gmail.com` |
+| 개인정보 | 개인정보처리방침 공개 URL 게시 | 완료 | Codex | `https://freshkeeper-ocr-feedback.dndud123.workers.dev/privacy` |
 | 데이터 보안 | 데이터 보안 답변 초안 | 완료 | Codex | `data-safety-ko.md` |
 | 데이터 보안 | 실제 서버 전송 항목 최종 확인 | 확인필요 | Codex | 학습 개선/가족 공유 데이터 기준 정리 필요 |
 | 콘텐츠 등급 | 콘텐츠 등급 설문 작성 | 대기 | 사용자 | Play Console에서 진행 |

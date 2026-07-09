@@ -3,6 +3,8 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const MAX_TEXT_LENGTH = 140;
 const MAX_FAMILY_ITEMS = 500;
+const MAX_FAMILY_IMAGE_BYTES = 350 * 1024;
+const FAMILY_RETENTION_DAYS = 90;
 const MAX_AI_OCR_LINES = 180;
 const MAX_AI_CANDIDATES = 30;
 const MAX_CLASSIFICATION_NAMES = 30;
@@ -134,7 +136,7 @@ const AI_CANDIDATE_ALLOW_HINTS = [
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization"
 };
 
@@ -145,6 +147,14 @@ export default {
     }
 
     const url = new URL(request.url);
+
+    if (request.method === "GET" && url.pathname === "/privacy") {
+      return htmlPage(privacyPolicyHtml());
+    }
+
+    if (request.method === "GET" && url.pathname === "/account-deletion") {
+      return htmlPage(accountDeletionHtml());
+    }
 
     if (request.method === "GET" && url.pathname === "/api/health") {
       return json({
@@ -183,6 +193,10 @@ export default {
       return handleLogout(request, env);
     }
 
+    if (request.method === "DELETE" && url.pathname === "/api/auth/account") {
+      return handleDeleteAccount(request, env);
+    }
+
     if (request.method === "POST" && url.pathname === "/api/receipt-candidates") {
       return handleReceiptCandidates(request, env);
     }
@@ -207,9 +221,58 @@ export default {
       return handleCreateFamilyGroup(request, env);
     }
 
+    const familyGroupMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})$/);
+    if (familyGroupMatch && request.method === "DELETE") {
+      return handleDeleteFamilyGroup(familyGroupMatch[1], request, env);
+    }
+
+    const familyMemberMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})\/members\/me$/);
+    if (familyMemberMatch && request.method === "DELETE") {
+      return handleLeaveFamilyGroup(familyMemberMatch[1], request, env);
+    }
+
+    const familyMembersMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})\/members$/);
+    if (familyMembersMatch && request.method === "GET") {
+      return handleGetFamilyMembers(familyMembersMatch[1], request, env);
+    }
+
+    const familyJoinRequestsMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})\/join-requests$/);
+    if (familyJoinRequestsMatch && request.method === "GET") {
+      return handleGetFamilyJoinRequests(familyJoinRequestsMatch[1], request, env);
+    }
+
+    const familyMyJoinRequestMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})\/join-requests\/me$/);
+    if (familyMyJoinRequestMatch && request.method === "GET") {
+      return handleGetMyFamilyJoinRequest(familyMyJoinRequestMatch[1], request, env);
+    }
+
+    const familyJoinRequestAccountMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})\/join-requests\/([A-Za-z0-9-]{20,80})$/);
+    if (familyJoinRequestAccountMatch && request.method === "PATCH") {
+      return handleDecideFamilyJoinRequest(
+        familyJoinRequestAccountMatch[1],
+        familyJoinRequestAccountMatch[2],
+        request,
+        env
+      );
+    }
+
+    const familyMemberAccountMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})\/members\/([A-Za-z0-9-]{20,80})$/);
+    if (familyMemberAccountMatch && request.method === "DELETE") {
+      return handleRemoveFamilyMember(familyMemberAccountMatch[1], familyMemberAccountMatch[2], request, env);
+    }
+
+    const familyImageMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})\/items\/([^/]+)\/image$/);
+    if (familyImageMatch && request.method === "PUT") {
+      return handlePutFamilyImage(familyImageMatch[1], familyImageMatch[2], request, env);
+    }
+
+    if (familyImageMatch && request.method === "GET") {
+      return handleGetFamilyImage(familyImageMatch[1], familyImageMatch[2], request, env);
+    }
+
     const familyItemsMatch = url.pathname.match(/^\/api\/family-groups\/([A-Z0-9]{6,12})\/items$/);
     if (familyItemsMatch && request.method === "GET") {
-      return handleGetFamilyItems(familyItemsMatch[1], env);
+      return handleGetFamilyItems(familyItemsMatch[1], request, env);
     }
 
     if (familyItemsMatch && request.method === "PUT") {
@@ -217,8 +280,106 @@ export default {
     }
 
     return json({ ok: false, error: "not_found" }, 404);
+  },
+
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(deleteStaleFamilyGroups(env));
   }
 };
+
+function htmlPage(content) {
+  return new Response(content, {
+    headers: {
+      "Content-Type": "text/html; charset=UTF-8",
+      "Cache-Control": "public, max-age=300",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer"
+    }
+  });
+}
+
+function publicPage(title, body) {
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title} | 오늘까지야</title>
+  <style>
+    :root { color-scheme: light; --ink: #18201c; --muted: #5f6963; --green: #1f7a5a; --line: #dfe6e1; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f6faf7; color: var(--ink); font-family: "Noto Sans KR", sans-serif; line-height: 1.75; }
+    main { width: min(760px, calc(100% - 32px)); margin: 40px auto; padding: 36px; background: white; border: 1px solid var(--line); border-radius: 22px; }
+    h1 { margin-top: 0; font-size: 2rem; line-height: 1.25; }
+    h2 { margin-top: 2rem; font-size: 1.25rem; }
+    p, li { color: var(--muted); }
+    a { color: var(--green); }
+    .meta { color: var(--green); font-weight: 700; }
+    .contact { padding: 18px; background: #edf7f2; border-radius: 14px; }
+    @media (max-width: 560px) { main { margin: 0; width: 100%; padding: 24px 20px 40px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>${body}</main></body>
+</html>`;
+}
+
+function privacyPolicyHtml() {
+  return publicPage("개인정보처리방침", `
+    <h1>오늘까지야 개인정보처리방침</h1>
+    <p class="meta">시행일: 2026년 7월 4일</p>
+    <p>팔촌아재(이하 "개발자")는 오늘까지야 앱 이용자의 개인정보를 중요하게 생각하며, 관련 법령과 Google Play 정책에 따라 개인정보를 처리합니다.</p>
+    <h2>1. 처리하는 정보와 목적</h2>
+    <ul>
+      <li>선택적 소셜 로그인: Google, 카카오 또는 네이버가 제공하는 계정 식별자, 이메일, 표시 이름, 프로필 이미지. 로그인, 계정 식별, 사용자별 상품 분류·제외 설정 동기화에 사용합니다.</li>
+      <li>앱 기능 정보: 상품명, 카테고리, 보관 방식, 소비기한, 구매 링크, 알림 설정. 보관함과 소비기한 알림 제공에 사용합니다.</li>
+      <li>사진과 OCR 정보: 사용자가 선택하거나 촬영한 영수증·주문내역·상품 이미지와 인식된 텍스트. 상품 후보 추출과 등록에 사용합니다.</li>
+      <li>가족 공유 정보: 공유 코드, 그룹 소유자·참여자, 상품명·카테고리·보관 방식·소비기한. 로그인 사용자의 가족 보관함 동기화에 사용하며 D1에 저장합니다. 그룹 구성원에게는 표시 이름, 프로필 사진과 그룹 내 역할이 표시되며 이메일 주소는 표시하지 않습니다.</li>
+      <li>가족 공유 사진: 사용자가 동의하고 등록한 상품 사진을 낮은 해상도로 압축해 R2에 저장하며 가족 그룹 안에서만 표시합니다.</li>
+      <li>품질 개선 정보: 사용자가 학습 개선 전송을 켠 경우 OCR 텍스트, 선택·제외 결과, 앱 버전, 처리 식별자. 상품 추출 품질 개선에 사용합니다.</li>
+    </ul>
+    <h2>2. 권한 사용</h2>
+    <p>카메라와 사진 접근 권한은 사용자가 영수증, 주문내역 또는 상품 사진을 직접 촬영하거나 선택할 때만 사용합니다. 알림 권한은 소비기한 임박·만료 알림을 제공하는 데 사용합니다.</p>
+    <h2>3. 외부 서비스</h2>
+    <ul>
+      <li>Google, Kakao, NAVER: 사용자가 선택한 소셜 로그인 인증</li>
+      <li>Cloudflare: 로그인 계정·세션, 상품 설정, 가족 공유 및 선택적 품질 개선 데이터 처리</li>
+    </ul>
+    <p>전송되는 정보는 HTTPS로 암호화됩니다. 개발자는 개인정보를 광고 목적으로 판매하지 않습니다.</p>
+    <h2>4. 보관과 삭제</h2>
+    <p>기기 내 상품 정보는 사용자가 앱에서 삭제하거나 앱 데이터를 삭제할 때 제거됩니다. 가족 공유 그룹은 마지막 사용 후 90일 동안 활동이 없으면 D1 상품 정보와 R2 사진을 자동 삭제합니다. 소유자가 그룹을 삭제하거나 계정을 삭제할 때도 소유 그룹의 공유 데이터와 사진을 삭제합니다. 법령상 보관 의무가 있는 경우에는 해당 기간만 분리 보관한 뒤 삭제합니다.</p>
+    <p>계정 및 서버 데이터 삭제는 <a href="/account-deletion">계정 삭제 안내</a>에 따라 요청할 수 있습니다.</p>
+    <h2>5. 아동의 개인정보</h2>
+    <p>오늘까지야는 아동을 대상으로 설계된 앱이 아니며, 고의로 아동의 개인정보를 수집하지 않습니다.</p>
+    <h2>6. 방침 변경</h2>
+    <p>처리 내용이 변경되면 이 페이지에 시행일과 변경 내용을 알립니다.</p>
+    <h2>7. 문의</h2>
+    <div class="contact">
+      <strong>개발자: 팔촌아재</strong><br>
+      이메일: <a href="mailto:palchonajae@gmail.com">palchonajae@gmail.com</a>
+    </div>
+  `);
+}
+
+function accountDeletionHtml() {
+  return publicPage("계정 삭제 안내", `
+    <h1>오늘까지야 계정 삭제 안내</h1>
+    <p>오늘까지야 소셜 로그인 계정과 서버에 연결된 데이터는 앱의 설정 &gt; 계정 &gt; 계정 및 서버 데이터 삭제에서 직접 삭제할 수 있습니다. 앱을 사용할 수 없는 경우 아래 이메일로 요청해 주세요.</p>
+    <h2>요청 방법</h2>
+    <ol>
+      <li><a href="mailto:palchonajae@gmail.com?subject=%EC%98%A4%EB%8A%98%EA%B9%8C%EC%A7%80%EC%95%BC%20%EA%B3%84%EC%A0%95%20%EC%82%AD%EC%A0%9C%20%EC%9A%94%EC%B2%AD">palchonajae@gmail.com</a>으로 메일을 보냅니다.</li>
+      <li>제목에 "오늘까지야 계정 삭제 요청"을 적습니다.</li>
+      <li>로그인 제공자(Google·카카오·네이버)와 로그인 이메일을 적습니다.</li>
+    </ol>
+    <p>계정 삭제 시 계정, 로그인 세션, 상품 분류·제외 설정, 가족 그룹 멤버십을 삭제합니다. 사용자가 소유한 가족 그룹의 공유 상품 정보와 압축 사진도 함께 삭제합니다. 법령상 보관이 필요한 정보는 해당 기간만 분리 보관한 뒤 삭제합니다.</p>
+    <h2>앱에서 삭제</h2>
+    <p>설정 &gt; 계정 &gt; 계정 및 서버 데이터 삭제를 선택하고 확인하면 즉시 삭제를 요청할 수 있습니다.</p>
+    <h2>문의</h2>
+    <div class="contact">
+      <strong>개발자: 팔촌아재</strong><br>
+      이메일: <a href="mailto:palchonajae@gmail.com">palchonajae@gmail.com</a>
+    </div>
+  `);
+}
 
 async function handleGoogleLogin(request, env) {
   if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
@@ -470,6 +631,28 @@ async function handleLogout(request, env) {
   await env.DB.prepare(
     `UPDATE auth_sessions SET revoked_at = ? WHERE token_hash = ?`
   ).bind(new Date().toISOString(), await sha256(token)).run();
+  return json({ ok: true });
+}
+
+async function handleDeleteAccount(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const session = await authenticatedSession(request, env.DB);
+  if (!session) return json({ ok: false, error: "unauthorized" }, 401);
+
+  const ownedGroups = await env.DB.prepare(
+    `SELECT code FROM family_groups WHERE owner_account_id = ? AND deleted_at IS NULL`
+  ).bind(session.account_id).all();
+  for (const group of ownedGroups.results || []) await deleteFamilyGroupData(group.code, env);
+
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM family_group_join_requests WHERE account_id = ?`).bind(session.account_id),
+    env.DB.prepare(`DELETE FROM family_group_members WHERE account_id = ?`).bind(session.account_id),
+    env.DB.prepare(`DELETE FROM auth_sessions WHERE account_id = ?`).bind(session.account_id),
+    env.DB.prepare(`DELETE FROM account_devices WHERE account_id = ?`).bind(session.account_id),
+    env.DB.prepare(`DELETE FROM product_classification_preferences WHERE account_id = ?`).bind(session.account_id),
+    env.DB.prepare(`DELETE FROM product_candidate_exclusions WHERE account_id = ?`).bind(session.account_id),
+    env.DB.prepare(`DELETE FROM accounts WHERE id = ?`).bind(session.account_id)
+  ]);
   return json({ ok: true });
 }
 
@@ -1263,6 +1446,8 @@ async function saveAiReceiptLog(env, log) {
 
 async function handleCreateFamilyGroup(request, env) {
   if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const session = await authenticatedSession(request, env.DB);
+  if (!session) return json({ ok: false, error: "unauthorized" }, 401);
 
   let payload = {};
   try {
@@ -1272,19 +1457,76 @@ async function handleCreateFamilyGroup(request, env) {
   }
 
   const requestedCode = normalizeFamilyCode(payload?.code);
+  if (payload?.consentAccepted !== true) {
+    return json({ ok: false, error: "family_storage_consent_required" }, 400);
+  }
   const now = new Date().toISOString();
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const code = requestedCode || randomFamilyCode();
     try {
-      await env.DB.prepare(
-        `INSERT INTO family_groups (code, created_at, updated_at, item_count)
-         VALUES (?, ?, ?, 0)
-         ON CONFLICT(code) DO NOTHING`
-      ).bind(code, now, now).run();
+      let group = await env.DB.prepare(
+        `SELECT code, owner_account_id, created_at, updated_at, item_count
+         FROM family_groups WHERE code = ? AND deleted_at IS NULL`
+      ).bind(code).first();
 
-      const group = await env.DB.prepare(`SELECT code, created_at, updated_at, item_count FROM family_groups WHERE code = ?`).bind(code).first();
-      return json({ ok: true, group });
+      if (requestedCode && !group) {
+        return json({ ok: false, error: "group_not_found" }, 404);
+      }
+      if (!group) {
+        await env.DB.prepare(
+          `INSERT INTO family_groups
+            (code, owner_account_id, created_at, updated_at, last_accessed_at, image_consent_at, item_count, deleted_at)
+           VALUES (?, ?, ?, ?, ?, ?, 0, NULL)`
+        ).bind(code, session.account_id, now, now, now, now).run();
+      } else if (!group.owner_account_id) {
+        await env.DB.prepare(
+          `UPDATE family_groups
+           SET owner_account_id = ?, image_consent_at = COALESCE(image_consent_at, ?),
+               last_accessed_at = ?, updated_at = ?
+           WHERE code = ?`
+        ).bind(session.account_id, now, now, now, code).run();
+      }
+
+      group = await env.DB.prepare(
+        `SELECT code, owner_account_id, created_at, updated_at, item_count
+         FROM family_groups WHERE code = ? AND deleted_at IS NULL`
+      ).bind(code).first();
+      const role = group.owner_account_id === session.account_id ? "owner" : "member";
+      if (requestedCode && role !== "owner") {
+        const membership = await env.DB.prepare(
+          `SELECT role FROM family_group_members WHERE group_code = ? AND account_id = ?`
+        ).bind(code, session.account_id).first();
+        if (!membership) {
+          await env.DB.prepare(
+            `INSERT INTO family_group_join_requests
+              (group_code, account_id, status, requested_at, decided_at)
+             VALUES (?, ?, 'pending', ?, NULL)
+             ON CONFLICT(group_code, account_id) DO UPDATE SET
+               status = 'pending',
+               requested_at = excluded.requested_at,
+               decided_at = NULL`
+          ).bind(code, session.account_id, now).run();
+          return json({
+            ok: true,
+            pendingApproval: true,
+            request: { code, status: "pending", requestedAt: now }
+          }, 202);
+        }
+      }
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO family_group_members (group_code, account_id, role, joined_at, last_seen_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(group_code, account_id) DO UPDATE SET
+             role = excluded.role,
+             last_seen_at = excluded.last_seen_at`
+        ).bind(code, session.account_id, role, now, now),
+        env.DB.prepare(
+          `UPDATE family_groups SET last_accessed_at = ?, updated_at = ? WHERE code = ?`
+        ).bind(now, now, code)
+      ]);
+      return json({ ok: true, group: { ...group, role } });
     } catch (error) {
       if (requestedCode) return json({ ok: false, error: "create_failed" }, 500);
     }
@@ -1293,26 +1535,24 @@ async function handleCreateFamilyGroup(request, env) {
   return json({ ok: false, error: "code_generation_failed" }, 500);
 }
 
-async function handleGetFamilyItems(code, env) {
+async function handleGetFamilyItems(code, request, env) {
   if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
-
-  const groupCode = normalizeFamilyCode(code);
-  if (!groupCode) return json({ ok: false, error: "invalid_code" }, 400);
-
-  const group = await env.DB.prepare(`SELECT code, created_at, updated_at, item_count FROM family_groups WHERE code = ?`).bind(groupCode).first();
-  if (!group) return json({ ok: false, error: "group_not_found" }, 404);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  const { groupCode, group, session, role } = access;
 
   const { results } = await env.DB.prepare(
-    `SELECT item_id, name, category, storage, expiry_type, expiry, created_at, updated_at
+    `SELECT item_id, name, category, storage, expiry_type, expiry, created_at, updated_at, image_key
      FROM family_group_items
      WHERE group_code = ? AND deleted = 0
      ORDER BY expiry ASC, name ASC
      LIMIT ?`
   ).bind(groupCode, MAX_FAMILY_ITEMS).all();
 
+  await touchFamilyGroup(env.DB, groupCode, session.account_id);
   return json({
     ok: true,
-    group,
+    group: { ...group, role },
     items: (results || []).map((row) => ({
       id: row.item_id,
       name: row.name,
@@ -1321,16 +1561,19 @@ async function handleGetFamilyItems(code, env) {
       expiryType: row.expiry_type,
       expiry: row.expiry,
       createdAt: row.created_at,
-      syncedAt: row.updated_at
+      syncedAt: row.updated_at,
+      imageUri: row.image_key
+        ? `${new URL(request.url).origin}/api/family-groups/${groupCode}/items/${encodeURIComponent(row.item_id)}/image`
+        : ""
     }))
   });
 }
 
 async function handlePutFamilyItems(code, request, env) {
   if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
-
-  const groupCode = normalizeFamilyCode(code);
-  if (!groupCode) return json({ ok: false, error: "invalid_code" }, 400);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  const { groupCode, session } = access;
 
   let payload;
   try {
@@ -1340,13 +1583,27 @@ async function handlePutFamilyItems(code, request, env) {
   }
 
   const items = normalizeFamilyItems(payload?.items);
+  const expectedUpdatedAt = safeString(payload?.expectedUpdatedAt, 40);
+  if (expectedUpdatedAt && access.group.updatedAt !== expectedUpdatedAt) {
+    return json({
+      ok: false,
+      error: "family_sync_conflict",
+      updatedAt: access.group.updatedAt
+    }, 409);
+  }
   const now = new Date().toISOString();
+  const previousImages = env.FAMILY_IMAGES
+    ? await env.DB.prepare(
+      `SELECT item_id, image_key FROM family_group_items
+       WHERE group_code = ? AND deleted = 0 AND image_key IS NOT NULL`
+    ).bind(groupCode).all()
+    : { results: [] };
 
   await env.DB.prepare(
-    `INSERT INTO family_groups (code, created_at, updated_at, item_count)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(code) DO UPDATE SET updated_at = excluded.updated_at, item_count = excluded.item_count`
-  ).bind(groupCode, now, now, items.length).run();
+    `UPDATE family_groups
+     SET updated_at = ?, last_accessed_at = ?, item_count = ?
+     WHERE code = ? AND deleted_at IS NULL`
+  ).bind(now, now, items.length, groupCode).run();
 
   const statements = [
     env.DB.prepare(`UPDATE family_group_items SET deleted = 1, updated_at = ? WHERE group_code = ?`).bind(now, groupCode)
@@ -1382,8 +1639,329 @@ async function handlePutFamilyItems(code, request, env) {
   }
 
   await env.DB.batch(statements);
+  const activeItemIds = new Set(items.map((item) => item.id));
+  const removedImageKeys = (previousImages.results || [])
+    .filter((row) => !activeItemIds.has(row.item_id))
+    .map((row) => row.image_key)
+    .filter(Boolean);
+  if (removedImageKeys.length) {
+    await env.FAMILY_IMAGES.delete(removedImageKeys);
+    await env.DB.prepare(
+      `UPDATE family_group_items SET image_key = NULL
+       WHERE group_code = ? AND deleted = 1`
+    ).bind(groupCode).run();
+  }
+  await touchFamilyGroup(env.DB, groupCode, session.account_id);
 
   return json({ ok: true, code: groupCode, itemCount: items.length, updatedAt: now });
+}
+
+async function handlePutFamilyImage(code, encodedItemId, request, env) {
+  if (!env.DB || !env.FAMILY_IMAGES) return json({ ok: false, error: "missing_family_image_binding" }, 500);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  const itemId = safeFamilyItemId(encodedItemId);
+  if (!itemId) return json({ ok: false, error: "invalid_item_id" }, 400);
+
+  const contentType = String(request.headers.get("Content-Type") || "").split(";")[0].toLowerCase();
+  if (!["image/jpeg", "image/webp"].includes(contentType)) {
+    return json({ ok: false, error: "unsupported_image_type" }, 415);
+  }
+  const contentLength = Number(request.headers.get("Content-Length") || 0);
+  if (contentLength > MAX_FAMILY_IMAGE_BYTES) {
+    return json({ ok: false, error: "image_too_large" }, 413);
+  }
+  const body = await request.arrayBuffer();
+  if (!body.byteLength || body.byteLength > MAX_FAMILY_IMAGE_BYTES) {
+    return json({ ok: false, error: "image_too_large" }, 413);
+  }
+
+  const row = await env.DB.prepare(
+    `SELECT item_id FROM family_group_items
+     WHERE group_code = ? AND item_id = ? AND deleted = 0`
+  ).bind(access.groupCode, itemId).first();
+  if (!row) return json({ ok: false, error: "item_not_found" }, 404);
+
+  const extension = contentType === "image/webp" ? "webp" : "jpg";
+  const key = `family/${access.groupCode}/${encodeURIComponent(itemId)}.${extension}`;
+  await env.FAMILY_IMAGES.put(key, body, {
+    httpMetadata: { contentType, cacheControl: "private, max-age=3600" },
+    customMetadata: { groupCode: access.groupCode, itemId }
+  });
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE family_group_items SET image_key = ?, updated_at = ?
+       WHERE group_code = ? AND item_id = ?`
+    ).bind(key, new Date().toISOString(), access.groupCode, itemId),
+    env.DB.prepare(
+      `UPDATE family_groups SET last_accessed_at = ? WHERE code = ?`
+    ).bind(new Date().toISOString(), access.groupCode)
+  ]);
+
+  return json({
+    ok: true,
+    imageUri: `${new URL(request.url).origin}/api/family-groups/${access.groupCode}/items/${encodeURIComponent(itemId)}/image`
+  });
+}
+
+async function handleGetFamilyImage(code, encodedItemId, request, env) {
+  if (!env.DB || !env.FAMILY_IMAGES) return json({ ok: false, error: "missing_family_image_binding" }, 500);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  const itemId = safeFamilyItemId(encodedItemId);
+  if (!itemId) return json({ ok: false, error: "invalid_item_id" }, 400);
+
+  const row = await env.DB.prepare(
+    `SELECT image_key FROM family_group_items
+     WHERE group_code = ? AND item_id = ? AND deleted = 0`
+  ).bind(access.groupCode, itemId).first();
+  if (!row?.image_key) return json({ ok: false, error: "image_not_found" }, 404);
+  const object = await env.FAMILY_IMAGES.get(row.image_key);
+  if (!object) return json({ ok: false, error: "image_not_found" }, 404);
+
+  const headers = new Headers(corsHeaders);
+  object.writeHttpMetadata(headers);
+  headers.set("ETag", object.httpEtag);
+  headers.set("Cache-Control", "private, max-age=3600");
+  return new Response(object.body, { headers });
+}
+
+async function handleLeaveFamilyGroup(code, request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  if (access.role === "owner") {
+    return json({ ok: false, error: "owner_must_delete_group" }, 409);
+  }
+  await env.DB.prepare(
+    `DELETE FROM family_group_members WHERE group_code = ? AND account_id = ?`
+  ).bind(access.groupCode, access.session.account_id).run();
+  return json({ ok: true });
+}
+
+async function handleGetFamilyMembers(code, request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  const result = await env.DB.prepare(
+    `SELECT m.account_id, m.role, m.joined_at, a.display_name, a.avatar_url
+     FROM family_group_members m
+     JOIN accounts a ON a.id = m.account_id
+     WHERE m.group_code = ?
+     ORDER BY CASE WHEN m.role = 'owner' THEN 0 ELSE 1 END, m.joined_at ASC`
+  ).bind(access.groupCode).all();
+  await touchFamilyGroup(env.DB, access.groupCode, access.session.account_id);
+  return json({
+    ok: true,
+    members: (result.results || []).map((member) => ({
+      id: member.account_id,
+      displayName: member.display_name || "가족",
+      avatarUrl: member.avatar_url || "",
+      role: member.role,
+      joinedAt: member.joined_at,
+      isMe: member.account_id === access.session.account_id
+    }))
+  });
+}
+
+async function handleGetFamilyJoinRequests(code, request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  if (access.role !== "owner") return json({ ok: false, error: "owner_required" }, 403);
+  const result = await env.DB.prepare(
+    `SELECT r.account_id, r.status, r.requested_at, a.display_name, a.avatar_url
+     FROM family_group_join_requests r
+     JOIN accounts a ON a.id = r.account_id
+     WHERE r.group_code = ? AND r.status = 'pending'
+     ORDER BY r.requested_at ASC`
+  ).bind(access.groupCode).all();
+  return json({
+    ok: true,
+    requests: (result.results || []).map((entry) => ({
+      id: entry.account_id,
+      displayName: entry.display_name || "사용자",
+      avatarUrl: entry.avatar_url || "",
+      status: entry.status,
+      requestedAt: entry.requested_at
+    }))
+  });
+}
+
+async function handleGetMyFamilyJoinRequest(code, request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const groupCode = normalizeFamilyCode(code);
+  if (!groupCode) return json({ ok: false, error: "invalid_code" }, 400);
+  const session = await authenticatedSession(request, env.DB);
+  if (!session) return json({ ok: false, error: "unauthorized" }, 401);
+  const group = await env.DB.prepare(
+    `SELECT code FROM family_groups WHERE code = ? AND deleted_at IS NULL`
+  ).bind(groupCode).first();
+  if (!group) return json({ ok: false, error: "group_not_found" }, 404);
+  const member = await env.DB.prepare(
+    `SELECT role FROM family_group_members WHERE group_code = ? AND account_id = ?`
+  ).bind(groupCode, session.account_id).first();
+  if (member) return json({ ok: true, status: "approved", role: member.role });
+  const requestEntry = await env.DB.prepare(
+    `SELECT status, requested_at, decided_at
+     FROM family_group_join_requests WHERE group_code = ? AND account_id = ?`
+  ).bind(groupCode, session.account_id).first();
+  return json({
+    ok: true,
+    status: requestEntry?.status || "none",
+    requestedAt: requestEntry?.requested_at || null,
+    decidedAt: requestEntry?.decided_at || null
+  });
+}
+
+async function handleDecideFamilyJoinRequest(code, accountId, request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  if (access.role !== "owner") return json({ ok: false, error: "owner_required" }, 403);
+  let payload = {};
+  try {
+    payload = await request.json();
+  } catch {
+    payload = {};
+  }
+  const action = payload?.action;
+  if (action !== "approve" && action !== "reject") {
+    return json({ ok: false, error: "invalid_join_request_action" }, 400);
+  }
+  const pending = await env.DB.prepare(
+    `SELECT account_id FROM family_group_join_requests
+     WHERE group_code = ? AND account_id = ? AND status = 'pending'`
+  ).bind(access.groupCode, accountId).first();
+  if (!pending) return json({ ok: false, error: "join_request_not_found" }, 404);
+  const now = new Date().toISOString();
+  const statements = [
+    env.DB.prepare(
+      `UPDATE family_group_join_requests SET status = ?, decided_at = ?
+       WHERE group_code = ? AND account_id = ?`
+    ).bind(action === "approve" ? "approved" : "rejected", now, access.groupCode, accountId)
+  ];
+  if (action === "approve") {
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO family_group_members (group_code, account_id, role, joined_at, last_seen_at)
+         VALUES (?, ?, 'member', ?, ?)
+         ON CONFLICT(group_code, account_id) DO UPDATE SET
+           role = 'member',
+           last_seen_at = excluded.last_seen_at`
+      ).bind(access.groupCode, accountId, now, now)
+    );
+  }
+  await env.DB.batch(statements);
+  return json({ ok: true, status: action === "approve" ? "approved" : "rejected" });
+}
+
+async function handleRemoveFamilyMember(code, accountId, request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  if (access.role !== "owner") return json({ ok: false, error: "owner_required" }, 403);
+  if (accountId === access.session.account_id) {
+    return json({ ok: false, error: "owner_cannot_remove_self" }, 409);
+  }
+  const member = await env.DB.prepare(
+    `SELECT role FROM family_group_members WHERE group_code = ? AND account_id = ?`
+  ).bind(access.groupCode, accountId).first();
+  if (!member) return json({ ok: false, error: "member_not_found" }, 404);
+  if (member.role === "owner") return json({ ok: false, error: "owner_cannot_be_removed" }, 409);
+  await env.DB.prepare(
+    `DELETE FROM family_group_members WHERE group_code = ? AND account_id = ?`
+  ).bind(access.groupCode, accountId).run();
+  return json({ ok: true });
+}
+
+async function handleDeleteFamilyGroup(code, request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const access = await authorizedFamilyGroup(code, request, env.DB);
+  if (access.error) return access.error;
+  if (access.role !== "owner") return json({ ok: false, error: "owner_required" }, 403);
+  await deleteFamilyGroupData(access.groupCode, env);
+  return json({ ok: true });
+}
+
+async function authorizedFamilyGroup(code, request, db) {
+  const groupCode = normalizeFamilyCode(code);
+  if (!groupCode) return { error: json({ ok: false, error: "invalid_code" }, 400) };
+  const session = await authenticatedSession(request, db);
+  if (!session) return { error: json({ ok: false, error: "unauthorized" }, 401) };
+  const member = await db.prepare(
+    `SELECT g.code, g.owner_account_id, g.created_at, g.updated_at, g.item_count, m.role
+     FROM family_groups g
+     JOIN family_group_members m ON m.group_code = g.code
+     WHERE g.code = ? AND m.account_id = ? AND g.deleted_at IS NULL
+     LIMIT 1`
+  ).bind(groupCode, session.account_id).first();
+  if (!member) return { error: json({ ok: false, error: "family_access_denied" }, 403) };
+  return {
+    groupCode,
+    session,
+    role: member.role,
+    group: {
+      code: member.code,
+      ownerAccountId: member.owner_account_id,
+      createdAt: member.created_at,
+      updatedAt: member.updated_at,
+      itemCount: member.item_count
+    }
+  };
+}
+
+async function touchFamilyGroup(db, groupCode, accountId) {
+  const now = new Date().toISOString();
+  await db.batch([
+    db.prepare(`UPDATE family_groups SET last_accessed_at = ? WHERE code = ?`).bind(now, groupCode),
+    db.prepare(
+      `UPDATE family_group_members SET last_seen_at = ? WHERE group_code = ? AND account_id = ?`
+    ).bind(now, groupCode, accountId)
+  ]);
+}
+
+function safeFamilyItemId(value) {
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded
+      && decoded.length <= 80
+      && !/[\u0000-\u001f\u007f/\\]/.test(decoded)
+      ? decoded
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+async function deleteFamilyGroupData(groupCode, env) {
+  if (env.FAMILY_IMAGES) await deleteR2Prefix(env.FAMILY_IMAGES, `family/${groupCode}/`);
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM family_group_items WHERE group_code = ?`).bind(groupCode),
+    env.DB.prepare(`DELETE FROM family_group_join_requests WHERE group_code = ?`).bind(groupCode),
+    env.DB.prepare(`DELETE FROM family_group_members WHERE group_code = ?`).bind(groupCode),
+    env.DB.prepare(`DELETE FROM family_groups WHERE code = ?`).bind(groupCode)
+  ]);
+}
+
+async function deleteR2Prefix(bucket, prefix) {
+  let cursor;
+  do {
+    const listed = await bucket.list({ prefix, cursor, limit: 1000 });
+    if (listed.objects.length) await bucket.delete(listed.objects.map((object) => object.key));
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+}
+
+async function deleteStaleFamilyGroups(env) {
+  if (!env.DB) return;
+  const cutoff = new Date(Date.now() - FAMILY_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const result = await env.DB.prepare(
+    `SELECT code FROM family_groups
+     WHERE deleted_at IS NULL AND COALESCE(last_accessed_at, updated_at, created_at) < ?
+     LIMIT 100`
+  ).bind(cutoff).all();
+  for (const row of result.results || []) await deleteFamilyGroupData(row.code, env);
 }
 
 async function handleOcrFeedback(request, env) {

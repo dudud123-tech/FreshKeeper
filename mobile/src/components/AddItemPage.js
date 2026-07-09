@@ -1597,7 +1597,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
-    padding: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 16,
@@ -1607,7 +1608,7 @@ const styles = StyleSheet.create({
   bulkCountBox: {
     // 선택된 상품 수를 보여 주는 작은 박스.
     width: 64,
-    minHeight: 56,
+    height: 56,
     borderRadius: 12,
     backgroundColor: "#edf8f2",
     alignItems: "center",
@@ -1629,7 +1630,7 @@ const styles = StyleSheet.create({
   bulkResetButton: {
     // 선택 상태를 초기화하는 버튼.
     width: 58,
-    minHeight: 56,
+    height: 56,
     borderRadius: 12,
     backgroundColor: "#f5faf7",
     alignItems: "center",
@@ -1650,7 +1651,7 @@ const styles = StyleSheet.create({
   bulkSubmitButton: {
     // 선택된 초안들을 보관함에 넣는 메인 버튼.
     flex: 1,
-    minHeight: 56,
+    height: 56,
     borderRadius: 13,
     backgroundColor: "#1f7a5a",
     flexDirection: "row",

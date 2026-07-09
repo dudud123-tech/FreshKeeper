@@ -1,0 +1,36 @@
+# Dependencies are installed on EAS Build.
+node_modules/
+
+# Expo and local export outputs.
+.expo/
+.expo-export-check/
+dist/
+dist-test/
+dist-typography-check/
+
+# Native build outputs and caches should never be uploaded to EAS.
+android/.gradle/
+android/app/.cxx/
+android/app/build/
+android/build/
+android/**/build/
+
+# Android packaged artifacts from local experiments.
+*.apk
+*.aab
+*.apks
+
+# Local/editor files.
+.idea/
+.vscode/
+*.log
+Thumbs.db
+.DS_Store
+
+# Local-only generated/test artifacts.
+type-*.png
+tools/food-safety-api-data/food-safety-i1250-20*.csv
+tools/food-safety-api-data/food-safety-i1250-20*.json
+tools/dbnet-lab/models/
+tools/인증키.txt
+client_secret_*.json

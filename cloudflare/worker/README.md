@@ -123,6 +123,29 @@ Multiple accepted audiences can be supplied as a comma-separated value.
 Naver does not require an additional Worker secret because the Worker validates
 the supplied access token directly against Naver's profile API.
 
+## Authenticated family sharing
+
+Family sharing requires a valid Bearer session. D1 stores the group owner,
+members, product metadata, and the R2 object key. R2 stores only compressed
+JPEG/WebP product images up to 350 KB.
+
+- `POST /api/family-groups`: create a group, reconnect an existing member, or
+  submit an approval request for a new account after explicit storage consent.
+- `GET /api/family-groups/:code/join-requests`: list pending requests as owner.
+- `GET /api/family-groups/:code/join-requests/me`: check the current account's
+  request status.
+- `PATCH /api/family-groups/:code/join-requests/:accountId`: approve or reject
+  a request as owner.
+- `GET|PUT /api/family-groups/:code/items`: read or synchronize products.
+- `PUT|GET /api/family-groups/:code/items/:itemId/image`: upload or read a
+  private group image.
+- `DELETE /api/family-groups/:code/members/me`: leave as a member.
+- `DELETE /api/family-groups/:code`: delete an owner group and all R2 images.
+- `DELETE /api/auth/account`: delete the account, memberships, owned groups,
+  and owned group images.
+
+The daily Cron Trigger deletes groups that have not been used for 90 days.
+
 ## Beta feedback queries
 
 Recent OCR feedback receipts:
@@ -170,6 +193,7 @@ npm run db:create
 Copy the returned `database_id` into `wrangler.toml`, then apply migrations and deploy:
 
 ```powershell
+npx.cmd wrangler r2 bucket create freshkeeper-family-images
 npm run db:migrate:remote
 npm run db:seed:classifications:remote
 npm run deploy

@@ -492,6 +492,12 @@ async function handleKakaoLogin(request, env) {
 
   const providerSubject = safeString(claims?.sub, 255);
   if (!providerSubject) return json({ ok: false, error: "invalid_kakao_account" }, 401);
+  const kakaoProfile = payload?.profile && typeof payload.profile === "object" ? payload.profile : {};
+  const kakaoEmail = safeString(claims?.email, 254) || safeString(kakaoProfile.email, 254) || null;
+  const kakaoDisplayName = safeString(claims?.nickname, 120) || safeString(kakaoProfile.nickname, 120);
+  const kakaoAvatarUrl = normalizeAvatarUrl(
+    safeString(claims?.picture, 500) || safeString(kakaoProfile.profileImageUrl, 500)
+  );
 
   const now = new Date().toISOString();
   const existing = await env.DB.prepare(
@@ -511,9 +517,9 @@ async function handleKakaoLogin(request, env) {
   ).bind(
     accountId,
     providerSubject,
-    safeString(claims?.email, 254) || null,
-    safeString(claims?.nickname, 120),
-    safeString(claims?.picture, 500),
+    kakaoEmail,
+    kakaoDisplayName,
+    kakaoAvatarUrl,
     now,
     now
   ).run();
@@ -753,7 +759,7 @@ function publicAccount(row) {
     provider: row?.provider || "",
     email: row?.email || "",
     displayName: row?.display_name || "",
-    avatarUrl: row?.avatar_url || ""
+    avatarUrl: normalizeAvatarUrl(row?.avatar_url || "")
   };
 }
 
@@ -1756,7 +1762,7 @@ async function handleGetFamilyMembers(code, request, env) {
     members: (result.results || []).map((member) => ({
       id: member.account_id,
       displayName: member.display_name || "가족",
-      avatarUrl: member.avatar_url || "",
+      avatarUrl: normalizeAvatarUrl(member.avatar_url || ""),
       role: member.role,
       joinedAt: member.joined_at,
       isMe: member.account_id === access.session.account_id
@@ -1781,7 +1787,7 @@ async function handleGetFamilyJoinRequests(code, request, env) {
     requests: (result.results || []).map((entry) => ({
       id: entry.account_id,
       displayName: entry.display_name || "사용자",
-      avatarUrl: entry.avatar_url || "",
+      avatarUrl: normalizeAvatarUrl(entry.avatar_url || ""),
       status: entry.status,
       requestedAt: entry.requested_at
     }))
@@ -2509,6 +2515,15 @@ function normalizeBox(box) {
 
 function safeString(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+function normalizeAvatarUrl(value) {
+  const url = safeString(value, 500);
+  if (!url) return "";
+  if (url.startsWith("http://k.kakaocdn.net/")) {
+    return `https://${url.slice("http://".length)}`;
+  }
+  return url;
 }
 
 function safeNumber(value) {

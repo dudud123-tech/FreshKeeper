@@ -75,53 +75,17 @@ export default function SettingsPanel({
             keyboardShouldPersistTaps="handled"
           >
             <Pressable style={styles.authSheetCard} onPress={() => {}}>
-              <View style={styles.authSheetHero}>
-                <View style={styles.authSheetHeroGlow} />
-                <View style={styles.authSheetAvatar}>
-                  <PersonGlyph />
-                </View>
-              </View>
-              <Text style={styles.authSheetTitle}>로그인 / 회원가입</Text>
-              <Text style={styles.authSheetSubtitle}>5초만에 간편하게 시작하세요</Text>
-
-              <Pressable
-                style={styles.authProviderButton}
-                onPress={loginWithGoogle}
-                disabled={!authReady || authBusy || !googleLoginConfigured}
-              >
-                <AuthProviderLogo source={googleAuthIcon} small />
-                <Text style={styles.authProviderButtonText}>
-                  {authProviderBusy === "google" ? "로그인 중..." : "Google로 계속"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[
-                  styles.authProviderButton,
-                  (!authReady || authBusy || !kakaoLoginConfigured) && styles.authProviderButtonDisabled
-                ]}
-                onPress={loginWithKakao}
-                disabled={!authReady || authBusy || !kakaoLoginConfigured}
-              >
-                <AuthProviderLogo source={kakaoAuthIcon} />
-                <Text style={styles.authProviderButtonText}>
-                  {authProviderBusy === "kakao" ? "로그인 중..." : "카카오로 계속"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[
-                  styles.authProviderButton,
-                  (!authReady || authBusy || !naverLoginConfigured) && styles.authProviderButtonDisabled
-                ]}
-                onPress={loginWithNaver}
-                disabled={!authReady || authBusy || !naverLoginConfigured}
-              >
-                <AuthProviderLogo source={naverAuthIcon} />
-                <Text style={styles.authProviderButtonText}>
-                  {authProviderBusy === "naver" ? "로그인 중..." : "네이버로 계속"}
-                </Text>
-              </Pressable>
+              <AuthStartContent
+                authReady={authReady}
+                authBusy={authBusy}
+                authProviderBusy={authProviderBusy}
+                googleLoginConfigured={googleLoginConfigured}
+                kakaoLoginConfigured={kakaoLoginConfigured}
+                naverLoginConfigured={naverLoginConfigured}
+                loginWithGoogle={loginWithGoogle}
+                loginWithKakao={loginWithKakao}
+                loginWithNaver={loginWithNaver}
+              />
             </Pressable>
           </ScrollView>
         </Pressable>
@@ -505,26 +469,18 @@ export default function SettingsPanel({
             </>
           ) : (
             <>
-              <Text style={styles.dailyAlertTitle}>내 상품 설정 이어 쓰기</Text>
-              <Text style={styles.settingDescription}>
-                소셜 계정으로 로그인하면 수정한 상품 분류와 제외 설정을 다른 기기에서도 이어서 사용할 수 있어요.
-              </Text>
-              <Pressable
-                style={[
-                  styles.accountPrimaryButton,
-                  (!authReady || authBusy || !socialLoginConfigured) && styles.accountButtonDisabled
-                ]}
-                disabled={!authReady || authBusy || !socialLoginConfigured}
-                onPress={() => setAuthSheetVisible(true)}
-              >
-                <Text style={styles.accountPrimaryButtonText}>
-                  {!socialLoginConfigured
-                    ? "소셜 로그인 설정 필요"
-                    : authBusy
-                      ? "계정 확인 중..."
-                      : "로그인 / 회원가입"}
-                </Text>
-              </Pressable>
+              <AuthStartContent
+                authReady={authReady}
+                authBusy={authBusy}
+                authProviderBusy={authProviderBusy}
+                googleLoginConfigured={googleLoginConfigured}
+                kakaoLoginConfigured={kakaoLoginConfigured}
+                naverLoginConfigured={naverLoginConfigured}
+                loginWithGoogle={loginWithGoogle}
+                loginWithKakao={loginWithKakao}
+                loginWithNaver={loginWithNaver}
+                inline
+              />
             </>
           )}
           <Text style={styles.notificationStatus}>{authReady ? authStatus : "로그인 정보를 확인하는 중입니다."}</Text>
@@ -542,6 +498,71 @@ function PersonGlyph({ active = false, size = "normal" }) {
     <View style={[styles.personGlyph, isLarge && styles.personGlyphLarge]}>
       <View style={[styles.personHead, active && styles.personHeadActive]} />
       <View style={[styles.personShoulders, active && styles.personShouldersActive]} />
+    </View>
+  );
+}
+
+function AuthStartContent({
+  authReady,
+  authBusy,
+  authProviderBusy,
+  googleLoginConfigured,
+  kakaoLoginConfigured,
+  naverLoginConfigured,
+  loginWithGoogle,
+  loginWithKakao,
+  loginWithNaver,
+  inline = false
+}) {
+  return (
+    <View style={inline && styles.authInlineContent}>
+      <View style={[styles.authSheetHero, inline && styles.authInlineHero]}>
+        <View style={styles.authSheetHeroGlow} />
+        <View style={styles.authSheetAvatar}>
+          <PersonGlyph />
+        </View>
+      </View>
+      <Text style={styles.authSheetTitle}>로그인 / 회원가입</Text>
+      <Text style={styles.authSheetSubtitle}>5초만에 간편하게 시작하세요</Text>
+
+      <Pressable
+        style={[styles.authProviderButton, (!authReady || authBusy || !googleLoginConfigured) && styles.authProviderButtonDisabled]}
+        onPress={loginWithGoogle}
+        disabled={!authReady || authBusy || !googleLoginConfigured}
+      >
+        <AuthProviderLogo source={googleAuthIcon} small />
+        <Text style={styles.authProviderButtonText}>
+          {authProviderBusy === "google" ? "로그인 중..." : "Google로 계속"}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        style={[
+          styles.authProviderButton,
+          (!authReady || authBusy || !kakaoLoginConfigured) && styles.authProviderButtonDisabled
+        ]}
+        onPress={loginWithKakao}
+        disabled={!authReady || authBusy || !kakaoLoginConfigured}
+      >
+        <AuthProviderLogo source={kakaoAuthIcon} />
+        <Text style={styles.authProviderButtonText}>
+          {authProviderBusy === "kakao" ? "로그인 중..." : "카카오로 계속"}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        style={[
+          styles.authProviderButton,
+          (!authReady || authBusy || !naverLoginConfigured) && styles.authProviderButtonDisabled
+        ]}
+        onPress={loginWithNaver}
+        disabled={!authReady || authBusy || !naverLoginConfigured}
+      >
+        <AuthProviderLogo source={naverAuthIcon} />
+        <Text style={styles.authProviderButtonText}>
+          {authProviderBusy === "naver" ? "로그인 중..." : "네이버로 계속"}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -1247,6 +1268,9 @@ const styles = StyleSheet.create({
   accountButtonDisabled: {
     opacity: 0.48
   },
+  authInlineContent: {
+    gap: 0
+  },
   authSheetBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.48)",
@@ -1275,6 +1299,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4
+  },
+  authInlineHero: {
+    height: 72
   },
   authSheetHeroGlow: {
     position: "absolute",

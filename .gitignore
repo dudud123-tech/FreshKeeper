@@ -15,6 +15,8 @@ mobile/dist-test/
 mobile/dist-typography-check/
 cloudflare/worker/.wrangler/
 cloudflare/worker/.generated/
+aab파일/
+*.aab
 
 # OS / editor
 .DS_Store
@@ -43,3 +45,6 @@ FreshKeeper/.obsidian/
 mobile/type-*.png
 mobile/tools/food-safety-api-data/food-safety-i1250-20*.csv
 mobile/tools/food-safety-api-data/food-safety-i1250-20*.json
+
+# Local Play Console tester lists
+비공개테스터.csv

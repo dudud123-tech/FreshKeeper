@@ -113,6 +113,27 @@ cd "C:\Workspace\FreshKeeper\mobile"
 npx.cmd eas build -p android --profile production
 ```
 
+Because this project has a checked-in `mobile/android` directory, EAS Build ignores
+`expo.android.versionCode` from `mobile/app.json` and uses the native Gradle value
+instead. Before every Play upload build, update and verify both files:
+
+```text
+mobile/app.json
+mobile/android/app/build.gradle
+```
+
+The authoritative Play upload value is:
+
+```gradle
+// mobile/android/app/build.gradle
+defaultConfig {
+    versionCode 2
+}
+```
+
+If only `app.json` is changed, Play Console will still reject the new AAB with
+`version code has already been used`.
+
 If the command times out locally, check server-side build state instead of rerunning immediately:
 
 ```powershell

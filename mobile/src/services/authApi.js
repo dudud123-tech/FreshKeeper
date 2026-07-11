@@ -107,9 +107,10 @@ export async function signInWithKakao() {
   if (!KAKAO_NATIVE_APP_KEY) throw new Error("kakao_native_app_key_missing");
 
   await initializeKakao();
-  const { login } = await import("@react-native-kakao/user");
+  const { login, me } = await import("@react-native-kakao/user");
   const result = await login();
   if (!result?.idToken) throw new Error("kakao_id_token_missing");
+  const profile = await me().catch(() => null);
 
   const clientId = await getClientId();
   const response = await fetch(`${AUTH_API_BASE}/kakao`, {
@@ -117,7 +118,12 @@ export async function signInWithKakao() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       idToken: result.idToken,
-      clientId
+      clientId,
+      profile: profile ? {
+        email: profile.email || "",
+        nickname: profile.nickname || "",
+        profileImageUrl: profile.profileImageUrl || profile.thumbnailImageUrl || ""
+      } : null
     })
   });
   if (!response.ok) {

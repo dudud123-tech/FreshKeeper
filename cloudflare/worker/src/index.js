@@ -34,6 +34,8 @@ const PRODUCT_CATEGORIES = new Set([
 ]);
 const PRODUCT_STORAGE_TYPES = new Set(["냉장", "냉동", "실온"]);
 const AUTH_SESSION_DAYS = 30;
+const GROWTH_LEVEL_XP_THRESHOLDS = [0, 30, 80, 150, 250, 380, 540, 730, 950, 1200];
+const MAX_GROWTH_EVENTS_PER_REQUEST = 200;
 const GOOGLE_JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
 const KAKAO_JWKS = createRemoteJWKSet(new URL("https://kauth.kakao.com/.well-known/jwks.json"));
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
@@ -217,6 +219,18 @@ export default {
       return handleUpdateProductExclusions(request, env);
     }
 
+    if (request.method === "GET" && url.pathname === "/api/growth/profile") {
+      return handleGetGrowthProfile(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/growth/report") {
+      return handleGetGrowthReport(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/growth/events") {
+      return handlePutGrowthEvents(request, env);
+    }
+
     if (request.method === "POST" && url.pathname === "/api/family-groups") {
       return handleCreateFamilyGroup(request, env);
     }
@@ -333,8 +347,9 @@ function privacyPolicyHtml() {
       <li>선택적 소셜 로그인: Google, 카카오 또는 네이버가 제공하는 계정 식별자, 이메일, 표시 이름, 프로필 이미지. 로그인, 계정 식별, 사용자별 상품 분류·제외 설정 동기화에 사용합니다.</li>
       <li>앱 기능 정보: 상품명, 카테고리, 보관 방식, 소비기한, 구매 링크, 알림 설정. 보관함과 소비기한 알림 제공에 사용합니다.</li>
       <li>사진과 OCR 정보: 사용자가 선택하거나 촬영한 영수증·주문내역·상품 이미지와 인식된 텍스트. 상품 후보 추출과 등록에 사용합니다.</li>
-      <li>가족 공유 정보: 공유 코드, 그룹 소유자·참여자, 상품명·카테고리·보관 방식·소비기한. 로그인 사용자의 가족 보관함 동기화에 사용하며 D1에 저장합니다. 그룹 구성원에게는 표시 이름, 프로필 사진과 그룹 내 역할이 표시되며 이메일 주소는 표시하지 않습니다.</li>
+      <li>가족 공유 정보: 공유 코드, 그룹 소유자·참여자, 상품명·카테고리·보관 방식·소비기한·완료 상태·완료일. 로그인 사용자의 가족 보관함 동기화에 사용하며 D1에 저장합니다. 그룹 구성원에게는 표시 이름, 프로필 사진과 그룹 내 역할이 표시되며 이메일 주소는 표시하지 않습니다.</li>
       <li>가족 공유 사진: 사용자가 동의하고 등록한 상품 사진을 낮은 해상도로 압축해 R2에 저장하며 가족 그룹 안에서만 표시합니다.</li>
+      <li>성장 기록: 로그인 사용자의 상품 등록, 완료, 만료 이벤트와 경험치 기록. 관리 단계와 진행률 표시 및 계정 간 이어 쓰기에 사용합니다.</li>
       <li>품질 개선 정보: 사용자가 학습 개선 전송을 켠 경우 OCR 텍스트, 선택·제외 결과, 앱 버전, 처리 식별자. 상품 추출 품질 개선에 사용합니다.</li>
     </ul>
     <h2>2. 권한 사용</h2>
@@ -346,7 +361,7 @@ function privacyPolicyHtml() {
     </ul>
     <p>전송되는 정보는 HTTPS로 암호화됩니다. 개발자는 개인정보를 광고 목적으로 판매하지 않습니다.</p>
     <h2>4. 보관과 삭제</h2>
-    <p>기기 내 상품 정보는 사용자가 앱에서 삭제하거나 앱 데이터를 삭제할 때 제거됩니다. 가족 공유 그룹은 마지막 사용 후 90일 동안 활동이 없으면 D1 상품 정보와 R2 사진을 자동 삭제합니다. 소유자가 그룹을 삭제하거나 계정을 삭제할 때도 소유 그룹의 공유 데이터와 사진을 삭제합니다. 법령상 보관 의무가 있는 경우에는 해당 기간만 분리 보관한 뒤 삭제합니다.</p>
+    <p>기기 내 상품 정보는 사용자가 앱에서 삭제하거나 앱 데이터를 삭제할 때 제거됩니다. 로그인 사용자의 성장 기록은 계정 삭제 시 함께 삭제됩니다. 가족 공유 그룹은 마지막 사용 후 90일 동안 활동이 없으면 D1 상품 정보와 R2 사진을 자동 삭제합니다. 소유자가 그룹을 삭제하거나 계정을 삭제할 때도 소유 그룹의 공유 데이터와 사진을 삭제합니다. 법령상 보관 의무가 있는 경우에는 해당 기간만 분리 보관한 뒤 삭제합니다.</p>
     <p>계정 및 서버 데이터 삭제는 <a href="/account-deletion">계정 삭제 안내</a>에 따라 요청할 수 있습니다.</p>
     <h2>5. 아동의 개인정보</h2>
     <p>오늘까지야는 아동을 대상으로 설계된 앱이 아니며, 고의로 아동의 개인정보를 수집하지 않습니다.</p>
@@ -370,7 +385,7 @@ function accountDeletionHtml() {
       <li>제목에 "오늘까지야 계정 삭제 요청"을 적습니다.</li>
       <li>로그인 제공자(Google·카카오·네이버)와 로그인 이메일을 적습니다.</li>
     </ol>
-    <p>계정 삭제 시 계정, 로그인 세션, 상품 분류·제외 설정, 가족 그룹 멤버십을 삭제합니다. 사용자가 소유한 가족 그룹의 공유 상품 정보와 압축 사진도 함께 삭제합니다. 법령상 보관이 필요한 정보는 해당 기간만 분리 보관한 뒤 삭제합니다.</p>
+    <p>계정 삭제 시 계정, 로그인 세션, 성장 기록, 상품 분류·제외 설정, 가족 그룹 멤버십을 삭제합니다. 사용자가 소유한 가족 그룹의 공유 상품 정보와 압축 사진도 함께 삭제합니다. 법령상 보관이 필요한 정보는 해당 기간만 분리 보관한 뒤 삭제합니다.</p>
     <h2>앱에서 삭제</h2>
     <p>설정 &gt; 계정 &gt; 계정 및 서버 데이터 삭제를 선택하고 확인하면 즉시 삭제를 요청할 수 있습니다.</p>
     <h2>문의</h2>
@@ -655,6 +670,7 @@ async function handleDeleteAccount(request, env) {
     env.DB.prepare(`DELETE FROM family_group_members WHERE account_id = ?`).bind(session.account_id),
     env.DB.prepare(`DELETE FROM auth_sessions WHERE account_id = ?`).bind(session.account_id),
     env.DB.prepare(`DELETE FROM account_devices WHERE account_id = ?`).bind(session.account_id),
+    env.DB.prepare(`DELETE FROM growth_events WHERE account_id = ?`).bind(session.account_id),
     env.DB.prepare(`DELETE FROM product_classification_preferences WHERE account_id = ?`).bind(session.account_id),
     env.DB.prepare(`DELETE FROM product_candidate_exclusions WHERE account_id = ?`).bind(session.account_id),
     env.DB.prepare(`DELETE FROM accounts WHERE id = ?`).bind(session.account_id)
@@ -1548,7 +1564,7 @@ async function handleGetFamilyItems(code, request, env) {
   const { groupCode, group, session, role } = access;
 
   const { results } = await env.DB.prepare(
-    `SELECT item_id, name, category, storage, expiry_type, expiry, created_at, updated_at, image_key
+    `SELECT item_id, name, category, storage, expiry_type, expiry, created_at, status, completed_at, updated_at, image_key
      FROM family_group_items
      WHERE group_code = ? AND deleted = 0
      ORDER BY expiry ASC, name ASC
@@ -1567,6 +1583,8 @@ async function handleGetFamilyItems(code, request, env) {
       expiryType: row.expiry_type,
       expiry: row.expiry,
       createdAt: row.created_at,
+      status: row.status === "completed" ? "completed" : "active",
+      completedAt: row.completed_at || "",
       syncedAt: row.updated_at,
       imageUri: row.image_key
         ? `${new URL(request.url).origin}/api/family-groups/${groupCode}/items/${encodeURIComponent(row.item_id)}/image`
@@ -1619,8 +1637,8 @@ async function handlePutFamilyItems(code, request, env) {
     statements.push(
       env.DB.prepare(
         `INSERT INTO family_group_items
-          (group_code, item_id, name, category, storage, expiry_type, expiry, created_at, updated_at, deleted)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+          (group_code, item_id, name, category, storage, expiry_type, expiry, created_at, status, completed_at, updated_at, deleted)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
          ON CONFLICT(group_code, item_id) DO UPDATE SET
            name = excluded.name,
            category = excluded.category,
@@ -1628,6 +1646,8 @@ async function handlePutFamilyItems(code, request, env) {
            expiry_type = excluded.expiry_type,
            expiry = excluded.expiry,
            created_at = excluded.created_at,
+           status = excluded.status,
+           completed_at = excluded.completed_at,
            updated_at = excluded.updated_at,
            deleted = 0`
       ).bind(
@@ -1639,6 +1659,8 @@ async function handlePutFamilyItems(code, request, env) {
         item.expiryType,
         item.expiry,
         item.createdAt,
+        item.status,
+        item.completedAt,
         now
       )
     );
@@ -1879,6 +1901,199 @@ async function handleRemoveFamilyMember(code, accountId, request, env) {
     `DELETE FROM family_group_members WHERE group_code = ? AND account_id = ?`
   ).bind(access.groupCode, accountId).run();
   return json({ ok: true });
+}
+
+async function handleGetGrowthProfile(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const session = await authenticatedSession(request, env.DB);
+  if (!session) return json({ ok: false, error: "unauthorized" }, 401);
+  return json({
+    ok: true,
+    profile: await growthProfileForAccount(env.DB, session.account_id),
+    report: await growthReportForAccount(env.DB, session.account_id)
+  });
+}
+
+async function handleGetGrowthReport(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const session = await authenticatedSession(request, env.DB);
+  if (!session) return json({ ok: false, error: "unauthorized" }, 401);
+  return json({
+    ok: true,
+    report: await growthReportForAccount(env.DB, session.account_id)
+  });
+}
+
+async function handlePutGrowthEvents(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+  const session = await authenticatedSession(request, env.DB);
+  if (!session) return json({ ok: false, error: "unauthorized" }, 401);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const events = normalizeGrowthEvents(payload?.events);
+  if (events.length) {
+    const statements = events.map((event) =>
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO growth_events
+          (id, account_id, event_key, type, item_id, xp_delta, metadata, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        crypto.randomUUID(),
+        session.account_id,
+        event.eventKey,
+        event.type,
+        event.itemId,
+        event.xpDelta,
+        event.metadata,
+        event.createdAt
+      )
+    );
+    await env.DB.batch(statements);
+  }
+
+  return json({
+    ok: true,
+    profile: await growthProfileForAccount(env.DB, session.account_id),
+    report: await growthReportForAccount(env.DB, session.account_id)
+  });
+}
+
+async function growthProfileForAccount(db, accountId) {
+  const summary = await db.prepare(
+    `SELECT
+       COALESCE(SUM(xp_delta), 0) AS xp,
+       COUNT(*) AS events_count,
+       SUM(CASE WHEN type IN ('complete', 'complete_urgent') AND xp_delta > 0 THEN 1 ELSE 0 END) AS completed_before_expiry
+     FROM growth_events
+     WHERE account_id = ?`
+  ).bind(accountId).first();
+
+  const xp = Math.max(0, Number(summary?.xp || 0));
+  const level = growthLevelForXp(xp);
+  const currentThreshold = GROWTH_LEVEL_XP_THRESHOLDS[level - 1] || 0;
+  const nextThreshold = GROWTH_LEVEL_XP_THRESHOLDS[level] || currentThreshold;
+  const range = Math.max(1, nextThreshold - currentThreshold);
+  const progressXp = Math.max(0, xp - currentThreshold);
+
+  return {
+    xp,
+    level,
+    percent: level >= 10 ? 100 : Math.min(95, Math.max(8, Math.round((progressXp / range) * 100))),
+    remainingXp: level >= 10 ? 0 : Math.max(0, nextThreshold - xp),
+    completedBeforeExpiry: Number(summary?.completed_before_expiry || 0),
+    eventsCount: Number(summary?.events_count || 0)
+  };
+}
+
+async function growthReportForAccount(db, accountId) {
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setUTCDate(weekStart.getUTCDate() - 6);
+  weekStart.setUTCHours(0, 0, 0, 0);
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const summary = await db.prepare(
+    `SELECT
+       SUM(CASE WHEN created_at >= ? AND type IN ('complete', 'complete_urgent') THEN 1 ELSE 0 END) AS week_completed,
+       SUM(CASE WHEN created_at >= ? AND type IN ('complete', 'complete_urgent') THEN 1 ELSE 0 END) AS month_completed,
+       SUM(CASE WHEN created_at >= ? AND type = 'register' THEN 1 ELSE 0 END) AS week_registered,
+       SUM(CASE WHEN created_at >= ? AND type = 'register' THEN 1 ELSE 0 END) AS month_registered,
+       SUM(CASE WHEN created_at >= ? AND type = 'expired' THEN 1 ELSE 0 END) AS week_expired,
+       SUM(CASE WHEN created_at >= ? AND type = 'expired' THEN 1 ELSE 0 END) AS month_expired
+     FROM growth_events
+     WHERE account_id = ?`
+  ).bind(
+    weekStart.toISOString(),
+    monthStart.toISOString(),
+    weekStart.toISOString(),
+    monthStart.toISOString(),
+    weekStart.toISOString(),
+    monthStart.toISOString(),
+    accountId
+  ).first();
+
+  const report = {
+    weekCompleted: Number(summary?.week_completed || 0),
+    monthCompleted: Number(summary?.month_completed || 0),
+    weekRegistered: Number(summary?.week_registered || 0),
+    monthRegistered: Number(summary?.month_registered || 0),
+    weekExpired: Number(summary?.week_expired || 0),
+    monthExpired: Number(summary?.month_expired || 0)
+  };
+
+  return {
+    ...report,
+    ...growthReportCopy(report)
+  };
+}
+
+function growthReportCopy(report) {
+  if (report.weekCompleted > 0) {
+    return {
+      title: "이번 주 리포트",
+      body: `${report.weekCompleted}개를 버리기 전에 챙겼어요.`
+    };
+  }
+  if (report.monthCompleted > 0) {
+    return {
+      title: "이번 달 리포트",
+      body: `${report.monthCompleted}개를 잘 관리했어요.`
+    };
+  }
+  if (report.weekExpired > 0 || report.monthExpired > 0) {
+    return {
+      title: "정리가 필요해요",
+      body: "만료된 상품을 확인해 주세요."
+    };
+  }
+  if (report.weekRegistered > 0 || report.monthRegistered > 0) {
+    return {
+      title: "관리 리듬 좋아요",
+      body: "새로 등록한 상품을 차근차근 챙겨요."
+    };
+  }
+  return {
+    title: "관리 리듬 좋아요",
+    body: "지금 급한 상품이 없어요."
+  };
+}
+
+function growthLevelForXp(xp) {
+  const levelIndex = GROWTH_LEVEL_XP_THRESHOLDS.reduce((currentLevel, threshold, index) => {
+    return xp >= threshold ? index : currentLevel;
+  }, 0);
+  return Math.min(10, levelIndex + 1);
+}
+
+function normalizeGrowthEvents(events) {
+  if (!Array.isArray(events)) return [];
+  return events.slice(0, MAX_GROWTH_EVENTS_PER_REQUEST).map((event) => {
+    const type = normalizeGrowthEventType(event?.type);
+    const eventKey = safeString(event?.eventKey, 120);
+    const xpDelta = Number.isInteger(event?.xpDelta)
+      ? Math.max(-30, Math.min(30, event.xpDelta))
+      : 0;
+    if (!type || !eventKey || !xpDelta) return null;
+    const createdAt = safeString(event?.createdAt, 40);
+    return {
+      type,
+      eventKey,
+      xpDelta,
+      itemId: safeString(event?.itemId, 80) || null,
+      metadata: JSON.stringify(event?.metadata && typeof event.metadata === "object" ? event.metadata : {}),
+      createdAt: /^\d{4}-\d{2}-\d{2}T/.test(createdAt) ? createdAt : new Date().toISOString()
+    };
+  }).filter(Boolean);
+}
+
+function normalizeGrowthEventType(type) {
+  const value = safeString(type, 40);
+  return ["register", "complete", "complete_urgent", "expired"].includes(value) ? value : "";
 }
 
 async function handleDeleteFamilyGroup(code, request, env) {
@@ -2552,7 +2767,9 @@ function normalizeFamilyItems(items) {
     storage: safeString(item?.storage, 40),
     expiryType: safeString(item?.expiryType, 40),
     expiry: safeString(item?.expiry, 20),
-    createdAt: safeString(item?.createdAt, 40)
+    createdAt: safeString(item?.createdAt, 40),
+    status: item?.status === "completed" ? "completed" : "active",
+    completedAt: item?.status === "completed" ? safeString(item?.completedAt, 40) : ""
   })).filter((item) => item.name && /^\d{4}-\d{2}-\d{2}$/.test(item.expiry));
 }
 

@@ -3,29 +3,109 @@ import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Tex
 import { typography } from "../theme/typography";
 import { daysUntil, itemCreatedDate } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
-import AdSlot from "./AdSlot";
+
+const expiredDashboardIcon = require("../../assets/home/priority_high_80dp.png");
+const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
+const weekDashboardIcon = require("../../assets/home/calendar_month.png");
+const storedDashboardIcon = require("../../assets/home/snowflake_80dp.png");
+const levelImages = [
+  require("../../assets/Level/season1/1.png"),
+  require("../../assets/Level/season1/2.png"),
+  require("../../assets/Level/season1/3.png"),
+  require("../../assets/Level/season1/4.png"),
+  require("../../assets/Level/season1/5.png"),
+  require("../../assets/Level/season1/6.png"),
+  require("../../assets/Level/season1/7.png"),
+  require("../../assets/Level/season1/8.png"),
+  require("../../assets/Level/season1/9.png"),
+  require("../../assets/Level/season1/10.png")
+];
+const levelNames = [
+  { name: "씨앗", meaning: "관리의 시작" },
+  { name: "새싹", meaning: "첫 성장이 시작됨" },
+  { name: "어린잎", meaning: "관리 습관이 자리 잡기 시작" },
+  { name: "푸른잎", meaning: "꾸준히 성장 중" },
+  { name: "무럭무럭", meaning: "눈에 띄게 잘 자라는 단계" },
+  { name: "어린나무", meaning: "안정적인 관리 습관 형성" },
+  { name: "열매 맺는 나무", meaning: "관리 성과가 나타나기 시작" },
+  { name: "풍성한 나무", meaning: "꾸준한 관리가 쌓인 상태" },
+  { name: "꽃피는 나무", meaning: "좋은 관리 습관이 완성 단계에 가까움" },
+  { name: "황금 열매", meaning: "최고의 관리 상태" }
+];
+const LEVEL_XP_THRESHOLDS = [0, 30, 80, 150, 250, 380, 540, 730, 950, 1200];
+const REGISTER_XP_PER_ITEM = 5;
+const COMPLETE_XP_PER_ITEM = 10;
+const URGENT_COMPLETE_XP_PER_ITEM = 15;
+const EXPIRED_ITEM_PENALTY_XP = 8;
 
 export default function HomePage({
   items,
   summary,
   reminderDays,
+  growthProfile,
+  growthDashboardReport,
   onOpenInventory,
   onOpenAdd,
   onChangeItemImage
 }) {
   const [repurchasePanelVisible, setRepurchasePanelVisible] = useState(false);
   const [layoutWidth, setLayoutWidth] = useState(0);
-  const urgentItems = [...items]
+  const activeItems = items.filter((item) => item.status !== "completed");
+  const completedItems = items.filter((item) => item.status === "completed");
+  const urgentItems = [...activeItems]
     .filter((item) => {
       const days = daysUntil(item.expiry);
       return days >= 0 && days <= reminderDays;
     })
     .sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry));
+  const repurchaseItems = [
+    ...urgentItems.filter((item) => item.purchaseUrl),
+    ...completedItems
+      .filter((item) => item.purchaseUrl)
+      .sort((a, b) => new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime())
+  ].slice(0, 5);
   const priorityCardWidth = Math.max((layoutWidth - 32 - 20) / 3, 104);
-  const recentItems = [...items]
+  const recentItems = [...activeItems]
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
     .slice(0, 4);
-  const heroInsight = getHeroInsight(summary);
+  const growthReport = normalizeGrowthProfile(growthProfile) || getGrowthReport(items, reminderDays);
+  const growthLevel = levelNames[growthReport.level - 1] || levelNames[0];
+  const dashboardReport = normalizeDashboardReport(growthDashboardReport) || getDashboardReport({
+    activeItems,
+    completedItems,
+    summary,
+    reminderDays
+  });
+  const dashboardStats = [
+    {
+      label: "만료",
+      value: summary.expired,
+      icon: expiredDashboardIcon,
+      tone: "expired",
+      filter: "expired"
+    },
+    {
+      label: "임박",
+      value: summary.urgent,
+      icon: urgentDashboardIcon,
+      tone: "urgent",
+      filter: "urgent"
+    },
+    {
+      label: "이번 주",
+      value: summary.week || 0,
+      icon: weekDashboardIcon,
+      tone: "week",
+      filter: "week"
+    },
+    {
+      label: "보관 중",
+      value: summary.total,
+      icon: storedDashboardIcon,
+      tone: "stored",
+      filter: "all"
+    }
+  ];
 
   return (
     <ScrollView
@@ -39,49 +119,54 @@ export default function HomePage({
         }
       }}
     >
-      <View style={styles.heroCard}>
-        <View style={styles.heroTop}>
-          <Pressable style={styles.heroMood} onPress={() => onOpenInventory("all")}>
-            <View style={styles.heroMoodContent}>
-              <Text maxFontSizeMultiplier={1.15} style={styles.heroEmoji}>{heroInsight.emoji}</Text>
-              <View style={styles.heroMoodCopy}>
-                <Text maxFontSizeMultiplier={1.3} style={styles.heroMoodTitle}>{heroInsight.title}</Text>
-                <Text maxFontSizeMultiplier={1.3} style={styles.heroMoodText}>{heroInsight.body}</Text>
+      <Pressable style={styles.growthCard} onPress={() => onOpenInventory("completed")}>
+        <Image
+          source={levelImages[growthReport.level - 1] || levelImages[0]}
+          resizeMode="contain"
+          style={styles.growthLevelImage}
+        />
+        <View style={styles.growthHeader}>
+          <View>
+            <View style={styles.growthEyebrowPill}>
+              <Text style={styles.growthEyebrow}>냉장고 관리단계</Text>
+              <Text style={styles.growthEyebrowLeaf}>❤</Text>
+            </View>
+            <Text style={styles.growthTitle}>
+              <Text>{growthLevel.name}</Text>
+              <Text style={styles.growthTitleMeaning}> - {growthLevel.meaning}</Text>
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.growthMessage}>{dashboardReport.title}</Text>
+        <Text style={styles.growthText}>{dashboardReport.body}</Text>
+        <View style={styles.growthProgressTrack}>
+          <View style={[styles.growthProgressFill, { width: `${growthReport.percent}%` }]} />
+        </View>
+        <View style={styles.growthFooter}>
+          <Text style={styles.growthFooterText}>다음 단계까지 {growthReport.remainingXp} XP</Text>
+          <Text style={styles.growthFooterText}>누적 {growthReport.xp} XP</Text>
+        </View>
+      </Pressable>
+
+      <View style={styles.dashboardStatsCard}>
+        {dashboardStats.map((stat, index) => (
+          <Pressable
+            key={stat.label}
+            style={[styles.dashboardStat, index < dashboardStats.length - 1 && styles.dashboardStatDivider]}
+            onPress={() => onOpenInventory(stat.filter)}
+          >
+            <View style={styles.dashboardStatLabelRow}>
+              <View style={[styles.dashboardStatIconWrap, styles[`dashboardStatIconWrap_${stat.tone}`]]}>
+                <Image source={stat.icon} resizeMode="contain" style={styles.dashboardStatIcon} />
               </View>
+              <Text style={styles.dashboardStatLabel}>{stat.label}</Text>
+            </View>
+            <View style={styles.dashboardStatValueRow}>
+              <Text style={[styles.dashboardStatValue, styles[`dashboardStatValue_${stat.tone}`]]}>{stat.value}</Text>
+              <Text style={styles.dashboardStatUnit}>개</Text>
             </View>
           </Pressable>
-          <View style={styles.heroFutureSlot} />
-        </View>
-        <View style={styles.heroStats}>
-          <Pressable style={[styles.heroStat, styles.heroStatDivider]} onPress={() => onOpenInventory("all")}>
-            <View style={styles.heroStatLabelRow}>
-              <Text style={[styles.heroStatIcon, styles.heroStatIconStored]}>▰</Text>
-              <Text style={styles.heroStatLabel}>보관</Text>
-            </View>
-            <Text style={styles.heroStatValue}>{summary.total}</Text>
-          </Pressable>
-          <Pressable style={[styles.heroStat, styles.heroStatDivider]} onPress={() => onOpenInventory("urgent")}>
-            <View style={styles.heroStatLabelRow}>
-              <Text style={styles.heroStatIcon}>!</Text>
-              <Text style={styles.heroStatLabel}>임박</Text>
-            </View>
-            <Text style={styles.heroStatValue}>{summary.urgent}</Text>
-          </Pressable>
-          <Pressable style={[styles.heroStat, styles.heroStatDivider]} onPress={() => onOpenInventory("expired")}>
-            <View style={styles.heroStatLabelRow}>
-              <Text style={[styles.heroStatIcon, styles.heroStatIconDanger]}>x</Text>
-              <Text style={styles.heroStatLabel}>만료</Text>
-            </View>
-            <Text style={styles.heroStatValue}>{summary.expired}</Text>
-          </Pressable>
-          <Pressable style={styles.heroStat} onPress={() => onOpenInventory("today")}>
-            <View style={styles.heroStatLabelRow}>
-              <Text style={[styles.heroStatIcon, styles.heroStatIconCalendar]}>▦</Text>
-              <Text style={styles.heroStatLabel}>오늘 만료</Text>
-            </View>
-            <Text style={styles.heroStatValue}>{summary.today}</Text>
-          </Pressable>
-        </View>
+        ))}
       </View>
 
       <View style={styles.sectionHeader}>
@@ -114,10 +199,8 @@ export default function HomePage({
       )}
 
       {repurchasePanelVisible ? (
-        <RepurchasePanel items={urgentItems} />
+        <RepurchasePanel items={repurchaseItems} />
       ) : null}
-
-      <AdSlot variant="home" style={styles.homeAdSlot} />
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>최근 추가한 상품</Text>
@@ -144,7 +227,7 @@ function RepurchasePanel({ items }) {
     return (
       <View style={styles.repurchasePanel}>
         <Text style={styles.repurchasePanelTitle}>다시 살 상품이 아직 없습니다</Text>
-        <Text style={styles.repurchasePanelText}>임박 상품이 생기면 구매 링크를 바로 열 수 있어요.</Text>
+        <Text style={styles.repurchasePanelText}>완료한 상품이나 임박 상품에 구매 링크를 넣으면 여기에서 바로 열 수 있어요.</Text>
       </View>
     );
   }
@@ -153,8 +236,8 @@ function RepurchasePanel({ items }) {
     <View style={styles.repurchasePanel}>
       <View style={styles.repurchasePanelHeader}>
         <View>
-          <Text style={styles.repurchasePanelTitle}>임박 상품 다시 구매</Text>
-          <Text style={styles.repurchasePanelText}>구매 링크가 있는 상품은 바로 열 수 있어요. 가격 추세는 플레이스토어 등록 후 준비할게요.</Text>
+          <Text style={styles.repurchasePanelTitle}>다시 구매 바로가기</Text>
+          <Text style={styles.repurchasePanelText}>완료했거나 임박한 상품의 구매 링크를 모아 보여드려요.</Text>
         </View>
       </View>
       <View style={styles.repurchaseList}>
@@ -257,32 +340,136 @@ function labelForDays(days) {
   return `D-${days}`;
 }
 
-function getHeroInsight(summary) {
-  if (summary.today > 0) {
+function getDashboardReport({ activeItems, completedItems, summary }) {
+  const now = new Date();
+  const weekStart = startOfDay(addDays(now, -6));
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const weekCompleted = completedItems.filter((item) => isDateSince(item.completedAt, weekStart)).length;
+  const monthCompleted = completedItems.filter((item) => isDateSince(item.completedAt, monthStart)).length;
+  const weekRegistered = [...activeItems, ...completedItems].filter((item) => {
+    return isDateSince(item.createdAt, weekStart);
+  }).length;
+
+  if (weekCompleted > 0) {
     return {
-      emoji: "😭",
-      title: `오늘 만료 ${summary.today}개`,
-      body: "지금 확인하세요!"
-    };
-  } else if (summary.expired > 0) {
-    return {
-      emoji: "😨",
-      title: `만료 ${summary.expired}개가 있어요`,
-      body: "정리가 필요해요."
-    };
-  } else if (summary.urgent > 0) {
-    return {
-      emoji: "😐",
-      title: "잘 관리 중이에요!",
-      body: `${summary.urgent}개를 먼저 먹으면 돼요.`
-    };
-  } else {
-    return {
-      emoji: "😊",
-      title: "완벽해요!",
-      body: "지금 급한 상품이 없어요."
+      title: "이번 주 리포트",
+      body: `${weekCompleted}개를 버리기 전에 챙겼어요.`
     };
   }
+
+  if (monthCompleted > 0) {
+    return {
+      title: "이번 달 리포트",
+      body: `${monthCompleted}개를 잘 관리했어요.`
+    };
+  }
+
+  if (summary.expired > 0) {
+    return {
+      title: "정리가 필요해요",
+      body: `만료된 상품 ${summary.expired}개를 확인해 주세요.`
+    };
+  }
+
+  if (summary.urgent > 0) {
+    return {
+      title: "놓치기 전에 확인해요",
+      body: `${summary.urgent}개를 먼저 챙기면 좋아요.`
+    };
+  }
+
+  if (weekRegistered > 0) {
+    return {
+      title: "관리 리듬 좋아요",
+      body: "새로 등록한 상품을 차근차근 챙겨요."
+    };
+  }
+
+  return {
+    title: "관리 리듬 좋아요",
+    body: "지금 급한 상품이 없어요."
+  };
+}
+
+function normalizeDashboardReport(report) {
+  if (!report || typeof report !== "object") return null;
+  const title = String(report.title || "").trim();
+  const body = String(report.body || "").trim();
+  if (!title || !body) return null;
+  return { title, body };
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfDay(date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function isDateSince(value, since) {
+  const date = new Date(value || 0);
+  return !Number.isNaN(date.getTime()) && date >= since;
+}
+
+function getGrowthReport(items, reminderDays) {
+  const activeItems = items.filter((item) => item.status !== "completed");
+  const completedItems = items.filter((item) => item.status === "completed");
+  const registeredXp = items.length * REGISTER_XP_PER_ITEM;
+  let completionXp = 0;
+  let completedBeforeExpiry = 0;
+
+  completedItems.forEach((item) => {
+    const completedAt = new Date(item.completedAt || 0);
+    const expiryAt = new Date(`${item.expiry}T23:59:59`);
+    if (Number.isNaN(completedAt.getTime()) || Number.isNaN(expiryAt.getTime())) return;
+    if (completedAt <= expiryAt) {
+      completedBeforeExpiry += 1;
+      const daysLeftWhenCompleted = Math.ceil((expiryAt.getTime() - completedAt.getTime()) / 86400000);
+      completionXp += daysLeftWhenCompleted <= reminderDays
+        ? URGENT_COMPLETE_XP_PER_ITEM
+        : COMPLETE_XP_PER_ITEM;
+    }
+  });
+
+  const expiredPenalty = activeItems.filter((item) => daysUntil(item.expiry) < 0).length * EXPIRED_ITEM_PENALTY_XP;
+  const xp = Math.max(0, registeredXp + completionXp - expiredPenalty);
+  const levelIndex = LEVEL_XP_THRESHOLDS.reduce((currentLevel, threshold, index) => {
+    return xp >= threshold ? index : currentLevel;
+  }, 0);
+  const level = Math.min(10, levelIndex + 1);
+  const currentThreshold = LEVEL_XP_THRESHOLDS[level - 1] || 0;
+  const nextThreshold = LEVEL_XP_THRESHOLDS[level] || currentThreshold;
+  const range = Math.max(1, nextThreshold - currentThreshold);
+  const progressXp = Math.max(0, xp - currentThreshold);
+  const percent = level >= 10 ? 100 : Math.min(95, Math.max(8, Math.round((progressXp / range) * 100)));
+  const remainingXp = level >= 10 ? 0 : Math.max(0, nextThreshold - xp);
+
+  return {
+    level,
+    xp,
+    completedBeforeExpiry,
+    percent,
+    remainingXp
+  };
+}
+
+function normalizeGrowthProfile(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const level = Number(profile.level);
+  const xp = Number(profile.xp);
+  if (!Number.isFinite(level) || !Number.isFinite(xp)) return null;
+  return {
+    level: Math.min(10, Math.max(1, Math.round(level))),
+    xp: Math.max(0, Math.round(xp)),
+    completedBeforeExpiry: Math.max(0, Math.round(Number(profile.completedBeforeExpiry || 0))),
+    percent: Math.min(100, Math.max(0, Math.round(Number(profile.percent || 0)))),
+    remainingXp: Math.max(0, Math.round(Number(profile.remainingXp || 0)))
+  };
 }
 
 const styles = StyleSheet.create({
@@ -295,123 +482,178 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: Platform.OS === "android" ? 126 : 104
   },
-  // 초록색 상단 배너 카드입니다. 배너 높이, 둥근 모서리, 그림자, 내부 여백을 담당합니다.
-  heroCard: {
-    position: "relative",
-    minHeight: 168,
-    borderRadius: 16,
-    backgroundColor: "#237b58",
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 14,
-    marginTop: 0,
-    overflow: "hidden",
-    shadowColor: "#0d3f2e",
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    elevation: 4
-  },
-  // 배너 위쪽 영역입니다. 왼쪽 숫자 영역과 오른쪽 냉장고 이미지를 한 줄에 배치합니다.
-  heroTop: {
+  dashboardStatsCard: {
     flexDirection: "row",
-    alignItems: "stretch",
-    minHeight: 76
+    minHeight: 74,
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    marginTop: 14,
+    paddingVertical: 10,
+    shadowColor: "#0d3f2e",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2
   },
-  heroMood: {
-    flex: 1.05,
-    paddingRight: 12
-  },
-  // 배너의 작은 설명 텍스트입니다. 예: "보관 중인 상품".
-  heroLabel: {
-    ...typography.captionStrong,
-    color: "#d8f0e7",
-  },
-  heroMoodContent: {
+  dashboardStat: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4
+  },
+  dashboardStatDivider: {
+    borderRightWidth: 1,
+    borderRightColor: "#efe9df"
+  },
+  dashboardStatLabelRow: {
+    minHeight: 20,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8
+    justifyContent: "center",
+    gap: 4
   },
-  heroEmoji: {
-    fontSize: 34
-  },
-  heroMoodCopy: {
-    flex: 1
-  },
-  heroMoodTitle: {
-    ...typography.bodyStrong,
-    color: "#fff",
-  },
-  heroMoodText: {
-    ...typography.badge,
-    color: "#d8f0e7",
-    marginTop: 4
-  },
-  heroFutureSlot: {
-    flex: 0.95
-  },
-  // 배너 하단의 임박/만료/오늘 만료 통계 줄입니다.
-  heroStats: {
-    flexDirection: "row",
-    marginTop: 2,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.18)",
-    paddingTop: 8
-  },
-  // 배너 하단 통계 한 칸입니다. 세 칸이 같은 너비로 나뉩니다.
-  heroStat: {
-    flex: 1,
+  dashboardStatIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center"
   },
-  // 통계 칸 사이의 세로 구분선입니다.
-  heroStatDivider: {
-    borderRightWidth: 1,
-    borderRightColor: "rgba(255,255,255,0.13)"
+  dashboardStatIconWrap_expired: {
+    backgroundColor: "#ee645f"
   },
-  // 통계 이름 텍스트입니다. 예: 임박, 만료, 오늘 만료.
-  heroStatLabel: {
+  dashboardStatIconWrap_urgent: {
+    backgroundColor: "#ee9a35"
+  },
+  dashboardStatIconWrap_week: {
+    backgroundColor: "#2c9f70"
+  },
+  dashboardStatIconWrap_stored: {
+    backgroundColor: "#6e95f4"
+  },
+  dashboardStatIcon: {
+    width: 14,
+    height: 14,
+    tintColor: "#fff"
+  },
+  dashboardStatLabel: {
     ...typography.captionStrong,
-    color: "#d8f0e7",
+    color: "#617068",
   },
-  // 통계 아이콘과 텍스트를 가로로 붙이는 줄입니다.
-  heroStatLabelRow: {
+  dashboardStatValueRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    marginTop: 6
+  },
+  dashboardStatValue: {
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: "900"
+  },
+  dashboardStatValue_expired: {
+    color: "#ee645f"
+  },
+  dashboardStatValue_urgent: {
+    color: "#ee9a35"
+  },
+  dashboardStatValue_week: {
+    color: "#2c9f70"
+  },
+  dashboardStatValue_stored: {
+    color: "#6e95f4"
+  },
+  dashboardStatUnit: {
+    ...typography.captionStrong,
+    color: "#68716b",
+    marginLeft: 2,
+    marginBottom: 2
+  },
+  growthCard: {
+    borderRadius: 18,
+    backgroundColor: "#fff",
+    marginTop: 0,
+    padding: 16,
+    position: "relative",
+    shadowColor: "#0d3f2e",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 1
+  },
+  growthHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingRight: 112
+  },
+  growthEyebrowPill: {
+    alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
-    gap: 5
+    gap: 4,
+    backgroundColor: "#e8f7ef",
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    marginBottom: 7,
+    marginLeft: -4
   },
-  // 통계 앞의 작은 원형 아이콘 기본 스타일입니다. 임박 아이콘에 사용됩니다.
-  heroStatIcon: {
-    width: 15,
-    height: 15,
-    borderRadius: 8,
+  growthEyebrow: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+    fontSize: 11
+  },
+  growthEyebrowLeaf: {
+    ...typography.captionStrong,
+    color: "#9bd9b4",
+    fontSize: 10
+  },
+  growthTitle: {
+    ...typography.cardTitle,
+    color: "#18201c",
+  },
+  growthTitleMeaning: {
+    ...typography.bodyStrong,
+    color: "#68716b"
+  },
+  growthLevelImage: {
+    position: "absolute",
+    top: 5,
+    right: 10,
+    width: 140,
+    height: 140
+  },
+  growthMessage: {
+    ...typography.bodyStrong,
+    color: "#14583f",
+    marginTop: 14
+  },
+  growthText: {
+    ...typography.caption,
+    color: "#68716b",
+    marginTop: 4
+  },
+  growthProgressTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: "#edf0ec",
     overflow: "hidden",
-    textAlign: "center",
-    textAlignVertical: "center",
-    color: "#fff",
-    backgroundColor: "#efb33c",
-    fontSize: 9,
-    fontWeight: "700"
+    marginTop: 14
   },
-  // 만료 통계 아이콘 색상입니다.
-  heroStatIconDanger: {
-    backgroundColor: "#ec5b54"
+  growthProgressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: "#1f7a5a"
   },
-  heroStatIconStored: {
-    backgroundColor: "#4b9b7b",
-    fontSize: 8
+  growthFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8
   },
-  // 오늘 만료 통계 아이콘 색상입니다.
-  heroStatIconCalendar: {
-    backgroundColor: "#6d90f2",
-    fontSize: 9
-  },
-  // 통계 숫자입니다. 임박/만료/오늘 만료 개수를 표시합니다.
-  heroStatValue: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "800",
-    marginTop: 3
+  growthFooterText: {
+    ...typography.captionStrong,
+    color: "#68716b",
   },
   // 각 섹션의 제목 줄입니다. 제목과 "더보기 >"를 좌우로 배치합니다.
   sectionHeader: {
@@ -434,9 +676,6 @@ const styles = StyleSheet.create({
   // "이번 주 먼저 먹을 것" 카드 3개를 가로로 배치하는 줄입니다.
   priorityRow: {
     gap: 10
-  },
-  homeAdSlot: {
-    marginTop: 18
   },
   repurchasePanel: {
     borderRadius: 16,

@@ -9,6 +9,42 @@ import {
   takeItemImagePhoto
 } from "../utils/itemImagePicker";
 
+const ITEM_STATUS_ACTIVE = "active";
+const ITEM_STATUS_COMPLETED = "completed";
+
+function completionCheerFor(item) {
+  const days = daysUntil(item?.expiry);
+  if (Number.isNaN(days)) {
+    return {
+      title: "냉장고 구출 완료",
+      message: "완료 기록이 쌓이면 다음 장보기가 더 쉬워져요."
+    };
+  }
+  if (days > 0) {
+    return {
+      title: `${days}일 먼저 구했어요`,
+      message: "버리기 전에 잘 처리했어요. 오늘 냉장고 관리 점수 올라갑니다."
+    };
+  }
+  if (days === 0) {
+    return {
+      title: "오늘 딱 맞게 구했어요",
+      message: "소비기한 당일 처리 성공! 완료 탭에 기록해둘게요."
+    };
+  }
+  return {
+    title: "정리 완료",
+    message: "늦었어도 기록해두면 다음에는 더 빨리 챙길 수 있어요."
+  };
+}
+
+function normalizePurchaseUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  return `https://${url}`;
+}
+
 export function useInventory({
   defaultExpiryType,
   storageTypes,
@@ -30,6 +66,7 @@ export function useInventory({
   const [categoryFilter, setCategoryFilter] = useState("전체");
   const [sortMode, setSortMode] = useState(sortOptions[0]);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [inventoryScope, setInventoryScope] = useState(ITEM_STATUS_ACTIVE);
   const [focusItemId, setFocusItemId] = useState("");
 
   const normalizedItems = useMemo(() => {
@@ -39,6 +76,8 @@ export function useInventory({
       return {
         createdAt: item.createdAt || `${item.expiry || todayIso()}T00:00:00.000`,
         ...item,
+        status: item.status === ITEM_STATUS_COMPLETED ? ITEM_STATUS_COMPLETED : ITEM_STATUS_ACTIVE,
+        completedAt: item.status === ITEM_STATUS_COMPLETED ? item.completedAt || "" : "",
         storage: nextStorage
       };
     });
@@ -46,13 +85,22 @@ export function useInventory({
 
   const sortedItems = useMemo(() => {
     const filteredItems = [...normalizedItems]
+      .filter((item) => {
+        if (focusItemId) return true;
+        return inventoryScope === ITEM_STATUS_COMPLETED
+          ? item.status === ITEM_STATUS_COMPLETED
+          : item.status !== ITEM_STATUS_COMPLETED;
+      })
       .filter((item) => categoryFilter === "전체" || item.category === categoryFilter)
       .filter((item) => {
         if (focusItemId) return item.id === focusItemId;
+        if (inventoryScope === ITEM_STATUS_COMPLETED) return true;
+        if (statusFilter === ITEM_STATUS_COMPLETED) return true;
         const days = daysUntil(item.expiry);
         if (statusFilter === "today") return days === 0;
         if (statusFilter === "expired") return days < 0;
         if (statusFilter === "urgent") return days >= 0 && days <= reminderDays;
+        if (statusFilter === "week") return days >= 0 && days <= 7;
         return true;
       });
 
@@ -64,19 +112,27 @@ export function useInventory({
       });
 
     return nextItems;
-  }, [normalizedItems, categoryFilter, statusFilter, reminderDays, focusItemId, sortMode]);
+  }, [normalizedItems, inventoryScope, categoryFilter, statusFilter, reminderDays, focusItemId, sortMode]);
 
   const summary = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 86400000;
     return normalizedItems.reduce(
       (acc, item) => {
+        if (item.status === ITEM_STATUS_COMPLETED) {
+          acc.completed += 1;
+          const completedTime = new Date(item.completedAt || 0).getTime();
+          if (!Number.isNaN(completedTime) && completedTime >= weekAgo) acc.completedThisWeek += 1;
+          return acc;
+        }
         const days = daysUntil(item.expiry);
         acc.total += 1;
         if (days >= 0 && days <= reminderDays) acc.urgent += 1;
+        if (days >= 0 && days <= 7) acc.week += 1;
         if (days === 0) acc.today += 1;
         if (days < 0) acc.expired += 1;
         return acc;
       },
-      { total: 0, urgent: 0, today: 0, expired: 0 }
+      { total: 0, urgent: 0, week: 0, today: 0, expired: 0, completed: 0, completedThisWeek: 0 }
     );
   }, [normalizedItems, reminderDays]);
 
@@ -90,6 +146,8 @@ export function useInventory({
         id: nextItem.id || `${Date.now()}-${Math.random()}`,
         createdAt: nextItem.createdAt || new Date().toISOString(),
         ...nextItem,
+        status: ITEM_STATUS_ACTIVE,
+        completedAt: "",
         name: nextItem.name.trim()
       },
       ...current
@@ -105,7 +163,7 @@ export function useInventory({
       expiryType: defaultExpiryType,
       expiry,
       imageUri: manualImageUri,
-      purchaseUrl: manualPurchaseUrl.trim()
+      purchaseUrl: normalizePurchaseUrl(manualPurchaseUrl)
     });
     if (!added) return;
     setName("");
@@ -131,6 +189,47 @@ export function useInventory({
 
   function removeItem(id) {
     setItems((current) => current.filter((item) => item.id !== id));
+    if (editingId === id) cancelEdit();
+  }
+
+  function completeItem(id) {
+    const item = normalizedItems.find((target) => target.id === id);
+    Alert.alert("소비 완료로 기록할까요?", `${item?.name || "이 상품"}을 완료 목록으로 옮깁니다.`, [
+      { text: "취소", style: "cancel" },
+      {
+        text: "완료",
+        onPress: () => {
+          const cheer = completionCheerFor(item);
+          setItems((current) =>
+            current.map((target) =>
+              target.id === id
+                ? {
+                    ...target,
+                    status: ITEM_STATUS_COMPLETED,
+                    completedAt: new Date().toISOString()
+                  }
+                : target
+            )
+          );
+          if (editingId === id) cancelEdit();
+          Alert.alert(cheer.title, cheer.message);
+        }
+      }
+    ]);
+  }
+
+  function restoreItem(id) {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              status: ITEM_STATUS_ACTIVE,
+              completedAt: ""
+            }
+          : item
+      )
+    );
     if (editingId === id) cancelEdit();
   }
 
@@ -163,7 +262,8 @@ export function useInventory({
           ? {
               ...item,
               ...editForm,
-              name: editForm.name.trim()
+              name: editForm.name.trim(),
+              purchaseUrl: normalizePurchaseUrl(editForm.purchaseUrl)
             }
           : item
       )
@@ -197,6 +297,8 @@ export function useInventory({
     setSortMode,
     statusFilter,
     setStatusFilter,
+    inventoryScope,
+    setInventoryScope,
     focusItemId,
     setFocusItemId,
     sortedItems,
@@ -207,6 +309,8 @@ export function useInventory({
     takeManualImagePhoto,
     changeManualImage,
     removeItem,
+    completeItem,
+    restoreItem,
     startEdit,
     cancelEdit,
     saveEdit

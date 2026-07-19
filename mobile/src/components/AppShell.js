@@ -15,10 +15,10 @@ import { typography } from "../theme/typography";
 
 // 하단 탭 메뉴 정의입니다. page 번호는 ScrollView의 페이지 순서와 맞아야 합니다.
 const bottomNavItems = [
-  { page: 0, icon: require("../../assets/tabs/tab-home.png"), label: "홈", title: "" },
-  { page: 1, icon: require("../../assets/tabs/tab-add.png"), label: "등록", title: "상품 등록" },
-  { page: 2, icon: require("../../assets/tabs/tab-box.png"), label: "보관함", title: "보관함" },
-  { page: 3, icon: require("../../assets/tabs/tab-settings.png"), label: "설정", title: "설정" }
+  { page: 0, icon: require("../../assets/tabs/home_80dp.png"), label: "홈", title: "" },
+  { page: 1, icon: require("../../assets/tabs/add_80dp.png"), label: "등록", title: "상품 등록" },
+  { page: 2, icon: require("../../assets/tabs/kitchen.png"), label: "보관함", title: "보관함" },
+  { page: 3, icon: require("../../assets/tabs/settings_80d.png"), label: "설정", title: "설정" }
 ];
 
 // 앱 전체 화면 뼈대입니다. 상단 헤더, 좌우 페이지 전환 영역, 하단 탭을 담당합니다.
@@ -85,7 +85,7 @@ function AppShellLayout({
 
             {/* 하단 고정 탭 메뉴입니다. 홈/등록/보관함/설정 페이지 이동을 담당합니다. */}
             {!hideBottomNav ? (
-              <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 8) }]}>
                 {bottomNavItems.map((item) => (
                   <BottomNavItem
                     key={item.page}
@@ -112,9 +112,10 @@ function BottomNavItem({ active, icon, label, onPress }) {
       style={styles.bottomNavItem}
       hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
     >
       <Image source={icon} resizeMode="contain" style={[styles.bottomNavIcon, active && styles.bottomNavIconActive]} />
-      <Text maxFontSizeMultiplier={1.1} style={[styles.bottomNavLabel, active && styles.bottomNavLabelActive]}>{label}</Text>
     </Pressable>
   );
 }
@@ -128,7 +129,7 @@ export const appShellStyles = StyleSheet.create({
   // 페이지 공통 좌우 여백과 하단 탭에 가리지 않도록 주는 아래 여백입니다.
   page: {
     paddingHorizontal: 16,
-    paddingBottom: Platform.OS === "android" ? 140 : 112
+    paddingBottom: Platform.OS === "android" ? 104 : 88
   },
   // 예전 카드형 섹션 스타일 자리입니다. 현재는 테두리/배경을 없애고 여백만 최소화했습니다.
   section: {
@@ -161,7 +162,7 @@ const styles = StyleSheet.create({
   },
   // 홈 화면 상단 헤더입니다. 앱 이름 위치, 상단 여백, 배너와의 간격을 조정합니다.
   header: {
-    minHeight: 44,
+    minHeight: 58,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
@@ -169,7 +170,7 @@ const styles = StyleSheet.create({
   },
   // 등록/보관함/설정 페이지 상단 헤더입니다. 뒤로가기와 제목 위치를 담당합니다.
   pageHeader: {
-    minHeight: 44,
+    minHeight: 58,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -213,6 +214,8 @@ const styles = StyleSheet.create({
   title: {
     ...typography.screenTitle,
     color: "#18201c",
+    lineHeight: 30,
+    textAlignVertical: "center",
   },
   // 현재 선택된 페이지만 그리는 영역입니다. Android 화면 크기 설정에 따른 가로 pager 오차를 피합니다.
   pageSlot: {
@@ -222,8 +225,8 @@ const styles = StyleSheet.create({
   bottomNav: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingTop: 8,
+    paddingHorizontal: 16,
+    paddingTop: 7,
     borderTopWidth: 1,
     borderTopColor: "#e7e5df",
     backgroundColor: "#fff"
@@ -233,26 +236,16 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 5,
-    minHeight: 60
+    minHeight: 46
   },
   // 하단 탭 아이콘 기본 크기와 비활성 색상입니다.
   bottomNavIcon: {
-    width: 32,
-    height: 32,
+    width: 31,
+    height: 31,
     tintColor: "#68716b"
   },
   // 현재 선택된 하단 탭 아이콘 색상입니다.
   bottomNavIconActive: {
     tintColor: "#1f7a5a"
   },
-  // 하단 탭 라벨 기본 스타일입니다.
-  bottomNavLabel: {
-    ...typography.captionStrong,
-    color: "#68716b",
-  },
-  // 현재 선택된 하단 탭 라벨 색상입니다.
-  bottomNavLabelActive: {
-    color: "#1f7a5a"
-  }
 });

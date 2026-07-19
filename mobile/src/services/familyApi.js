@@ -15,7 +15,9 @@ export function cleanItemForFamilySync(item, { defaultExpiryType, todayIso }) {
     storage: item.storage || "",
     expiryType: item.expiryType || defaultExpiryType,
     expiry: item.expiry || todayIso(),
-    createdAt: item.createdAt || new Date().toISOString()
+    createdAt: item.createdAt || new Date().toISOString(),
+    status: item.status === "completed" ? "completed" : "active",
+    completedAt: item.status === "completed" ? item.completedAt || "" : ""
   };
 }
 

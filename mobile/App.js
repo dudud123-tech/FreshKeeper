@@ -22,6 +22,7 @@ import SettingsPanel from "./src/components/SettingsPanel";
 import { useAuth } from "./src/hooks/useAuth";
 import { useExpiryNotifications } from "./src/hooks/useExpiryNotifications";
 import { useFamilySync } from "./src/hooks/useFamilySync";
+import { useGrowthSync } from "./src/hooks/useGrowthSync";
 import { useInventory } from "./src/hooks/useInventory";
 import { useReceiptFlow } from "./src/hooks/useReceiptFlow";
 import {
@@ -84,6 +85,8 @@ export default function App() {
     setSortMode,
     statusFilter,
     setStatusFilter,
+    inventoryScope,
+    setInventoryScope,
     focusItemId,
     setFocusItemId,
     sortedItems,
@@ -94,6 +97,8 @@ export default function App() {
     takeManualImagePhoto,
     changeManualImage,
     removeItem,
+    completeItem,
+    restoreItem,
     startEdit,
     cancelEdit,
     saveEdit
@@ -219,6 +224,11 @@ export default function App() {
     defaultExpiryType: DEFAULT_EXPIRY_TYPE,
     authUser
   });
+  const { growthProfile, growthDashboardReport } = useGrowthSync({
+    items,
+    reminderDays,
+    authUser
+  });
   const [launchVisible, setLaunchVisible] = useState(!launchScreenShown);
   const sharedImageInFlightRef = useRef(false);
   const createReceiptCandidatesRef = useRef(createReceiptCandidates);
@@ -321,6 +331,7 @@ export default function App() {
 
   function goToInventory(nextStatusFilter = "all", options = {}) {
     setStatusFilter(nextStatusFilter);
+    setInventoryScope(nextStatusFilter === "completed" ? "completed" : "active");
     if (nextStatusFilter === "all") setCategoryFilter("전체");
     if (!options.scrollToLatest) setFocusItemId("");
     if (options.scrollToLatest && latestRegisteredId) setFocusItemId(latestRegisteredId);
@@ -418,6 +429,8 @@ export default function App() {
               items={items}
               summary={summary}
               reminderDays={reminderDays}
+              growthProfile={growthProfile}
+              growthDashboardReport={growthDashboardReport}
               onOpenInventory={goToInventory}
               onOpenAdd={() => goToPage(PAGE_ADD)}
               onChangeItemImage={changeItemImage}
@@ -487,6 +500,8 @@ export default function App() {
                 inventoryViewportHeightRef.current = event.nativeEvent.layout.height;
               }}
               sortedItems={sortedItems}
+              inventoryScope={inventoryScope}
+              setInventoryScope={setInventoryScope}
               sortOptions={sortOptions}
               sortMode={sortMode}
               setSortMode={setSortMode}
@@ -506,6 +521,8 @@ export default function App() {
               saveEdit={saveEdit}
               startEdit={startEdit}
               removeItem={removeItem}
+              completeItem={completeItem}
+              restoreItem={restoreItem}
               onChangeItemImage={changeItemImage}
               onItemLayout={(itemId, event, isEditing) => {
                 itemLayoutMapRef.current[itemId] = {

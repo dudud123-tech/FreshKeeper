@@ -63,6 +63,44 @@ print(path.read_text(encoding="utf-8"))
 
 Do not assume Korean text is corrupted just because plain PowerShell output looks broken. Confirm with UTF-8 reading before editing or reverting text.
 
+When inserting or replacing Korean UI text from a PowerShell one-off script, do not paste raw Korean into a Node/PowerShell here-string unless it has been verified to round-trip as UTF-8. This can silently write literal `?` characters into source files.
+
+For repeatable script-based edits, prefer one of these safer methods:
+
+- Use `apply_patch` for normal edits containing Korean text.
+- If a script is necessary, store Korean literals as Unicode escapes such as `"\uC0C1\uD488\uBA85"`.
+- Immediately verify the actual file contents with Node or UTF-8 Python, not plain console rendering:
+
+```powershell
+@'
+const fs = require('fs');
+const s = fs.readFileSync('C:/path/to/file.js', 'utf8');
+console.log(JSON.stringify(s.match(/label="([^"]+)"/)?.[1]));
+console.log('literal question labels', [...s.matchAll(/label="\?+/g)].length);
+'@ | node -
+```
+
+If the verification shows literal `?` in Korean UI labels or messages, treat it as file corruption and fix it before running builds.
+
+When inserting or replacing Korean UI text from a PowerShell one-off script, do not paste raw Korean into a Node/PowerShell here-string unless it has been verified to round-trip as UTF-8. This can silently write literal `?` characters into source files.
+
+For repeatable script-based edits, prefer one of these safer methods:
+
+- Use `apply_patch` for normal edits containing Korean text.
+- If a script is necessary, store Korean literals as Unicode escapes such as `"\uC0C1\uD488\uBA85"`.
+- Immediately verify the actual file contents with Node or UTF-8 Python, not plain console rendering:
+
+```powershell
+@'
+const fs = require('fs');
+const s = fs.readFileSync('C:/path/to/file.js', 'utf8');
+console.log(JSON.stringify(s.match(/label="([^"]+)"/)?.[1]));
+console.log('literal question labels', [...s.matchAll(/label="\?+/g)].length);
+'@ | node -
+```
+
+If the verification shows literal `?` in Korean UI labels or messages, treat it as file corruption and fix it before running builds.
+
 ## Windows Node / npm Commands
 
 PowerShell may block `npm.ps1` because script execution is disabled.

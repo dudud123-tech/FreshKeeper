@@ -210,6 +210,17 @@ export function useReceiptFlow({
       setOcrCoordinateSize(coordinateSize);
       setOcrCoordinateOptions(coordinateOptions);
       setOcrCoordinateModeIndex(coordinateModeIndex);
+
+      if (imageKind === "paper") {
+        setSelectedOcrLineIds([]);
+        setCommerceCropBoxes([]);
+        setReceiptDrafts([]);
+        setReceiptSelectorMode("highlight");
+        setReceiptSelectorVisible(true);
+        setReceiptStatus("상품명을 펜으로 칠한 뒤 체크를 눌러주세요. 칠한 영역만 상품 후보로 가져옵니다.");
+        return;
+      }
+
       setSelectedOcrLineIds(lines.filter((line) => isOcrLineInDrafts(line, nextDrafts)).map((line) => line.id));
       const commerceImageResult = await extractCommerceProductImages({
         imageUri,
@@ -230,10 +241,8 @@ export function useReceiptFlow({
         lines.filter((line) => isOcrLineInDrafts(line, nextDrafts)).map((line) => line.id)
       );
       setReceiptDrafts(nextDrafts, commerceImageResult.imageMap || {});
-      if (imageKind === "paper") {
-        setReceiptSelectorMode("highlight");
-        setReceiptSelectorVisible(true);
-      }
+      setReceiptSelectorMode("box");
+      setReceiptSelectorVisible(true);
       const sourceLabel = sourceType === "coupang" ? "쿠팡 주문내역" : "이미지";
       const localResultMessage = sourceType === "coupang" ? `${sourceLabel}에서 상품 후보를 만들었습니다.` : result.message || `${sourceLabel}에서 상품 후보를 만들었습니다.`;
       setReceiptStatus(

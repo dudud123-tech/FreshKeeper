@@ -1564,7 +1564,7 @@ async function handleGetFamilyItems(code, request, env) {
   const { groupCode, group, session, role } = access;
 
   const { results } = await env.DB.prepare(
-    `SELECT item_id, name, category, storage, expiry_type, expiry, created_at, status, completed_at, updated_at, image_key
+    `SELECT item_id, name, category, storage, expiry_type, expiry, created_at, status, completed_at, favorite, updated_at, image_key
      FROM family_group_items
      WHERE group_code = ? AND deleted = 0
      ORDER BY expiry ASC, name ASC
@@ -1585,6 +1585,7 @@ async function handleGetFamilyItems(code, request, env) {
       createdAt: row.created_at,
       status: row.status === "completed" ? "completed" : "active",
       completedAt: row.completed_at || "",
+      favorite: Boolean(row.favorite),
       syncedAt: row.updated_at,
       imageUri: row.image_key
         ? `${new URL(request.url).origin}/api/family-groups/${groupCode}/items/${encodeURIComponent(row.item_id)}/image`
@@ -1637,8 +1638,8 @@ async function handlePutFamilyItems(code, request, env) {
     statements.push(
       env.DB.prepare(
         `INSERT INTO family_group_items
-          (group_code, item_id, name, category, storage, expiry_type, expiry, created_at, status, completed_at, updated_at, deleted)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+          (group_code, item_id, name, category, storage, expiry_type, expiry, created_at, status, completed_at, favorite, updated_at, deleted)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
          ON CONFLICT(group_code, item_id) DO UPDATE SET
            name = excluded.name,
            category = excluded.category,
@@ -1648,6 +1649,7 @@ async function handlePutFamilyItems(code, request, env) {
            created_at = excluded.created_at,
            status = excluded.status,
            completed_at = excluded.completed_at,
+           favorite = excluded.favorite,
            updated_at = excluded.updated_at,
            deleted = 0`
       ).bind(
@@ -1661,6 +1663,7 @@ async function handlePutFamilyItems(code, request, env) {
         item.createdAt,
         item.status,
         item.completedAt,
+        item.favorite ? 1 : 0,
         now
       )
     );
@@ -2769,7 +2772,8 @@ function normalizeFamilyItems(items) {
     expiry: safeString(item?.expiry, 20),
     createdAt: safeString(item?.createdAt, 40),
     status: item?.status === "completed" ? "completed" : "active",
-    completedAt: item?.status === "completed" ? safeString(item?.completedAt, 40) : ""
+    completedAt: item?.status === "completed" ? safeString(item?.completedAt, 40) : "",
+    favorite: Boolean(item?.favorite)
   })).filter((item) => item.name && /^\d{4}-\d{2}-\d{2}$/.test(item.expiry));
 }
 

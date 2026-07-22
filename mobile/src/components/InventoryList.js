@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
+import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { statusFor, timelineFor } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
 import AdSlot from "./AdSlot";
@@ -14,12 +15,14 @@ const undoIcon = require("../../assets/actions/undo.png");
 const editNoteIcon = require("../../assets/actions/edit_note_80dp.png");
 const deleteIcon = require("../../assets/actions/delete_80dp_.png");
 const forkSpoonIcon = require("../../assets/actions/fork_spoon_80dp.png");
-const COMPLETED_VISIBLE_DAYS = 30;
+const bookmarkOffIcon = require("../../assets/actions/bookmark_off.png");
+const bookmarkOnIcon = require("../../assets/actions/bookmark_on.png");
+const COMPLETED_VISIBLE_DAYS = 90;
 const EDIT_COPY = {
   editing: "\uC218\uC815 \uC911",
   productName: "\uC0C1\uD488\uBA85",
   purchaseUrl: "\uAD6C\uB9E4 \uB9C1\uD06C",
-  purchasePlaceholder: "naver.com \uB610\uB294 https://...",
+  purchasePlaceholder: DEFAULT_PURCHASE_URL,
   category: "\uCE74\uD14C\uACE0\uB9AC",
   storage: "\uBCF4\uAD00",
   expiry: "\uC18C\uBE44\uAE30\uD55C",
@@ -59,6 +62,8 @@ export default function InventoryList({
   categoryFilters,
   categoryFilter,
   setCategoryFilter,
+  favoriteFilter,
+  setFavoriteFilter,
   focusItemId,
   clearFocusItem,
   editingId,
@@ -74,6 +79,7 @@ export default function InventoryList({
   removeItem,
   completeItem,
   restoreItem,
+  toggleFavorite,
   onChangeItemImage,
   onItemLayout,
   reminderDays,
@@ -81,7 +87,7 @@ export default function InventoryList({
 }) {
   const [query, setQuery] = useState("");
   const [controlsVisible, setControlsVisible] = useState(false);
-  const [editorVisible, setEditorVisible] = useState(false);
+  const [editorVisible, setEditorVisible] = useState(true);
   const isCompletedScope = inventoryScope === "completed";
   const normalizedQuery = query.trim().toLowerCase();
   const searchedItems = sortedItems.filter((item) => String(item.name || "").toLowerCase().includes(normalizedQuery));
@@ -95,7 +101,7 @@ export default function InventoryList({
     return buildCompletedMonthEntries(visibleItems);
   }, [isCompletedScope, visibleItems]);
   const editCategoryOptions = useMemo(() => orderedCategoryOptions(categories), [categories]);
-  const listRenderKey = `inventory-list-${inventoryScope}-${sortMode}-${categoryFilter}-${focusItemId || "all"}`;
+  const listRenderKey = `inventory-list-${inventoryScope}-${sortMode}-${categoryFilter}-${favoriteFilter}-${focusItemId || "all"}`;
   const itemKeyPrefix = sortMode === "등록일순" ? "created" : "expiry";
 
   async function openPurchaseUrl(url) {
@@ -171,6 +177,21 @@ export default function InventoryList({
                 </Pressable>
               ))}
             </View>
+            <Text style={styles.controlLabel}>보기 옵션</Text>
+            <View style={styles.compactChoiceRow}>
+              {[
+                { value: "all", label: "전체" },
+                { value: "favorite", label: "즐겨찾기" }
+              ].map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[styles.compactChoice, favoriteFilter === option.value && styles.compactChoiceActive]}
+                  onPress={() => setFavoriteFilter(option.value)}
+                >
+                  <Text style={[styles.compactChoiceText, favoriteFilter === option.value && styles.compactChoiceTextActive]}>{option.label}</Text>
+                </Pressable>
+              ))}
+            </View>
             <Text style={styles.controlLabel}>카테고리</Text>
             <View style={styles.categoryWrap}>
               {categoryFilters.map((option) => (
@@ -179,7 +200,6 @@ export default function InventoryList({
                 </Pressable>
               ))}
             </View>
-            <Text style={styles.controlHint}>편집 아이콘을 켜면 수정/삭제 버튼이 표시됩니다.</Text>
           </View>
         ) : null}
         {focusItemId ? (
@@ -205,7 +225,7 @@ export default function InventoryList({
               <View style={styles.completedSummaryDivider} />
               <View style={styles.completedSummaryItem}>
                 <Text style={styles.completedSummaryValue}>{completedStats.hiddenCount}</Text>
-                <Text style={styles.completedSummaryLabel}>30일 이전</Text>
+                <Text style={styles.completedSummaryLabel}>90일 이전</Text>
               </View>
             </View>
           ) : null}
@@ -320,7 +340,7 @@ export default function InventoryList({
                         <View style={styles.itemHeader}>
                           <View style={styles.itemTitleRow}>
                             <Text style={styles.itemName} numberOfLines={1}>{displayName}</Text>
-                            <Text style={styles.storagePill}>{storageLabel}</Text>
+                            <Text style={[styles.storagePill, getStoragePillStyle(storageLabel)]}>{storageLabel}</Text>
                           </View>
                           <Text style={[styles.badge, isCompletedScope ? styles.completedBadge : styles[status.tone]]}>
                             {isCompletedScope ? "완료" : status.label}
@@ -338,6 +358,10 @@ export default function InventoryList({
                                   onPress={() => restoreItem(item.id)}
                                   accessibilityLabel="보관함으로 되돌리기"
                                 />
+                                <FavoriteIconButton
+                                  active={Boolean(item.favorite)}
+                                  onPress={() => toggleFavorite(item.id)}
+                                />
                                 <CardIconButton
                                   icon={editNoteIcon}
                                   onPress={() => startEdit(item)}
@@ -353,9 +377,7 @@ export default function InventoryList({
                             ) : null}
                           </>
                         ) : (
-                          <ExpiryTimeline
-                            timeline={timeline}
-                          >
+                          <ExpiryTimeline timeline={timeline}>
                             {editorVisible ? (
                               <>
                                 <PurchaseIconButton purchaseUrl={item.purchaseUrl} onOpenPurchase={openPurchaseUrl} />
@@ -363,6 +385,10 @@ export default function InventoryList({
                                   icon={forkSpoonIcon}
                                   onPress={() => completeItem(item.id)}
                                   accessibilityLabel="다 먹어서 완료"
+                                />
+                                <FavoriteIconButton
+                                  active={Boolean(item.favorite)}
+                                  onPress={() => toggleFavorite(item.id)}
                                 />
                                 <CardIconButton
                                   icon={editNoteIcon}
@@ -456,8 +482,9 @@ function formatDateLabel(value) {
 function ExpiryTimeline({ timeline, children }) {
   const width = typeof timeline?.width === "string" || typeof timeline?.width === "number" ? timeline.width : "0%";
   const tone = timeline?.tone || "normal";
+  const hasActions = Boolean(children);
   return (
-    <View style={styles.timelineActionRow}>
+    <View style={[styles.timelineActionRow, hasActions ? styles.timelineActionRowVisible : styles.timelineActionRowHidden]}>
       <View style={styles.timelineWrap}>
         <View style={styles.timelineTrack}>
           <View style={[styles.timelineFill, styles[`${tone}Fill`], { width }]} />
@@ -482,6 +509,23 @@ function PurchaseIconButton({ purchaseUrl, onOpenPurchase, style }) {
         source={shoppingCartIcon}
         resizeMode="contain"
         style={[styles.purchaseIcon, !hasPurchaseUrl && styles.purchaseIconDisabled]}
+      />
+    </Pressable>
+  );
+}
+
+function FavoriteIconButton({ active, onPress }) {
+  return (
+    <Pressable
+      style={[styles.favoriteIconButton, active && styles.favoriteIconButtonActive]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={active ? "즐겨찾기 해제" : "즐겨찾기 등록"}
+    >
+      <Image
+        source={active ? bookmarkOnIcon : bookmarkOffIcon}
+        resizeMode="contain"
+        style={styles.favoriteIconImage}
       />
     </Pressable>
   );
@@ -555,6 +599,7 @@ function buildCompletedMonthEntries(items) {
 }
 
 function isRecentCompletedItem(item, visibleDays) {
+  if (item?.favorite) return true;
   const completedTime = completedTimestamp(item);
   if (!completedTime) return true;
   return completedTime >= Date.now() - visibleDays * 86400000;
@@ -580,6 +625,16 @@ function completedMonthLabel(item) {
   const completed = new Date(item?.completedAt || 0);
   if (Number.isNaN(completed.getTime())) return "완료일 미상";
   return `${completed.getFullYear()}년 ${completed.getMonth() + 1}월`;
+}
+
+function getStoragePillStyle(storageLabel) {
+  if (storageLabel === "냉동") {
+    return styles.storagePillFrozen;
+  }
+  if (storageLabel === "실온") {
+    return styles.storagePillRoom;
+  }
+  return styles.storagePillCold;
 }
 
 function completionTimingLabel(item) {
@@ -717,15 +772,11 @@ const styles = StyleSheet.create({
   compactChoiceTextActive: {
     color: "#fff"
   },
-  controlHint: {
-    ...typography.badge,
-    color: "#8a938d",
-  },
   categoryWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginTop: 8
+    marginTop: 4
   },
   categoryChip: {
     minHeight: 38,
@@ -1087,12 +1138,24 @@ const styles = StyleSheet.create({
   },
   storagePill: {
     ...typography.badge,
-    color: "#1f7a5a",
-    backgroundColor: "#e8f4ee",
     borderRadius: 7,
     overflow: "hidden",
     paddingHorizontal: 7,
     paddingVertical: 3,
+  },
+  storagePillCold: {
+    color: "#1f7a5a",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#dce7e1"
+  },
+  storagePillFrozen: {
+    color: "#3d6fd6",
+    backgroundColor: "#e8f0ff"
+  },
+  storagePillRoom: {
+    color: "#9a6a17",
+    backgroundColor: "#fff1d6"
   },
   badge: {
     ...typography.captionStrong,
@@ -1128,8 +1191,15 @@ const styles = StyleSheet.create({
   timelineActionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    marginTop: 0
+    gap: 6
+  },
+  timelineActionRowVisible: {
+    marginLeft: -74,
+    marginTop: 10
+  },
+  timelineActionRowHidden: {
+    marginLeft: -74,
+    marginTop: 23
   },
   timelineWrap: {
     flex: 1,
@@ -1146,9 +1216,9 @@ const styles = StyleSheet.create({
     borderRadius: 999
   },
   purchaseIconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#b9dfcf",
     backgroundColor: "#edf7f2",
@@ -1160,8 +1230,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#f3f5f3"
   },
   purchaseIcon: {
-    width: 22,
-    height: 22,
+    width: 21,
+    height: 21,
     tintColor: "#1f7a5a"
   },
   purchaseIconDisabled: {
@@ -1171,13 +1241,31 @@ const styles = StyleSheet.create({
   inlineActionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
+    gap: 6,
     marginTop: 8
   },
+  favoriteIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#ece8df",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  favoriteIconButtonActive: {
+    borderColor: "#f0d88a",
+    backgroundColor: "#ffffff"
+  },
+  favoriteIconImage: {
+    width: 19,
+    height: 19
+  },
   cardIconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#d4e7df",
     backgroundColor: "#fff",
@@ -1189,8 +1277,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff7f5"
   },
   cardIcon: {
-    width: 22,
-    height: 22,
+    width: 21,
+    height: 21,
     tintColor: "#1f7a5a"
   },
   cardIconDanger: {

@@ -87,6 +87,8 @@ export default function App() {
     setStatusFilter,
     inventoryScope,
     setInventoryScope,
+    favoriteFilter,
+    setFavoriteFilter,
     focusItemId,
     setFocusItemId,
     sortedItems,
@@ -99,6 +101,7 @@ export default function App() {
     removeItem,
     completeItem,
     restoreItem,
+    toggleFavorite,
     startEdit,
     cancelEdit,
     saveEdit
@@ -508,6 +511,8 @@ export default function App() {
               categoryFilters={categoryFilters}
               categoryFilter={categoryFilter}
               setCategoryFilter={setCategoryFilter}
+              favoriteFilter={favoriteFilter}
+              setFavoriteFilter={setFavoriteFilter}
               focusItemId={focusItemId}
               clearFocusItem={() => setFocusItemId("")}
               editingId={editingId}
@@ -523,6 +528,7 @@ export default function App() {
               removeItem={removeItem}
               completeItem={completeItem}
               restoreItem={restoreItem}
+              toggleFavorite={toggleFavorite}
               onChangeItemImage={changeItemImage}
               onItemLayout={(itemId, event, isEditing) => {
                 itemLayoutMapRef.current[itemId] = {

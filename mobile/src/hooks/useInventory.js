@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { categories } from "../categories";
+import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { daysUntil, itemCreatedTime, todayIso } from "../utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
 import {
@@ -67,6 +68,7 @@ export function useInventory({
   const [sortMode, setSortMode] = useState(sortOptions[0]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [inventoryScope, setInventoryScope] = useState(ITEM_STATUS_ACTIVE);
+  const [favoriteFilter, setFavoriteFilter] = useState("all");
   const [focusItemId, setFocusItemId] = useState("");
 
   const normalizedItems = useMemo(() => {
@@ -78,6 +80,7 @@ export function useInventory({
         ...item,
         status: item.status === ITEM_STATUS_COMPLETED ? ITEM_STATUS_COMPLETED : ITEM_STATUS_ACTIVE,
         completedAt: item.status === ITEM_STATUS_COMPLETED ? item.completedAt || "" : "",
+        favorite: Boolean(item.favorite),
         storage: nextStorage
       };
     });
@@ -92,6 +95,7 @@ export function useInventory({
           : item.status !== ITEM_STATUS_COMPLETED;
       })
       .filter((item) => categoryFilter === "전체" || item.category === categoryFilter)
+      .filter((item) => favoriteFilter !== "favorite" || item.favorite)
       .filter((item) => {
         if (focusItemId) return item.id === focusItemId;
         if (inventoryScope === ITEM_STATUS_COMPLETED) return true;
@@ -112,7 +116,7 @@ export function useInventory({
       });
 
     return nextItems;
-  }, [normalizedItems, inventoryScope, categoryFilter, statusFilter, reminderDays, focusItemId, sortMode]);
+  }, [normalizedItems, inventoryScope, categoryFilter, favoriteFilter, statusFilter, reminderDays, focusItemId, sortMode]);
 
   const summary = useMemo(() => {
     const weekAgo = Date.now() - 7 * 86400000;
@@ -148,6 +152,7 @@ export function useInventory({
         ...nextItem,
         status: ITEM_STATUS_ACTIVE,
         completedAt: "",
+        favorite: Boolean(nextItem.favorite),
         name: nextItem.name.trim()
       },
       ...current
@@ -188,8 +193,18 @@ export function useInventory({
   }
 
   function removeItem(id) {
-    setItems((current) => current.filter((item) => item.id !== id));
-    if (editingId === id) cancelEdit();
+    const item = normalizedItems.find((target) => target.id === id);
+    Alert.alert("상품을 삭제할까요?", `${item?.name || "이 상품"}은 삭제 후 되돌릴 수 없습니다.`, [
+      { text: "취소", style: "cancel" },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: () => {
+          setItems((current) => current.filter((target) => target.id !== id));
+          if (editingId === id) cancelEdit();
+        }
+      }
+    ]);
   }
 
   function completeItem(id) {
@@ -233,6 +248,19 @@ export function useInventory({
     if (editingId === id) cancelEdit();
   }
 
+  function toggleFavorite(id) {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              favorite: !item.favorite
+            }
+          : item
+      )
+    );
+  }
+
   function startEdit(item) {
     setEditingId(item.id);
     setEditForm({
@@ -241,7 +269,7 @@ export function useInventory({
       storage: item.storage,
       expiryType: item.expiryType || defaultExpiryType,
       expiry: item.expiry,
-      purchaseUrl: item.purchaseUrl || ""
+      purchaseUrl: item.purchaseUrl || DEFAULT_PURCHASE_URL
     });
     onStartEditScroll?.(item.id);
   }
@@ -299,6 +327,8 @@ export function useInventory({
     setStatusFilter,
     inventoryScope,
     setInventoryScope,
+    favoriteFilter,
+    setFavoriteFilter,
     focusItemId,
     setFocusItemId,
     sortedItems,
@@ -311,6 +341,7 @@ export function useInventory({
     removeItem,
     completeItem,
     restoreItem,
+    toggleFavorite,
     startEdit,
     cancelEdit,
     saveEdit

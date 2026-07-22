@@ -12,9 +12,10 @@ const cameraIcon = require("../../assets/actions/action-camera.png");
 const galleryIcon = require("../../assets/actions/action-gallery.png");
 const photoRegisterIcon = require("../../assets/actions/action-photo-register.png");
 const directRegisterIcon = require("../../assets/actions/action-direct-register.png");
-const inventoryEditIcon = require("../../assets/actions/inventory-edit.png");
+const inventoryEditIcon = require("../../assets/actions/edit_note_80dp.png");
 const resetIcon = require("../../assets/actions/action-reset.png");
-const storageTabIcon = require("../../assets/tabs/tab-box.png");
+const storageTabIcon = require("../../assets/tabs/kitchen.png");
+const selectedLikeIcon = require("../../assets/actions/like.webp");
 
 export default function AddItemPage({
   mode,
@@ -244,28 +245,26 @@ export default function AddItemPage({
                       {/* OCR 결과와 자동 인식된 초안 상품들이 모이는 영역이다. */}
                       {drafts.length > 0 ? (
                         <>
-                          <View style={styles.discoveredHeader}>
-                            <Text style={styles.discoveredTitle}>{"\uc120\ud0dd\ub41c \uc0c1\ud488"}</Text>
-                          </View>
-
-                          <View style={styles.bulkBox}>
-                            <View style={styles.bulkCountBox}>
-                              <Text style={styles.bulkCount}>{selectedDraftCount + "\uac1c"}</Text>
-                              <Text style={styles.bulkCountLabel}>{"선택됨"}</Text>
-                            </View>
+                          <View style={styles.bulkSection}>
                             <Pressable
                               style={styles.bulkResetButton}
                               accessibilityLabel={"\uc120\ud0dd \uc0c1\ud488 \ub9ac\uc14b"}
                               onPress={resetReceiptDrafts}
                             >
                               <Image source={resetIcon} resizeMode="contain" style={styles.bulkResetIcon} />
-                              <Text style={styles.bulkResetText}>{"초기화"}</Text>
+                              <Text style={styles.bulkResetText}>{"\ucd08\uae30\ud654"}</Text>
                             </Pressable>
-                            <Pressable style={styles.bulkSubmitButton} onPress={addAllDrafts}>
-                              <Image source={storageTabIcon} resizeMode="contain" style={styles.bulkSubmitIcon} />
-                              <Text style={styles.bulkSubmitText}>{"\ubcf4\uad00\ud568\uc5d0 \uc800\uc7a5\ud558\uae30"}</Text>
-                              <Text style={styles.bulkSubmitChevron}>{"›"}</Text>
-                            </Pressable>
+                            <View style={styles.bulkBox}>
+                              <View style={styles.bulkSummaryWrap}>
+                                <Text style={styles.bulkSummaryText}>{selectedDraftCount + "\uac1c \uc120\ud0dd\ub428"}</Text>
+                                <Image source={selectedLikeIcon} resizeMode="contain" style={styles.bulkSummaryIcon} />
+                              </View>
+                              <Pressable style={styles.bulkSubmitButton} onPress={addAllDrafts}>
+                                <Image source={storageTabIcon} resizeMode="contain" style={styles.bulkSubmitIcon} />
+                                <Text style={styles.bulkSubmitText}>{"\ubcf4\uad00\ud568 \uc800\uc7a5"}</Text>
+                                <Text style={styles.bulkSubmitChevron}>{"›"}</Text>
+                              </Pressable>
+                            </View>
                           </View>
                           <View style={styles.draftList}>
                             {drafts.map((draft) => {
@@ -299,21 +298,35 @@ export default function AddItemPage({
                                       style={styles.draftImage}
                                     />
                                   </Pressable>
-                                  <View style={styles.draftText}>
-                                    <Text style={styles.itemName} numberOfLines={2}>{draft}</Text>
-                                    <Text style={[styles.storageBadge, storageBadgeStyle(draftStorage)]}>{draftStorage}</Text>
+                                  <View style={styles.draftContent}>
+                                    <Text style={styles.itemName} numberOfLines={1}>{draft}</Text>
+                                    <Text style={styles.expiryDateText}>{"\uc18c\ube44\uae30\ud55c " + formatDotDate(draftExpiry)}</Text>
+                                    <View style={styles.draftTimelineTrack}>
+                                      <View
+                                        style={[
+                                          styles.draftTimelineFill,
+                                          dday.tone === "expired"
+                                            ? styles.draftTimelineFillExpired
+                                            : dday.tone === "safe"
+                                              ? styles.draftTimelineFillSafe
+                                              : styles.draftTimelineFillWarning
+                                        ]}
+                                      />
+                                    </View>
                                   </View>
-                                  <View style={styles.draftExpiryBox}>
-                                    <Text style={[styles.ddayText, dday.tone === "expired" ? styles.ddayExpired : dday.tone === "safe" ? styles.ddaySafe : null]}>{dday.label}</Text>
-                                    <Text style={styles.expiryDateText}>{formatDotDate(draftExpiry)}</Text>
+                                  <View style={styles.draftRightColumn}>
+                                    <View style={styles.draftBadgeRow}>
+                                      <Text style={[styles.storageBadge, storageBadgeStyle(draftStorage)]}>{draftStorage}</Text>
+                                      <Text style={[styles.ddayText, dday.tone === "expired" ? styles.ddayExpired : dday.tone === "safe" ? styles.ddaySafe : null]}>{dday.label}</Text>
+                                    </View>
+                                    <Pressable
+                                      style={styles.dateMiniButton}
+                                      accessibilityLabel={"\uc18c\ube44\uae30\ud55c \uc218\uc815"}
+                                      onPress={() => setEditingDraft((current) => (current === draft ? "" : draft))}
+                                    >
+                                      <Image source={inventoryEditIcon} resizeMode="contain" style={styles.dateMiniIcon} />
+                                    </Pressable>
                                   </View>
-                                  <Pressable
-                                    style={styles.dateMiniButton}
-                                    accessibilityLabel={"\uc18c\ube44\uae30\ud55c \uc218\uc815"}
-                                    onPress={() => setEditingDraft((current) => (current === draft ? "" : draft))}
-                                  >
-                                    <Image source={inventoryEditIcon} resizeMode="contain" style={styles.dateMiniIcon} />
-                                  </Pressable>
                                   {editingDraft === draft ? (
                                     <View style={styles.draftEditPanel}>
                                       <View style={styles.editBanner}>
@@ -1187,18 +1200,6 @@ const styles = StyleSheet.create({
     // OCR 결과, 초안 목록, 누락 상품 안내를 담는 하단 영역.
     gap: 10
   },
-  discoveredHeader: {
-    // "선택된 상품" 같은 섹션 제목 영역.
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-    marginTop: 6
-  },
-  discoveredTitle: {
-    ...typography.screenTitle,
-    color: "#18201c",
-  },
   label: {
     ...typography.label,
     color: "#68716b",
@@ -1439,21 +1440,20 @@ const styles = StyleSheet.create({
   },
   draftList: {
     // OCR 초안 상품 목록 전체.
-    gap: 10
+    gap: 8
   },
   draftItem: {
     // 초안 상품 한 줄 카드.
-    minHeight: 84,
+    minHeight: 80,
     flexDirection: "row",
     flexWrap: "wrap",
-    alignItems: "center",
-    gap: 12,
+    alignItems: "flex-start",
+    gap: 8,
     borderWidth: 1,
-    borderColor: "#eceff0",
-    borderRadius: 16,
+    borderColor: "#ecebea",
+    borderRadius: 14,
     backgroundColor: "#fff",
-    paddingHorizontal: 12,
-    paddingVertical: 10
+    padding: 8
   },
   draftItemExcluded: {
     // 선택 해제된 초안 상품의 흐린 상태.
@@ -1466,7 +1466,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: "#1f7a5a",
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    marginTop: 22
   },
   draftCheckButtonOff: {
     // 체크가 꺼진 상태의 체크박스.
@@ -1481,16 +1482,31 @@ const styles = StyleSheet.create({
   },
   draftImage: {
     // 초안 상품 썸네일 이미지.
-    width: 58,
-    height: 58,
-    borderRadius: 12,
-    backgroundColor: "#edf7f2",
+    width: 62,
+    height: 62,
+    borderRadius: 14,
+    backgroundColor: "#f3f6f4",
     overflow: "hidden"
   },
-  draftText: {
-    // 초안 상품명과 보관 배지 묶음.
+  draftContent: {
+    // 초안 상품명, 소비기한, D-day 막대 묶음.
     flex: 1,
-    gap: 6
+    minWidth: 0,
+    gap: 3,
+    paddingTop: 2
+  },
+  draftRightColumn: {
+    // 우측 상단 보관 배지/D-day와 수정 버튼 묶음.
+    alignItems: "flex-end",
+    gap: 8,
+    minWidth: 82,
+    paddingTop: 2
+  },
+  draftBadgeRow: {
+    // 보관 배지와 D-day를 같은 줄에 배치.
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5
   },
   storageBadge: {
     // 냉장/냉동/실온 배지 공통 스타일.
@@ -1516,19 +1532,44 @@ const styles = StyleSheet.create({
     color: "#b56b16",
     backgroundColor: "#fff3dc"
   },
-  draftExpiryBox: {
-    // D-day와 날짜를 세로로 보여 주는 칸.
-    alignItems: "center",
-    minWidth: 64,
-    gap: 4
+  draftTimelineTrack: {
+    // 보관함 카드와 맞춘 D-day 진행 막대.
+    width: "100%",
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#e8ece9",
+    overflow: "hidden",
+    marginTop: 4
+  },
+  draftTimelineFill: {
+    // D-day 진행 막대의 채워진 부분.
+    height: "100%",
+    borderRadius: 999,
+    width: "62%",
+    backgroundColor: "#1f7a5a"
+  },
+  draftTimelineFillExpired: {
+    // 만료 상품 진행 막대 색상.
+    width: "100%",
+    backgroundColor: "#d9534f"
+  },
+  draftTimelineFillWarning: {
+    // 임박 상품 진행 막대 색상.
+    width: "40%",
+    backgroundColor: "#f08a24"
+  },
+  draftTimelineFillSafe: {
+    // 여유 상품 진행 막대 색상.
+    width: "62%",
+    backgroundColor: "#1f7a5a"
   },
   dateMiniButton: {
-    // 초안 상품 옆의 작은 수정 버튼.
-    width: 44,
-    minHeight: 44,
-    borderRadius: 12,
+    // 초안 상품 옆의 둥근 수정 버튼.
+    width: 34,
+    minHeight: 34,
+    borderRadius: 17,
     borderWidth: 1,
-    borderColor: "#e6e4df",
+    borderColor: "#dfe9e3",
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
@@ -1537,7 +1578,8 @@ const styles = StyleSheet.create({
   dateMiniIcon: {
     // 작은 수정 버튼 아이콘 크기.
     width: 20,
-    height: 20
+    height: 20,
+    tintColor: "#1f7a5a"
   },
   draftEditPanel: {
     // 초안 상품별 상세 수정 패널.
@@ -1586,102 +1628,105 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: "#fff",
   },
+  bulkSection: {
+    // 선택 개수 라벨과 저장 액션 바를 묶는 영역.
+    marginTop: 2,
+    marginBottom: 8,
+    gap: 6
+  },
   bulkBox: {
-    // 여러 초안을 한 번에 저장할 때 쓰는 요약 카드.
-    minHeight: 72,
-    marginTop: 4,
-    marginBottom: 4,
-    borderRadius: 18,
+    // 여러 초안을 한 번에 저장할 때 쓰는 얇은 액션 바.
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: "#e6ebe8",
+    borderRadius: 14,
     backgroundColor: "#fff",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 6,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2
   },
-  bulkCountBox: {
-    // 선택된 상품 수를 보여 주는 작은 박스.
-    width: 64,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: "#edf8f2",
+  bulkSummaryWrap: {
+    // 선택 개수를 박스 안 왼쪽에 보여준다.
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center"
+    gap: 7,
+    flexShrink: 1
   },
-  bulkCount: {
-    // 선택된 초안 개수 숫자.
-    color: "#1f7a5a",
-    fontSize: 22,
-    fontWeight: "800",
-    lineHeight: 26
+  bulkSummaryIcon: {
+    // 선택 개수 앞의 좋아요 아이콘.
+    width: 22,
+    height: 22
   },
-  bulkCountLabel: {
-    // 선택됨 라벨.
-    ...typography.badge,
-    color: "#68716b",
-    marginTop: 2
+  bulkSummaryText: {
+    // 선택된 초안 개수 요약.
+    ...typography.cardTitle,
+    fontSize: 18,
+    color: "#18201c",
   },
   bulkResetButton: {
-    // 선택 상태를 초기화하는 버튼.
-    width: 58,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: "#f5faf7",
+    // 선택 상태를 초기화하는 박스 위 작은 텍스트 버튼.
+    alignSelf: "flex-start",
+    minHeight: 28,
+    borderRadius: 999,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
+    gap: 5,
+    paddingHorizontal: 3
   },
   bulkResetIcon: {
     // 초기화 버튼 아이콘.
-    width: 25,
-    height: 25,
-    tintColor: "#1f7a5a"
+    width: 17,
+    height: 17,
+    tintColor: "#68716b"
   },
   bulkResetText: {
     // 초기화 버튼 글자.
-    ...typography.badge,
+    ...typography.captionStrong,
     color: "#68716b",
-    marginTop: 2
   },
   bulkSubmitButton: {
     // 선택된 초안들을 보관함에 넣는 메인 버튼.
-    flex: 1,
-    height: 56,
-    borderRadius: 13,
+    minHeight: 42,
+    borderRadius: 10,
     backgroundColor: "#1f7a5a",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 9,
-    paddingHorizontal: 14
+    gap: 7,
+    paddingHorizontal: 12
   },
   bulkSubmitIcon: {
     // 보관함 저장 버튼 아이콘.
-    width: 22,
-    minHeight: 22,
+    width: 20,
+    height: 20,
     tintColor: "#fff"
   },
   bulkSubmitText: {
     // 보관함 저장 버튼 텍스트.
-    ...typography.cardTitle,
+    ...typography.label,
+    fontSize: 17,
     color: "#fff",
   },
   bulkSubmitChevron: {
     // 보관함 저장 버튼 오른쪽 화살표.
     color: "#fff",
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "800",
-    lineHeight: 26,
-    marginLeft: 2
+    lineHeight: 24,
+    marginLeft: 1
   },
   itemName: {
     // 초안/목록의 상품명 텍스트.
-    ...typography.body,
+    ...typography.cardTitle,
     color: "#18201c",
     flexShrink: 1
   },

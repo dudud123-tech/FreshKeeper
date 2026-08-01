@@ -10,8 +10,9 @@ const pages = [
   { key: "3", type: "image", source: require("../../assets/tutorial/3page.png") },
   { key: "4", type: "video", source: require("../../assets/tutorial/4page.mp4") },
   { key: "5", type: "video", source: require("../../assets/tutorial/5page.mp4") },
-  { key: "6", type: "image", source: require("../../assets/tutorial/6page.png") },
-  { key: "7", type: "image", source: require("../../assets/tutorial/7page.png") }
+  { key: "6", type: "video", source: require("../../assets/tutorial/6page.mp4") },
+  { key: "7", type: "image", source: require("../../assets/tutorial/7page.png") },
+  { key: "8", type: "image", source: require("../../assets/tutorial/8page.png") }
 ];
 
 const { width: screenWidth } = Dimensions.get("window");

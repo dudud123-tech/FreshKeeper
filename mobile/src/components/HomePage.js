@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import BannerAdSlot from "./BannerAdSlot";
 import { typography } from "../theme/typography";
 import { daysUntil, itemCreatedDate } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
@@ -218,6 +219,8 @@ export default function HomePage({
           </Pressable>
         )}
       </View>
+
+      <BannerAdSlot />
     </ScrollView>
   );
 }

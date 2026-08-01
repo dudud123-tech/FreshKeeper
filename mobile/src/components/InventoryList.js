@@ -4,7 +4,7 @@ import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { statusFor, timelineFor } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
-import AdSlot from "./AdSlot";
+import BannerAdSlot from "./BannerAdSlot";
 
 const searchIcon = require("../../assets/actions/inventory-search.png");
 const filterIcon = require("../../assets/actions/inventory-filter.png");
@@ -259,7 +259,7 @@ export default function InventoryList({
               const completedMeta = completedDateLabel(item);
               return (
                 <Fragment key={renderKey}>
-                {index === 8 ? <AdSlot variant="inventory" style={styles.inventoryAdSlot} /> : null}
+                {index % 10 === 8 ? <BannerAdSlot /> : null}
                 <View
                   style={[styles.itemCard, isEditing && styles.itemCardEditing]}
                   onLayout={(event) => onItemLayout(itemKey, event, isEditing)}
@@ -414,6 +414,8 @@ export default function InventoryList({
             })
           )}
         </View>
+
+        {visibleItems.length > 0 ? <BannerAdSlot /> : null}
       </View>
     </ScrollView>
   );
@@ -941,9 +943,6 @@ const styles = StyleSheet.create({
   completedMonthCount: {
     ...typography.captionStrong,
     color: "#1f7a5a"
-  },
-  inventoryAdSlot: {
-    marginVertical: 2
   },
   empty: {
     ...typography.body,

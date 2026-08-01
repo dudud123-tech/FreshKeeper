@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
   View
 } from "react-native";
+import mobileAds from "react-native-google-mobile-ads";
 import { categories, suggestCategory } from "./src/categories";
 import AddItemPage from "./src/components/AddItemPage";
 import AppShell, { appShellStyles } from "./src/components/AppShell";
@@ -238,6 +239,10 @@ export default function App() {
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const sharedImageInFlightRef = useRef(false);
   const createReceiptCandidatesRef = useRef(createReceiptCandidates);
+
+  useEffect(() => {
+    mobileAds().initialize().catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)

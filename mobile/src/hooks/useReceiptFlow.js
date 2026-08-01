@@ -15,6 +15,7 @@ import {
 import { extractCommerceProductImages } from "../utils/commerceImageExtractor";
 import { daysUntil, todayIso } from "../utils/date";
 import { suggestedExpiryDate } from "../utils/expiryPresets";
+import { showInterstitialAd } from "../utils/interstitialAd";
 import { chooseItemImage } from "../utils/itemImagePicker";
 import { buildOcrCoordinateOptions, chooseBestOcrCoordinateOption, draftNameForOcrLine, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
 import { detectReceiptAiTextLineBoxes } from "../utils/receiptAiTextDetector";
@@ -616,6 +617,7 @@ export function useReceiptFlow({
     setDraftForms({});
     setTotalHighlighted(true);
     goToPage(inventoryPage);
+    showInterstitialAd();
     uploadCurrentOcrFeedback("auto", finalDrafts, initialDrafts.length ? initialDrafts : drafts);
     uploadProductClassificationFeedback(
       finalDrafts.map((draftName) =>

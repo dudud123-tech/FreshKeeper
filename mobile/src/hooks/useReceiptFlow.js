@@ -19,16 +19,14 @@ import { chooseItemImage } from "../utils/itemImagePicker";
 import { buildOcrCoordinateOptions, chooseBestOcrCoordinateOption, draftNameForOcrLine, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
 import { detectReceiptAiTextLineBoxes } from "../utils/receiptAiTextDetector";
 import { normalizeReceiptImageForOcr } from "../utils/receiptImageNormalizer";
-import { alignOcrLinesWithDetectedBoxes, detectReceiptTextLineBoxes, groupDetectedBoxesIntoRows } from "../utils/receiptTextLineDetector";
+import { alignOcrLinesWithDetectedBoxes, detectReceiptTextLineBoxes } from "../utils/receiptTextLineDetector";
 import { calibrateOcrLineBoxes } from "../utils/ocrBoxCalibrator";
 
 export const DEFAULT_FEEDBACK_SETTINGS = { enabled: true };
-const DEBUG_LOG = true;
-
-function debugHighlightOcr(payload) {
-  if (!DEBUG_LOG) return;
-  console.log("[freshkeeper:highlight-ocr]", payload);
-}
+// 실물 영수증에서 OCR 좌표 보정이 "충분히 맞았다"고 볼 수 있는 최소 비율.
+// 캘리브레이션 네이티브 모듈이 all-or-nothing에 가깝게 동작해서(전량 성공 아니면 0),
+// 0.5는 "대체로 맞음"과 "대체로 실패"를 가르기에 충분히 보수적인 값이다.
+const COORDINATE_CONFIDENCE_THRESHOLD = 0.5;
 
 export function normalizeFeedbackSettings(value) {
   return { ...DEFAULT_FEEDBACK_SETTINGS, ...(value || {}) };
@@ -73,7 +71,6 @@ export function useReceiptFlow({
   setTotalHighlighted
 }) {
   const [receiptSourceType, setReceiptSourceType] = useState("receipt");
-  const [receiptInteractionMode, setReceiptInteractionMode] = useState("box");
   const [receiptSelectorMode, setReceiptSelectorMode] = useState("box");
   const [receiptImage, setReceiptImage] = useState("");
   const [receiptImageSize, setReceiptImageSize] = useState({ width: 0, height: 0 });
@@ -84,7 +81,7 @@ export function useReceiptFlow({
   const [ocrLines, setOcrLines] = useState([]);
   const [commerceCropBoxes, setCommerceCropBoxes] = useState([]);
   const [selectedOcrLineIds, setSelectedOcrLineIds] = useState([]);
-  const [highlightMarks, setHighlightMarks] = useState([]);
+  const [selectionRects, setSelectionRects] = useState([]);
   const [receiptSelectorVisible, setReceiptSelectorVisible] = useState(false);
   const [receiptImageTypeChooserVisible, setReceiptImageTypeChooserVisible] = useState(false);
   const [drafts, setDrafts] = useState([]);
@@ -112,6 +109,18 @@ export function useReceiptFlow({
     );
   }, [receiptImage]);
 
+  // 자동 신뢰도 판단이 놓친 경우(예: 회전된 실물 영수증 — 개별 줄은 지역적으로
+  // 그럴듯해 보여도 전체적으로 어긋나는 경우)를 위해, 박스 모드 화면에서 사용자가
+  // 직접 "박스가 안 맞다"고 판단하면 언제든 드래그(색칠) 모드로 전환할 수 있게 한다.
+  function switchToHighlightMode() {
+    setSelectedOcrLineIds([]);
+    setCommerceCropBoxes([]);
+    setReceiptDrafts([]);
+    setReceiptSelectorMode("highlight");
+    setReceiptSelectorVisible(true);
+    setReceiptStatus("상품명을 펜으로 표시한 뒤 체크를 눌러주세요. 표시한 영역만 상품 후보로 가져옵니다.");
+  }
+
   async function createReceiptCandidates(imageAsset, options = {}) {
     try {
       const sourceType = options.sourceType || "receipt";
@@ -122,9 +131,13 @@ export function useReceiptFlow({
       let imageUri = normalizedImage.imageUri || originalImageUri;
       let normalizedSize = normalizedImage.size?.width && normalizedImage.size?.height ? normalizedImage.size : null;
       
-      // OpenCV 테두리 보정(perspective warp)이 실패하여 원본 이미지를 사용하는 경우,
-      // expo-image-manipulator를 사용해 이미지의 EXIF 회전을 물리적 픽셀 회전으로 보정합니다.
-      if (!normalizedImage.normalized) {
+      // OpenCV 테두리 보정(perspective warp)이 실패하여 원본 이미지를 사용하는 경우에만
+      // expo-image-manipulator로 EXIF 회전을 물리적 픽셀 회전으로 보정한다. 화면 캡처(screenshot)는
+      // sourceType이 "receipt"가 아니라서 normalizeReceiptImageForOcr가 항상 normalized:false를
+      // 돌려주는데, 그렇다고 여기서 재인코딩을 걸면(특히 세로로 아주 긴 이미지) 불필요한 처리이자
+      // 안드로이드 Canvas/Bitmap 크기 제한으로 이미지가 깨질 위험만 생긴다. 화면 캡처는 EXIF 회전
+      // 문제가 없으므로 원본 이미지를 그대로 쓴다.
+      if (sourceType === "receipt" && !normalizedImage.normalized) {
         try {
           const manipulated = await ImageManipulator.manipulateAsync(
             originalImageUri,
@@ -141,7 +154,6 @@ export function useReceiptFlow({
       const displaySize = await getImageDisplaySize(imageUri, normalizedSize || assetSize);
       const imageKind = inferReceiptImageKind(imageAsset, sourceType, options, displaySize);
       setReceiptSourceType(sourceType);
-      setReceiptInteractionMode(imageKind === "paper" ? "paper" : "box");
       setReceiptSelectorMode(imageKind === "paper" ? "highlight" : "box");
       setMode("receipt");
       goToPage(addPage);
@@ -154,7 +166,7 @@ export function useReceiptFlow({
       setOcrLines([]);
       setCommerceCropBoxes([]);
       setSelectedOcrLineIds([]);
-      setHighlightMarks([]);
+      setSelectionRects([]);
       setInitialDrafts([]);
       setExcludedDrafts([]);
       setFeedbackUploadKey("");
@@ -176,29 +188,21 @@ export function useReceiptFlow({
       if (sourceType === "receipt" && ocrCalibration.appliedCount === 0) {
         const aiTextBoxes = await detectReceiptAiTextLineBoxes(imageUri);
         const detectedTextBoxes = aiTextBoxes.length ? aiTextBoxes : await detectReceiptTextLineBoxes(imageUri);
-        const detectedRowBoxes = aiTextBoxes.length ? groupDetectedBoxesIntoRows(aiTextBoxes) : detectedTextBoxes;
-        console.log("[freshkeeper:ocr-box-source]", {
-          sourceType,
-          normalized: Boolean(normalizedImage.normalized),
-          dbnetCount: aiTextBoxes.length,
-          fallbackSource: aiTextBoxes.length ? "dbnet-text-line" : "opencv-text-line",
-          detectedCount: detectedTextBoxes.length,
-          detectedRowCount: detectedRowBoxes.length,
-          ocrLineCount: lines.length
-        });
         const requestedBoxSource = aiTextBoxes.length ? "dbnet-text-line" : "opencv-text-line";
         lines = alignOcrLinesWithDetectedBoxes(lines, detectedTextBoxes, requestedBoxSource);
-        console.log("[freshkeeper:ocr-box-align]", {
-          requestedBoxSource,
-          appliedCount: lines.filter((line) => line.boxSource === requestedBoxSource).length,
-          ocrLineCount: lines.length
-        });
-      } else if (sourceType === "receipt") {
-        console.log("[freshkeeper:ocr-box-align]", {
-          requestedBoxSource: "ocr-pixel-calibrated",
-          appliedCount: ocrCalibration.appliedCount,
-          ocrLineCount: lines.length
-        });
+      }
+
+      // 실물 영수증에 한해 "OCR 좌표를 얼마나 믿을 수 있는가"를 계산한다.
+      // sourceType(카메라로 찍었는지 갤러리에서 골랐는지)이 아니라 imageKind(실제로
+      // 실물 사진인지)로 판단해야 한다 — calibrateOcrLineBoxes는 sourceType과 무관하게
+      // 항상 실행되므로, 갤러리에서 고른 실물 사진도 계산이 이미 되어 있다.
+      let coordinateConfidence = 0;
+      if (imageKind === "paper") {
+        const linesWithBoxCount = lines.filter((line) => line?.box).length;
+        const calibratedCount = ocrCalibration.appliedCount > 0
+          ? ocrCalibration.appliedCount
+          : lines.filter((line) => line.boxSource === "dbnet-text-line" || line.boxSource === "opencv-text-line").length;
+        coordinateConfidence = linesWithBoxCount > 0 ? calibratedCount / linesWithBoxCount : 0;
       }
 
       const coordinateAssetSize = normalizedImage.normalized ? null : assetSize;
@@ -211,13 +215,11 @@ export function useReceiptFlow({
       setOcrCoordinateOptions(coordinateOptions);
       setOcrCoordinateModeIndex(coordinateModeIndex);
 
-      if (imageKind === "paper") {
-        setSelectedOcrLineIds([]);
-        setCommerceCropBoxes([]);
-        setReceiptDrafts([]);
-        setReceiptSelectorMode("highlight");
-        setReceiptSelectorVisible(true);
-        setReceiptStatus("상품명을 펜으로 칠한 뒤 체크를 눌러주세요. 칠한 영역만 상품 후보로 가져옵니다.");
+      // 화면 캡처는 좌표가 항상 신뢰 가능해 그대로 박스 모드로 간다. 실물 영수증은
+      // 좌표 신뢰도가 임계값 미만일 때만 드래그(색칠) 모드로 폴백한다 — 신뢰도가
+      // 충분하면 실물 영수증도 원래 설계대로 빠른 박스 모드를 쓴다.
+      if (imageKind === "paper" && coordinateConfidence < COORDINATE_CONFIDENCE_THRESHOLD) {
+        switchToHighlightMode();
         return;
       }
 
@@ -229,11 +231,16 @@ export function useReceiptFlow({
         lines,
         draftNames: nextDrafts
       });
+
       if (commerceImageResult.draftNames?.length) {
         nextDrafts = commerceImageResult.draftNames;
       }
       if (commerceImageResult.selectedLineIds?.length) {
-        setSelectedOcrLineIds(commerceImageResult.selectedLineIds);
+        // 상품 사진 인식(OpenCV)이 일부 상품에서 실패해도, 텍스트로 이미 선택된
+        // 상품까지 함께 사라지면 안 되므로 교체가 아니라 합쳐야 한다.
+        setSelectedOcrLineIds((previousIds) =>
+          Array.from(new Set([...previousIds, ...commerceImageResult.selectedLineIds]))
+        );
       }
       setCommerceCropBoxes(commerceImageResult.cropBoxes || []);
       nextDrafts = await filterExcludedProductNames(nextDrafts);
@@ -308,218 +315,129 @@ export function useReceiptFlow({
 
   function draftNamesFromHighlightedOcr(result) {
     const parsedDrafts = parseReceiptLines(result?.text || "");
-    if (parsedDrafts.length) {
-      debugHighlightOcr({
-        stage: "parsed-drafts",
-        text: String(result?.text || "").slice(0, 500),
-        parsedDrafts
-      });
-      return parsedDrafts;
-    }
+    if (parsedDrafts.length) return parsedDrafts;
     const fallbackLines = Array.isArray(result?.lines) ? result.lines : [];
-    const fallbackDrafts = Array.from(
+    return Array.from(
       new Set(
         fallbackLines
           .map((line) => draftNameForOcrLine(line))
           .filter(Boolean)
         )
     );
-    debugHighlightOcr({
-      stage: "fallback-drafts",
-      text: String(result?.text || "").slice(0, 500),
-      lineCount: fallbackLines.length,
-      sampleLines: fallbackLines.slice(0, 8).map((line) => ({ text: line.text, box: line.box })),
-      fallbackDrafts
-    });
-    return fallbackDrafts;
   }
 
-  function isHighlightedProductCandidate(name) {
-    const value = String(name || "").replace(/\s+/g, " ").trim();
-    if (value.length < 2) return false;
-    if (!/[가-힣A-Za-z]/.test(value)) return false;
-    if (/^[\d\s,.\-+*xX%()T]+$/.test(value)) return false;
-    if (/(CPN|MEMBER|WHOLESALE|회원|만료|판매|대표|전화|주소|승인|카드|합계|과세|부가|면세|포인트|POS|REG|사업자|영수증)/i.test(value)) return false;
-    if (/^\d{4,}$/.test(value.replace(/\D/g, "")) && !/[가-힣A-Za-z]{2,}/.test(value)) return false;
-    if (/\b\d+\s*[xX]\b/.test(value) || /\d{1,3}\s*,\s*\d{3}/.test(value)) {
-      return /[가-힣A-Za-z]{3,}/.test(value) && !/[xX]\s*\d/.test(value);
-    }
-    return true;
+  // OCR 박스 좌표는 원근왜곡/EXIF/스케일 문제로 실물이든 화면캡처든 완전히 믿기 어렵다.
+  // 그래서 좌표 매칭은 아예 쓰지 않고, 박스로 표시한 영역만 잘라서 그 안만 다시 OCR하는
+  // 좌표-독립적인 방식만 사용한다. 박스 하나당 한 번씩 크롭+OCR한다.
+  // OCR이 이미 각 줄의 박스 높이를 알고 있으니, 그 중앙값을 캔버스 좌표로 환산해
+  // "이 사진에서 글자 한 줄이 대략 몇 px인지" 추정한다. 위치(x,y)는 못 믿어도
+  // 높이는 상대적으로 안정적이라 여유값의 기준으로 쓸 수 있다. 사진마다 글자 크기가
+  // 다 달라서, 고정 픽셀값보다 이게 훨씬 사진에 맞게 여유를 잡아준다.
+  function estimateCanvasLineHeight(canvasWidth, canvasHeight) {
+    const canvasSize = { width: canvasWidth, height: canvasHeight };
+    // heightRatio를 0으로 넘기면 frameForBox가 높이를 무조건 0으로 계산해버린다(과거
+    // estimateHighlighterSize에도 있던 것과 같은 실수). 실제 박스 높이 그대로 받으려면
+    // heightRatio=1이어야 한다.
+    const heights = ocrLines
+      .map((line) => frameForBox(line.box, activeOcrCoordinateSize, canvasSize, 0, 0, 1)?.height)
+      .filter((height) => Number.isFinite(height) && height > 2 && height < canvasHeight * 0.1)
+      .sort((a, b) => a - b);
+    return heights.length ? heights[Math.floor(heights.length / 2)] : null;
   }
 
-  function draftNamesFromHighlightedLines(selection) {
-    if (!selection?.canvasWidth || !selection?.canvasHeight || !ocrLines.length) return [];
-    const canvasSize = { width: selection.canvasWidth, height: selection.canvasHeight };
-    const markCenters = Array.isArray(selection.marks)
-      ? selection.marks.map((mark) => ({
-          x: mark.x + mark.width / 2,
-          y: mark.y + mark.height / 2,
-          height: mark.height
-        }))
-      : [];
-    const hitRect = {
-      x: Math.max(0, selection.x - 12),
-      y: Math.max(0, selection.y - 10),
-      width: selection.width + 24,
-      height: selection.height + 20
+  async function draftNamesFromSelection(selection, trueSourceSize, canvasLineHeight) {
+    // receiptImageSize(Image.getSize 결과)는 안드로이드 시스템 사진 선택기가 실제 파일이
+    // 아니라 선택기 UI용 썸네일 크기를 돌려주는 경우가 있어 못 믿는다(실측 4배 축소된
+    // 값이 나온 사례 있음). 실제로 크롭을 수행하는 ImageManipulator가 직접 디코딩해서
+    // 알려주는 진짜 크기(trueSourceSize)를 우선 사용한다.
+    const sourceWidth = trueSourceSize?.width || receiptImageSize.width || selection.canvasWidth;
+    const sourceHeight = trueSourceSize?.height || receiptImageSize.height || selection.canvasHeight;
+    const scaleX = sourceWidth / Math.max(1, selection.canvasWidth);
+    const scaleY = sourceHeight / Math.max(1, selection.canvasHeight);
+    const rawCrop = {
+      originX: Math.max(0, Math.round(selection.x * scaleX)),
+      originY: Math.max(0, Math.round(selection.y * scaleY)),
+      width: Math.max(1, Math.min(sourceWidth, Math.round(selection.width * scaleX))),
+      height: Math.max(1, Math.min(sourceHeight, Math.round(selection.height * scaleY)))
     };
-    const hitCenterY = hitRect.y + hitRect.height / 2;
-    const lineMetrics = ocrLines
-      .map((line) => {
-      const frame = frameForBox(line.box, activeOcrCoordinateSize, canvasSize, 0, 0, 0);
-        if (!frame) return null;
-      const centerY = frame.top + frame.height / 2;
-      const overlapX = Math.min(frame.left + frame.width, hitRect.x + hitRect.width) - Math.max(frame.left, hitRect.x);
-      const insideY = centerY >= hitRect.y && centerY <= hitRect.y + hitRect.height;
-      const overlapRatio = overlapX > 0 ? overlapX / Math.max(1, Math.min(frame.width, hitRect.width)) : 0;
-      const yDistance = Math.abs(centerY - hitCenterY);
-      const draftName = draftNameForOcrLine(line).trim();
-        const markDistances = markCenters
-          .filter((mark) => mark.x >= frame.left - 18 && mark.x <= frame.left + frame.width + 18)
-          .map((mark) => Math.abs(mark.y - centerY));
-        const minMarkDistance = markDistances.length ? Math.min(...markDistances) : null;
-        const markHitCount = markDistances.filter((distance) => distance <= 12).length;
-        const accepted = insideY && overlapX > Math.min(frame.width, hitRect.width) * 0.15;
-        return {
-          line,
-          text: line.text,
-          draftName,
-          accepted,
-          productLike: isHighlightedProductCandidate(draftName),
-          insideY,
-          markHitCount,
-          minMarkDistance: minMarkDistance === null ? null : Math.round(minMarkDistance * 10) / 10,
-          overlapX: Math.round(overlapX * 10) / 10,
-          overlapRatio: Math.round(overlapRatio * 100) / 100,
-          yDistance: Math.round(yDistance * 10) / 10,
-          frame: {
-            left: Math.round(frame.left * 10) / 10,
-            top: Math.round(frame.top * 10) / 10,
-            width: Math.round(frame.width * 10) / 10,
-            height: Math.round(frame.height * 10) / 10,
-            centerY: Math.round(centerY * 10) / 10
-          },
-          boxSource: line.boxSource
-        };
-      })
-      .filter(Boolean);
-    const acceptedMetrics = lineMetrics.filter((metric) => metric.accepted);
-    const productMetrics = acceptedMetrics.filter((metric) => metric.productLike);
-    const rankedProductMetrics = productMetrics
-      .map((metric) => ({
-        ...metric,
-        rankDistance: metric.minMarkDistance === null ? metric.yDistance : Math.min(metric.yDistance, metric.minMarkDistance)
-      }))
-      .sort((a, b) => a.rankDistance - b.rankDistance || b.overlapRatio - a.overlapRatio);
-    const bestDistance = rankedProductMetrics[0]?.rankDistance ?? null;
-    const selectedMetrics = bestDistance === null
-      ? acceptedMetrics
-      : rankedProductMetrics.filter((metric) => metric.rankDistance <= bestDistance + 8);
-    const matchedLines = selectedMetrics.map((metric) => metric.line);
-    const highlightedDrafts = Array.from(
-      new Set(
-        selectedMetrics
-          .map((metric) => metric.draftName)
-          .filter((name) => isHighlightedProductCandidate(name))
-      )
+    const centerX = rawCrop.originX + rawCrop.width / 2;
+    const centerY = rawCrop.originY + rawCrop.height / 2;
+    // 여유는 실제 픽셀(rawCrop) 기준 비율이 아니라 화면(canvas) 기준 고정값으로 준다.
+    // 사진마다 해상도가 다 달라서 실제 픽셀 비율로 여유를 주면 사진마다 잘리는 정도가
+    // 들쭉날쭉해진다 — 캔버스 기준으로 고정하고 그때그때 실제 픽셀로 환산하면
+    // 화면에 보이는 만큼은 항상 같은 여유를 유지할 수 있다.
+    // ReceiptSelectorModal의 confirmHighlight()가 더 이상 자체 padding을 붙이지 않으므로
+    // 이 값이 유일한 여유분이다. 가로는 사용자가 이미 원하는 폭만큼 드래그해서 그리므로
+    // 여유를 거의 안 줘도 된다(오히려 옆 컬럼/가격까지 삼키는 위험만 커짐). 세로는
+    // OCR이 글자 위아래 여백을 필요로 하는데, 사진마다 글자 크기가 달라서 고정값 대신
+    // 실제 감지된 줄 높이(canvasLineHeight)에 비례해서 잡는다. 못 구하면 예전 고정값으로 폴백.
+    // 가로는 최소 보장값(2canvas px)이 고해상도 사진에서 실제 픽셀로는 꽤 커져서
+    // (예: scaleX 4배면 8px) 사용자가 그린 폭보다 눈에 띄게 넓게 잘리는 원인이 됐다.
+    // 사용자가 이미 원하는 폭만큼 그리므로 가로는 여유를 아예 주지 않는다.
+    const canvasMarginX = 0;
+    const canvasMarginY = canvasLineHeight ? Math.max(2, Math.round(canvasLineHeight * 0.05)) : 8;
+    const marginX = Math.round(canvasMarginX * scaleX);
+    const marginY = Math.round(canvasMarginY * scaleY);
+    const expandedWidth = Math.min(sourceWidth, rawCrop.width + marginX * 2);
+    const expandedHeight = Math.min(sourceHeight, rawCrop.height + marginY * 2);
+    const crop = {
+      originX: Math.max(0, Math.round(centerX - expandedWidth / 2)),
+      originY: Math.max(0, Math.round(centerY - expandedHeight / 2)),
+      width: expandedWidth,
+      height: expandedHeight
+    };
+    if (crop.originX + crop.width > sourceWidth) crop.width = Math.max(1, sourceWidth - crop.originX);
+    if (crop.originY + crop.height > sourceHeight) crop.height = Math.max(1, sourceHeight - crop.originY);
+    const resizeWidth = Math.min(1800, Math.max(1000, crop.width * 2));
+    const cropped = await ImageManipulator.manipulateAsync(
+      receiptImage,
+      [{ crop }, { resize: { width: resizeWidth } }],
+      { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
     );
-    debugHighlightOcr({
-      stage: "existing-line-match",
-      selection,
-      hitRect,
-      hitCenterY: Math.round(hitCenterY * 10) / 10,
-      matchedCount: matchedLines.length,
-      matchedLines: matchedLines.slice(0, 8).map((line) => ({ text: line.text, box: line.box, boxSource: line.boxSource })),
-      bestDistance,
-      selectedMetrics: selectedMetrics.slice(0, 8).map(({ line, ...metric }) => metric),
-      nearbyMetrics: lineMetrics
-        .filter((metric) => metric.accepted || metric.yDistance <= Math.max(80, hitRect.height * 1.4))
-        .sort((a, b) => a.yDistance - b.yDistance)
-        .slice(0, 30)
-        .map(({ line, ...metric }) => metric),
-      highlightedDrafts
-    });
-    return highlightedDrafts;
+    const cropSize = { width: cropped.width || crop.width, height: cropped.height || crop.height };
+    const result = await recognizeReceiptImage(cropped.uri, cropSize);
+    return { drafts: draftNamesFromHighlightedOcr(result), cropUri: cropped.uri, cropSize };
   }
 
-  async function applyHighlightedReceiptSelection(selection) {
-    if (!receiptImage || !selection?.width || !selection?.height) return;
+  async function applyHighlightedReceiptSelection(selections) {
+    const selectionList = (Array.isArray(selections) ? selections : [selections]).filter(
+      (selection) => selection?.width && selection?.height
+    );
+    if (!receiptImage || !selectionList.length) return;
     try {
       setReceiptSelectorVisible(false);
-      setReceiptStatus("형광펜으로 칠한 영역만 다시 읽는 중입니다.");
-      const lineMatchedDrafts = draftNamesFromHighlightedLines(selection);
-      if (lineMatchedDrafts.length) {
-        setReceiptDrafts(lineMatchedDrafts);
-        setSelectedOcrLineIds([]);
-        setCommerceCropBoxes([]);
-        setReceiptStatus(`칠한 영역에서 ${lineMatchedDrafts.length}개 상품 후보를 찾았습니다.`);
-        return;
-      }
-      const sourceWidth = receiptImageSize.width || selection.canvasWidth;
-      const sourceHeight = receiptImageSize.height || selection.canvasHeight;
-      const scaleX = sourceWidth / Math.max(1, selection.canvasWidth);
-      const scaleY = sourceHeight / Math.max(1, selection.canvasHeight);
-      const rawCrop = {
-        originX: Math.max(0, Math.round(selection.x * scaleX)),
-        originY: Math.max(0, Math.round(selection.y * scaleY)),
-        width: Math.max(1, Math.min(sourceWidth, Math.round(selection.width * scaleX))),
-        height: Math.max(1, Math.min(sourceHeight, Math.round(selection.height * scaleY)))
-      };
-      const centerX = rawCrop.originX + rawCrop.width / 2;
-      const centerY = rawCrop.originY + rawCrop.height / 2;
-      const expandedWidth = Math.min(sourceWidth, Math.max(rawCrop.width + 360, Math.round(sourceWidth * 0.65)));
-      const expandedHeight = Math.min(sourceHeight, Math.max(rawCrop.height + 260, 420));
-      const crop = {
-        originX: Math.max(0, Math.round(centerX - expandedWidth / 2)),
-        originY: Math.max(0, Math.round(centerY - expandedHeight / 2)),
-        width: expandedWidth,
-        height: expandedHeight
-      };
-      if (crop.originX + crop.width > sourceWidth) crop.width = Math.max(1, sourceWidth - crop.originX);
-      if (crop.originY + crop.height > sourceHeight) crop.height = Math.max(1, sourceHeight - crop.originY);
-      const resizeWidth = Math.min(1800, Math.max(1000, crop.width * 2));
-      debugHighlightOcr({
-        stage: "crop-request",
-        selection,
-        sourceWidth,
-        sourceHeight,
-        scaleX,
-        scaleY,
-        rawCrop,
-        resizeWidth,
-        crop
-      });
-
-      const cropped = await ImageManipulator.manipulateAsync(
-        receiptImage,
-        [{ crop }, { resize: { width: resizeWidth } }],
-        { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+      setReceiptStatus(
+        selectionList.length > 1
+          ? `표시한 ${selectionList.length}개 영역만 다시 읽는 중입니다.`
+          : "표시한 영역만 다시 읽는 중입니다."
       );
-      const cropSize = { width: cropped.width || crop.width, height: cropped.height || crop.height };
-      const result = await recognizeReceiptImage(cropped.uri, cropSize);
-      debugHighlightOcr({
-        stage: "ocr-result",
-        cropSize,
-        text: String(result?.text || "").slice(0, 500),
-        lineCount: Array.isArray(result?.lines) ? result.lines.length : 0,
-        message: result?.message
-      });
-      const highlightedDrafts = draftNamesFromHighlightedOcr(result);
-      debugHighlightOcr({
-        stage: "final-drafts",
-        count: highlightedDrafts.length,
-        highlightedDrafts
-      });
+      // 크롭 좌표 계산에 쓸 "진짜" 이미지 크기를 한 번만 확인해서 모든 박스에 재사용한다.
+      let trueSourceSize = null;
+      try {
+        const probe = await ImageManipulator.manipulateAsync(receiptImage, [], { compress: 1 });
+        if (probe?.width && probe?.height) trueSourceSize = { width: probe.width, height: probe.height };
+      } catch {
+        // 프로브 실패 시 draftNamesFromSelection이 receiptImageSize로 폴백한다.
+      }
+      const canvasLineHeight = estimateCanvasLineHeight(
+        selectionList[0].canvasWidth,
+        selectionList[0].canvasHeight
+      );
+      const resultsPerSelection = [];
+      for (const selection of selectionList) {
+        resultsPerSelection.push(await draftNamesFromSelection(selection, trueSourceSize, canvasLineHeight));
+      }
+      const highlightedDrafts = Array.from(new Set(resultsPerSelection.flatMap((item) => item.drafts)));
       setReceiptDrafts(highlightedDrafts);
       setSelectedOcrLineIds([]);
       setCommerceCropBoxes([]);
       setReceiptStatus(
         highlightedDrafts.length
-          ? `칠한 영역에서 ${highlightedDrafts.length}개 상품 후보를 찾았습니다.`
-          : "칠한 영역에서 상품 후보를 찾지 못했습니다. 상품명 부분을 조금 넓게 칠해 주세요."
+          ? `표시한 영역에서 ${highlightedDrafts.length}개 상품 후보를 찾았습니다.`
+          : "표시한 영역에서 상품 후보를 찾지 못했습니다. 상품명 부분을 조금 넓게 표시해 주세요."
       );
     } catch {
-      setReceiptStatus("칠한 영역을 읽지 못했습니다. 다시 칠하거나 직접 등록해 주세요.");
+      setReceiptStatus("표시한 영역을 읽지 못했습니다. 다시 표시하거나 직접 등록해 주세요.");
     }
   }
 
@@ -643,7 +561,7 @@ export function useReceiptFlow({
     setExcludedDrafts([]);
     setDraftForms({});
     setSelectedOcrLineIds([]);
-    setHighlightMarks([]);
+    setSelectionRects([]);
     setCommerceCropBoxes([]);
     setBulkDraftForm({ expiry: suggestedExpiryDate("", "기타", "냉장") });
     setReceiptStatus("발견된 상품 후보를 비웠습니다. 다시 선택하거나 직접 추가해 주세요.");
@@ -841,7 +759,6 @@ export function useReceiptFlow({
 
   return {
     receiptSourceType,
-    receiptInteractionMode,
     receiptSelectorMode,
     receiptImage,
     receiptImageSize,
@@ -854,14 +771,15 @@ export function useReceiptFlow({
     ocrLines,
     commerceCropBoxes,
     selectedOcrLineIds,
-    highlightMarks,
-    setHighlightMarks,
+    selectionRects,
+    setSelectionRects,
     receiptSelectorVisible,
     setReceiptSelectorVisible,
     receiptImageTypeChooserVisible,
     setReceiptImageTypeChooserVisible,
     openReceiptSelector,
     applyHighlightedReceiptSelection,
+    switchToHighlightMode,
    drafts,
     excludedDrafts,
     draftForms,

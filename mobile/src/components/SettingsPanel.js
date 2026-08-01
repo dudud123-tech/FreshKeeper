@@ -56,7 +56,8 @@ export default function SettingsPanel({
   loginWithKakao,
   loginWithNaver,
   logout,
-  removeAccount
+  removeAccount,
+  onReplayTutorial
 }) {
   const [authSheetVisible, setAuthSheetVisible] = useState(false);
   const socialLoginConfigured = googleLoginConfigured || kakaoLoginConfigured || naverLoginConfigured;
@@ -485,6 +486,10 @@ export default function SettingsPanel({
           )}
           <Text style={styles.notificationStatus}>{authReady ? authStatus : "로그인 정보를 확인하는 중입니다."}</Text>
         </View>
+
+        <Pressable style={styles.tutorialReplayButton} onPress={onReplayTutorial}>
+          <Text style={styles.tutorialReplayButtonText}>튜토리얼 다시 보기</Text>
+        </Pressable>
       </View>
       ) : null}
 
@@ -1267,6 +1272,21 @@ const styles = StyleSheet.create({
   },
   accountButtonDisabled: {
     opacity: 0.48
+  },
+  tutorialReplayButton: {
+    marginTop: 12,
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d8dfdb",
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14
+  },
+  tutorialReplayButtonText: {
+    ...typography.label,
+    color: "#4f5a54",
   },
   authInlineContent: {
     gap: 0

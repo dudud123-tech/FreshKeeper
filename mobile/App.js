@@ -17,6 +17,7 @@ import CalendarModal from "./src/components/CalendarModal";
 import HomePage from "./src/components/HomePage";
 import InventoryList from "./src/components/InventoryList";
 import LaunchScreen from "./src/components/LaunchScreen";
+import OnboardingScreen from "./src/components/OnboardingScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
 import SettingsPanel from "./src/components/SettingsPanel";
 import { useAuth } from "./src/hooks/useAuth";
@@ -32,6 +33,7 @@ import { chooseItemImage } from "./src/utils/itemImagePicker";
 
 const STORAGE_KEY = "fresh-keeper-mobile-items-v1";
 const SETTINGS_KEY = "fresh-keeper-mobile-settings-v1";
+const ONBOARDING_KEY = "fresh-keeper-onboarding-seen-v1";
 const storageTypes = ["냉장", "냉동", "실온"];
 const categoryFilters = ["전체", ...categories];
 const sortOptions = ["소비기한순", "등록일순"];
@@ -137,7 +139,6 @@ export default function App() {
   const [latestRegisteredId, setLatestRegisteredId] = useState("");
   const {
     receiptSourceType,
-    receiptInteractionMode,
     receiptSelectorMode,
     receiptImage,
     receiptImageSize,
@@ -147,14 +148,15 @@ export default function App() {
     ocrLines,
     commerceCropBoxes,
     selectedOcrLineIds,
-    highlightMarks,
-    setHighlightMarks,
+    selectionRects,
+    setSelectionRects,
     receiptSelectorVisible,
     setReceiptSelectorVisible,
     receiptImageTypeChooserVisible,
     setReceiptImageTypeChooserVisible,
     openReceiptSelector,
     applyHighlightedReceiptSelection,
+    switchToHighlightMode,
     drafts,
     excludedDrafts,
     draftForms,
@@ -233,6 +235,7 @@ export default function App() {
     authUser
   });
   const [launchVisible, setLaunchVisible] = useState(!launchScreenShown);
+  const [onboardingVisible, setOnboardingVisible] = useState(false);
   const sharedImageInFlightRef = useRef(false);
   const createReceiptCandidatesRef = useRef(createReceiptCandidates);
 
@@ -240,6 +243,14 @@ export default function App() {
     AsyncStorage.getItem(STORAGE_KEY)
       .then((value) => {
         if (value) setItems(JSON.parse(value));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem(ONBOARDING_KEY)
+      .then((value) => {
+        if (!value) setOnboardingVisible(true);
       })
       .catch(() => undefined);
   }, []);
@@ -332,6 +343,15 @@ export default function App() {
     setLaunchVisible(false);
   }
 
+  function finishOnboarding() {
+    setOnboardingVisible(false);
+    AsyncStorage.setItem(ONBOARDING_KEY, "1").catch(() => undefined);
+  }
+
+  function replayOnboarding() {
+    setOnboardingVisible(true);
+  }
+
   function goToInventory(nextStatusFilter = "all", options = {}) {
     setStatusFilter(nextStatusFilter);
     setInventoryScope(nextStatusFilter === "completed" ? "completed" : "active");
@@ -399,7 +419,7 @@ export default function App() {
       key={displayLayoutKey}
       page={page}
       onPageChange={goToPage}
-      hideBottomNav={launchVisible}
+      hideBottomNav={launchVisible || onboardingVisible}
       overlays={
         <>
           <CalendarModal
@@ -417,14 +437,16 @@ export default function App() {
             cropBoxes={commerceCropBoxes}
             mode={receiptSelectorMode}
             selectedIds={selectedOcrLineIds}
-            highlightMarks={highlightMarks}
-            setHighlightMarks={setHighlightMarks}
+            selectionRects={selectionRects}
+            setSelectionRects={setSelectionRects}
             onToggleLine={toggleOcrLine}
             onToggleCropBox={toggleCommerceCropBox}
             onConfirmHighlight={applyHighlightedReceiptSelection}
+            onSwitchToHighlight={switchToHighlightMode}
             onClose={() => setReceiptSelectorVisible(false)}
           />
           {launchVisible ? <LaunchScreen onDone={finishLaunch} /> : null}
+          {!launchVisible && onboardingVisible ? <OnboardingScreen onDone={finishOnboarding} /> : null}
         </>
       }
     >
@@ -468,7 +490,7 @@ export default function App() {
               receiptImageTypeChooserVisible={receiptImageTypeChooserVisible}
               setReceiptImageTypeChooserVisible={setReceiptImageTypeChooserVisible}
               receiptSourceType={receiptSourceType}
-              receiptInteractionMode={receiptInteractionMode}
+              receiptSelectorMode={receiptSelectorMode}
               drafts={drafts}
               excludedDrafts={excludedDrafts}
               receiptImage={receiptImage}
@@ -585,6 +607,7 @@ export default function App() {
                 loginWithNaver={loginWithNaver}
                 logout={logout}
                 removeAccount={removeAccount}
+                onReplayTutorial={replayOnboarding}
               />
             </ScrollView>
     </AppShell>

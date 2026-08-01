@@ -1,23 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Image, Modal, Platform, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { typography } from "../theme/typography";
 import { frameForBox } from "../utils/receiptOverlay";
 
-const DEBUG_LOG = true;
 const HIGHLIGHT_TOOL_ICONS = {
   move: require("../../assets/actions/highlight-zoom.png"),
   paint: require("../../assets/actions/highlight-pen.png"),
-  erase: require("../../assets/actions/highlight-eraser.png"),
   done: require("../../assets/actions/highlight-done.png")
 };
 const ANDROID_STATUS_BAR_HEIGHT = Platform.OS === "android" ? StatusBar.currentHeight || 0 : 0;
-
-function debugHighlightPaint(payload) {
-  if (!DEBUG_LOG) return;
-  console.log("[freshkeeper:highlight-paint]", payload);
-}
+const MIN_SELECTION_SIZE = 10;
 
 export default function ReceiptSelectorModal({
   visible,
@@ -28,19 +22,20 @@ export default function ReceiptSelectorModal({
   cropBoxes = [],
   mode = "box",
   selectedIds,
-  highlightMarks = [],
-  setHighlightMarks,
+  selectionRects = [],
+  setSelectionRects,
   onToggleLine,
   onToggleCropBox,
   onConfirmHighlight,
+  onSwitchToHighlight,
   onClose
 }) {
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [isReceiptZoomed, setIsReceiptZoomed] = useState(false);
-  const [highlightToolMode, setHighlightToolMode] = useState("paint");
-  const lastHighlightMarkRef = useRef(null);
+  const [isMoveMode, setIsMoveMode] = useState(false);
+  const [draftRect, setDraftRect] = useState(null);
   const isPaintMode = mode === "highlight";
-  const canMoveReceipt = !isPaintMode || highlightToolMode === "move";
+  const canMoveReceipt = !isPaintMode || isMoveMode;
   const scaleValue = useSharedValue(1);
   const translateXValue = useSharedValue(0);
   const translateYValue = useSharedValue(0);
@@ -49,14 +44,20 @@ export default function ReceiptSelectorModal({
   const startTranslateYValue = useSharedValue(0);
   const startFocalXValue = useSharedValue(0);
   const startFocalYValue = useSharedValue(0);
+  const dragStartXValue = useSharedValue(0);
+  const dragStartYValue = useSharedValue(0);
   const canvasWidthValue = useSharedValue(360);
   const canvasHeightValue = useSharedValue(620);
   const fallbackWidth = layout.width || 360;
   const imageRatio = imageSize.width && imageSize.height ? imageSize.height / imageSize.width : 1.6;
   const canvasWidth = fallbackWidth;
   const naturalCanvasHeight = Math.max(520, Math.round(canvasWidth * imageRatio));
-  const canvasHeight = isPaintMode ? Math.min(naturalCanvasHeight, 760) : naturalCanvasHeight;
-  const highlighterSize = estimateHighlighterSize(lines, coordinateSize, canvasWidth, canvasHeight);
+  // 예전엔 색칠 모드에서 캔버스 높이를 760px로 강제로 잘랐는데, 세로로 긴 영수증은
+  // 실제 이미지보다 캔버스가 작아져서 Image의 기본 resizeMode("cover")로 인해
+  // 가운데만 잘려 보이고, 그 상태로 좌표 계산은 "캔버스 전체 = 이미지 전체"라고
+  // 가정해버려 칠한 위치와 실제 매칭 위치가 어긋났다. 박스 모드처럼 캔버스를
+  // 이미지 실제 비율 그대로 두고 ScrollView로 스크롤하게 한다.
+  const canvasHeight = naturalCanvasHeight;
 
   const applyTransform = (nextScale, nextTranslateX, nextTranslateY) => {
     "worklet";
@@ -72,26 +73,6 @@ export default function ReceiptSelectorModal({
     scaleValue.value = clampedScale;
     translateXValue.value = Math.min(Math.max(nextTranslateX, -maxTranslateX), maxTranslateX);
     translateYValue.value = Math.min(Math.max(nextTranslateY, -maxTranslateY), maxTranslateY);
-  };
-
-  const paintAtPoint = (x, y) => {
-    "worklet";
-    const scale = Math.max(scaleValue.value, 1);
-    const centerX = canvasWidthValue.value / 2;
-    const centerY = canvasHeightValue.value / 2;
-    const canvasX = (x - centerX - translateXValue.value) / scale + centerX;
-    const canvasY = (y - centerY - translateYValue.value) / scale + centerY;
-    runOnJS(addHighlightMark)(canvasX, canvasY);
-  };
-
-  const eraseAtPoint = (x, y) => {
-    "worklet";
-    const scale = Math.max(scaleValue.value, 1);
-    const centerX = canvasWidthValue.value / 2;
-    const centerY = canvasHeightValue.value / 2;
-    const canvasX = (x - centerX - translateXValue.value) / scale + centerX;
-    const canvasY = (y - centerY - translateYValue.value) / scale + centerY;
-    runOnJS(removeHighlightMarkAt)(canvasX, canvasY);
   };
 
   const pinchGesture = Gesture.Pinch()
@@ -137,37 +118,43 @@ export default function ReceiptSelectorModal({
       runOnJS(setIsReceiptZoomed)(scaleValue.value > 1.02);
     });
 
-  const paintGesture = Gesture.Pan()
-    .enabled(isPaintMode && highlightToolMode === "paint")
+  // 손가락으로 텍스트를 정밀 추적해서 칠하게 하면 줄에서 위/아래로 삐뚤어지거나
+  // 글자를 덜 덮는 문제가 반복됐다. 그 대신 모서리를 대충 드래그해 사각형을
+  // 그리게 하면, 사용자는 정밀하게 따라 그릴 필요 없이 상품명 주변을 넉넉히
+  // 감싸기만 하면 된다. 여러 상품을 고르도록 드래그할 때마다 박스가 하나씩
+  // 쌓이고(추가), 잘못 그린 박스는 각자의 삭제 버튼으로 지운다.
+  const boxGesture = Gesture.Pan()
+    .enabled(isPaintMode && !isMoveMode)
     .minDistance(1)
     .onBegin((event) => {
-      paintAtPoint(event.x, event.y);
+      const scale = Math.max(scaleValue.value, 1);
+      const centerX = canvasWidthValue.value / 2;
+      const centerY = canvasHeightValue.value / 2;
+      const canvasX = (event.x - centerX - translateXValue.value) / scale + centerX;
+      const canvasY = (event.y - centerY - translateYValue.value) / scale + centerY;
+      dragStartXValue.value = canvasX;
+      dragStartYValue.value = canvasY;
+      runOnJS(setDraftRect)({ x: canvasX, y: canvasY, width: 0, height: 0 });
     })
     .onUpdate((event) => {
-      paintAtPoint(event.x, event.y);
-    });
-
-  const eraseGesture = Gesture.Pan()
-    .enabled(isPaintMode && highlightToolMode === "erase")
-    .minDistance(1)
-    .onBegin((event) => {
-      eraseAtPoint(event.x, event.y);
+      const scale = Math.max(scaleValue.value, 1);
+      const centerX = canvasWidthValue.value / 2;
+      const centerY = canvasHeightValue.value / 2;
+      const canvasX = (event.x - centerX - translateXValue.value) / scale + centerX;
+      const canvasY = (event.y - centerY - translateYValue.value) / scale + centerY;
+      const x = Math.min(dragStartXValue.value, canvasX);
+      const y = Math.min(dragStartYValue.value, canvasY);
+      const width = Math.abs(canvasX - dragStartXValue.value);
+      const height = Math.abs(canvasY - dragStartYValue.value);
+      runOnJS(setDraftRect)({ x, y, width, height });
     })
-    .onUpdate((event) => {
-      eraseAtPoint(event.x, event.y);
+    .onEnd(() => {
+      runOnJS(commitDraftRect)();
     });
 
-  const eraseTapGesture = Gesture.Tap()
-    .enabled(isPaintMode && highlightToolMode === "erase")
-    .onEnd((event) => {
-      eraseAtPoint(event.x, event.y);
-    });
-
-  const receiptGesture = isPaintMode && highlightToolMode === "paint"
-    ? paintGesture
-    : isPaintMode && highlightToolMode === "erase"
-      ? Gesture.Race(eraseTapGesture, eraseGesture)
-      : Gesture.Race(pinchGesture, panGesture);
+  const receiptGesture = isPaintMode && !isMoveMode
+    ? boxGesture
+    : Gesture.Race(pinchGesture, panGesture);
   const animatedCanvasStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateXValue.value },
@@ -181,61 +168,35 @@ export default function ReceiptSelectorModal({
     canvasHeightValue.value = canvasHeight;
   }, [canvasWidth, canvasHeight, canvasWidthValue, canvasHeightValue]);
 
+  // 확대/이동 상태와 그리다 만 박스(draftRect)는 다시 열 때마다 초기화하지만,
+  // 이미 그려둔 박스(selectionRects)는 여기서 건드리지 않는다 — "보기"로 재진입해도
+  // 이전에 표시해둔 박스가 남아있어야 한다. 새 이미지를 고른 경우의 초기화는
+  // useReceiptFlow.js의 createReceiptCandidates/resetReceiptDrafts가 책임진다.
   useEffect(() => {
     if (!visible) return;
     scaleValue.value = 1;
     translateXValue.value = 0;
     translateYValue.value = 0;
     setIsReceiptZoomed(false);
-    setHighlightToolMode("paint");
-    lastHighlightMarkRef.current = null;
+    setIsMoveMode(false);
+    setDraftRect(null);
   }, [visible, imageUri, mode, scaleValue, translateXValue, translateYValue]);
 
-  function addHighlightMark(x, y) {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    const markHeight = highlighterSize.height;
-    const markWidth = highlighterSize.width;
-    const markX = Math.max(0, Math.min(x - markWidth / 2, canvasWidth - markWidth));
-    const markY = Math.max(0, Math.min(y - markHeight / 2, canvasHeight - markHeight));
-    const previous = lastHighlightMarkRef.current;
-    const minDistance = Math.max(6, markHeight * 0.8);
-    if (previous && Math.hypot(previous.x - markX, previous.y - markY) < minDistance) return;
-    lastHighlightMarkRef.current = { x: markX, y: markY };
-    setHighlightMarks?.((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-${current.length}`,
-        x: markX,
-        y: markY,
-        width: markWidth,
-        height: markHeight
-      }
-    ]);
+  function commitDraftRect() {
+    // setDraftRect의 업데이트 콜백 안에서 다른 컴포넌트(App) 소유 상태인
+    // setSelectionRects를 호출하면 "다른 컴포넌트를 렌더링 중 업데이트" 경고가 뜬다.
+    // 두 상태 업데이트를 중첩하지 않고 각자 독립적으로 호출한다.
+    if (!draftRect || draftRect.width < MIN_SELECTION_SIZE || draftRect.height < MIN_SELECTION_SIZE) {
+      setDraftRect(null);
+      return;
+    }
+    const committedRect = { ...draftRect, id: `${Date.now()}-${selectionRects.length}` };
+    setSelectionRects?.((rects) => [...rects, committedRect]);
+    setDraftRect(null);
   }
 
-  function removeHighlightMarkAt(x, y) {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    lastHighlightMarkRef.current = null;
-    setHighlightMarks?.((current) => {
-      if (!current.length) return current;
-      const padding = Math.max(8, highlighterSize.height * 0.8);
-      const hits = current
-        .map((mark, index) => {
-          const centerX = mark.x + mark.width / 2;
-          const centerY = mark.y + mark.height / 2;
-          const inside =
-            x >= mark.x - padding &&
-            x <= mark.x + mark.width + padding &&
-            y >= mark.y - padding &&
-            y <= mark.y + mark.height + padding;
-          return inside ? { index, distance: Math.hypot(centerX - x, centerY - y) } : null;
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.distance - b.distance);
-      if (!hits.length) return current;
-      const removeIndex = hits[0].index;
-      return current.filter((_, index) => index !== removeIndex);
-    });
+  function removeSelectionRect(id) {
+    setSelectionRects?.((rects) => rects.filter((rect) => rect.id !== id));
   }
 
   function confirmHighlight() {
@@ -243,44 +204,31 @@ export default function ReceiptSelectorModal({
       onClose?.();
       return;
     }
-    if (!highlightMarks.length) {
+    if (!selectionRects.length) {
       Alert.alert(
         "표시한 상품이 없습니다",
-        "상품명을 펜으로 칠한 뒤 체크 버튼을 눌러주세요."
+        "상품명 주변을 드래그해서 박스로 감싼 뒤 완료 버튼을 눌러주세요."
       );
       return;
     }
-    const padding = 16;
-    const minX = Math.max(0, Math.min(...highlightMarks.map((mark) => mark.x)) - padding);
-    const minY = Math.max(0, Math.min(...highlightMarks.map((mark) => mark.y)) - padding);
-    const maxX = Math.min(canvasWidth, Math.max(...highlightMarks.map((mark) => mark.x + mark.width)) + padding);
-    const maxY = Math.min(canvasHeight, Math.max(...highlightMarks.map((mark) => mark.y + mark.height)) + padding);
-    debugHighlightPaint({
-      markCount: highlightMarks.length,
-      highlighterSize,
-      selection: {
+    // 여백은 여기서 붙이지 않는다 — useReceiptFlow.js의 draftNamesFromSelection이
+    // 이미 캔버스 기준 고정 여백을 붙이므로, 여기서 또 붙이면 두 배로 넓어져
+    // 위아래 다른 줄까지 크롭에 딸려온다.
+    const selections = selectionRects.map((rect) => {
+      const minX = Math.max(0, rect.x);
+      const minY = Math.max(0, rect.y);
+      const maxX = Math.min(canvasWidth, rect.x + rect.width);
+      const maxY = Math.min(canvasHeight, rect.y + rect.height);
+      return {
         x: minX,
         y: minY,
         width: Math.max(1, maxX - minX),
         height: Math.max(1, maxY - minY),
         canvasWidth,
         canvasHeight
-      }
+      };
     });
-    onConfirmHighlight?.({
-      x: minX,
-      y: minY,
-      width: Math.max(1, maxX - minX),
-      height: Math.max(1, maxY - minY),
-      canvasWidth,
-      canvasHeight,
-      marks: highlightMarks.map((mark) => ({
-        x: mark.x,
-        y: mark.y,
-        width: mark.width,
-        height: mark.height
-      }))
-    });
+    onConfirmHighlight?.(selections);
   }
 
   function modalFrameForLine(line) {
@@ -306,7 +254,7 @@ export default function ReceiptSelectorModal({
             {isPaintMode ? (
               <View style={styles.highlightInstructionFrame}>
                 <Text style={styles.highlightSubtitle}>
-                  영수증의 상품을 <Text style={styles.highlightSubtitleStrong}>색칠하면 등록</Text>할 수 있어요.
+                  상품명 주변을 <Text style={styles.highlightSubtitleStrong}>박스로 드래그</Text>하면 등록할 수 있어요.
                 </Text>
               </View>
             ) : (
@@ -323,30 +271,18 @@ export default function ReceiptSelectorModal({
             {isPaintMode ? (
               <View style={styles.highlightToolbar}>
                 <Pressable
-                  style={[styles.highlightToolButton, highlightToolMode === "move" ? styles.highlightToolButtonActive : null]}
-                  onPress={() => setHighlightToolMode("move")}
+                  style={[styles.highlightToolButton, isMoveMode ? styles.highlightToolButtonActive : null]}
+                  onPress={() => setIsMoveMode(true)}
                 >
                   <Image source={HIGHLIGHT_TOOL_ICONS.move} style={styles.highlightToolImage} />
-                  <Text style={[styles.highlightToolLabel, highlightToolMode === "move" ? styles.highlightToolLabelActive : null]}>확대/축소</Text>
+                  <Text style={[styles.highlightToolLabel, isMoveMode ? styles.highlightToolLabelActive : null]}>확대/축소</Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.highlightToolButton, highlightToolMode === "paint" ? styles.highlightToolButtonActive : null]}
-                  onPress={() => setHighlightToolMode("paint")}
+                  style={[styles.highlightToolButton, !isMoveMode ? styles.highlightToolButtonActive : null]}
+                  onPress={() => setIsMoveMode(false)}
                 >
                   <Image source={HIGHLIGHT_TOOL_ICONS.paint} style={styles.highlightToolImage} />
-                  <Text style={[styles.highlightToolLabel, highlightToolMode === "paint" ? styles.highlightToolLabelActive : null]}>색칠하기</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.highlightToolButton,
-                    highlightToolMode === "erase" ? styles.highlightToolButtonActive : null,
-                    !highlightMarks.length ? styles.highlightToolButtonDisabled : null
-                  ]}
-                  disabled={!highlightMarks.length}
-                  onPress={() => setHighlightToolMode("erase")}
-                >
-                  <Image source={HIGHLIGHT_TOOL_ICONS.erase} style={styles.highlightToolImage} />
-                  <Text style={[styles.highlightToolLabel, highlightToolMode === "erase" ? styles.highlightToolLabelActive : null]}>지우기</Text>
+                  <Text style={[styles.highlightToolLabel, !isMoveMode ? styles.highlightToolLabelActive : null]}>영역 선택</Text>
                 </Pressable>
                 <Pressable style={styles.highlightToolButton} onPress={confirmHighlight}>
                   <Image source={HIGHLIGHT_TOOL_ICONS.done} style={styles.highlightToolImage} />
@@ -356,6 +292,11 @@ export default function ReceiptSelectorModal({
             ) : (
               <View style={styles.scanConfirmBar}>
                 <Text style={styles.scanConfirmText}>박스를 터치하여 등록하거나 해제하세요.</Text>
+                {onSwitchToHighlight ? (
+                  <Pressable style={styles.switchToHighlightButton} onPress={onSwitchToHighlight}>
+                    <Text style={styles.switchToHighlightButtonText}>박스가 안 맞나요? 직접 표시하기</Text>
+                  </Pressable>
+                ) : null}
               </View>
             )}
           </View>
@@ -385,13 +326,23 @@ export default function ReceiptSelectorModal({
                     {imageUri ? <Image source={{ uri: imageUri }} style={styles.selectorImage} /> : null}
                     {isPaintMode ? (
                       <>
-                        {highlightMarks.map((mark) => (
-                          <View
-                            key={mark.id}
-                            pointerEvents="none"
-                            style={[styles.highlightMark, { left: mark.x, top: mark.y, width: mark.width, height: mark.height, borderRadius: mark.height / 2 }]}
-                          />
+                        {selectionRects.map((rect) => (
+                          <View key={rect.id} pointerEvents="box-none" style={[styles.selectionBox, { left: rect.x, top: rect.y, width: rect.width, height: rect.height }]}>
+                            <Pressable
+                              hitSlop={10}
+                              style={styles.selectionDeleteButton}
+                              onPress={() => removeSelectionRect(rect.id)}
+                            >
+                              <Text style={styles.selectionDeleteButtonText}>×</Text>
+                            </Pressable>
+                          </View>
                         ))}
+                        {draftRect ? (
+                          <View
+                            pointerEvents="none"
+                            style={[styles.selectionBox, { left: draftRect.x, top: draftRect.y, width: draftRect.width, height: draftRect.height }]}
+                          />
+                        ) : null}
                       </>
                     ) : (
                       <>
@@ -427,19 +378,6 @@ export default function ReceiptSelectorModal({
       </GestureHandlerRootView>
     </Modal>
   );
-}
-
-function estimateHighlighterSize(lines, coordinateSize, canvasWidth, canvasHeight) {
-  const heights = (Array.isArray(lines) ? lines : [])
-    .map((line) => frameForBox(line.box, coordinateSize, { width: canvasWidth, height: canvasHeight }, 0, 0, 0)?.height || 0)
-    .filter((height) => height >= 7 && height <= 34)
-    .sort((a, b) => a - b);
-  const medianHeight = heights.length ? heights[Math.floor(heights.length / 2)] : 14;
-  const height = Math.max(8, Math.min(18, Math.round(medianHeight * 0.9)));
-  return {
-    height,
-    width: Math.max(16, Math.min(36, Math.round(height * 2.0)))
-  };
 }
 
 function ocrBoxStyleForLine(line, selected) {
@@ -559,9 +497,6 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2
   },
-  highlightToolButtonDisabled: {
-    opacity: 0.45
-  },
   highlightToolImage: {
     width: 28,
     height: 28,
@@ -579,7 +514,20 @@ const styles = StyleSheet.create({
     minHeight: 24,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 8
+    paddingHorizontal: 8,
+    gap: 8
+  },
+  switchToHighlightButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e0503c"
+  },
+  switchToHighlightButtonText: {
+    color: "#e0503c",
+    fontSize: 13,
+    fontWeight: "800"
   },
   scanConfirmText: {
     color: "#5d6661",
@@ -690,9 +638,34 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%"
   },
-  highlightMark: {
+  selectionBox: {
     position: "absolute",
-    backgroundColor: "rgba(31, 141, 85, 0.28)"
+    borderWidth: 2,
+    borderColor: "#1f8d55",
+    borderRadius: 8,
+    backgroundColor: "rgba(31, 141, 85, 0.16)"
+  },
+  selectionDeleteButton: {
+    position: "absolute",
+    right: -12,
+    top: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#e0503c",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0f241a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  selectionDeleteButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 18
   },
   highlightZoomControl: {
     position: "absolute",

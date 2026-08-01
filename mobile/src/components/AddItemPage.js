@@ -15,7 +15,6 @@ const directRegisterIcon = require("../../assets/actions/action-direct-register.
 const inventoryEditIcon = require("../../assets/actions/edit_note_80dp.png");
 const resetIcon = require("../../assets/actions/action-reset.png");
 const storageTabIcon = require("../../assets/tabs/kitchen.png");
-const selectedLikeIcon = require("../../assets/actions/like.webp");
 
 export default function AddItemPage({
   mode,
@@ -44,7 +43,7 @@ export default function AddItemPage({
   receiptImageTypeChooserVisible,
   setReceiptImageTypeChooserVisible,
   receiptSourceType,
-  receiptInteractionMode,
+  receiptSelectorMode,
   drafts,
   excludedDrafts,
   receiptImage,
@@ -221,7 +220,7 @@ export default function AddItemPage({
                         <Pressable
                           style={styles.receiptPreviewHeader}
                           onPress={() => {
-                            if (openReceiptSelector) openReceiptSelector(receiptInteractionMode === "paper" ? "highlight" : "box");
+                            if (openReceiptSelector) openReceiptSelector(receiptSelectorMode === "highlight" ? "highlight" : "box");
                             else setReceiptSelectorVisible(true);
                           }}
                         >
@@ -246,18 +245,17 @@ export default function AddItemPage({
                       {drafts.length > 0 ? (
                         <>
                           <View style={styles.bulkSection}>
-                            <Pressable
-                              style={styles.bulkResetButton}
-                              accessibilityLabel={"\uc120\ud0dd \uc0c1\ud488 \ub9ac\uc14b"}
-                              onPress={resetReceiptDrafts}
-                            >
-                              <Image source={resetIcon} resizeMode="contain" style={styles.bulkResetIcon} />
-                              <Text style={styles.bulkResetText}>{"\ucd08\uae30\ud654"}</Text>
-                            </Pressable>
                             <View style={styles.bulkBox}>
                               <View style={styles.bulkSummaryWrap}>
                                 <Text style={styles.bulkSummaryText}>{selectedDraftCount + "\uac1c \uc120\ud0dd\ub428"}</Text>
-                                <Image source={selectedLikeIcon} resizeMode="contain" style={styles.bulkSummaryIcon} />
+                                <Pressable
+                                  style={styles.bulkResetButton}
+                                  accessibilityLabel={"선택 상품 리셋"}
+                                  onPress={resetReceiptDrafts}
+                                >
+                                  <Image source={resetIcon} resizeMode="contain" style={styles.bulkResetIcon} />
+                                  <Text style={styles.bulkResetText}>{"초기화"}</Text>
+                                </Pressable>
                               </View>
                               <Pressable style={styles.bulkSubmitButton} onPress={addAllDrafts}>
                                 <Image source={storageTabIcon} resizeMode="contain" style={styles.bulkSubmitIcon} />
@@ -1631,8 +1629,7 @@ const styles = StyleSheet.create({
   bulkSection: {
     // 선택 개수 라벨과 저장 액션 바를 묶는 영역.
     marginTop: 2,
-    marginBottom: 8,
-    gap: 6
+    marginBottom: 8
   },
   bulkBox: {
     // 여러 초안을 한 번에 저장할 때 쓰는 얇은 액션 바.
@@ -1660,11 +1657,6 @@ const styles = StyleSheet.create({
     gap: 7,
     flexShrink: 1
   },
-  bulkSummaryIcon: {
-    // 선택 개수 앞의 좋아요 아이콘.
-    width: 22,
-    height: 22
-  },
   bulkSummaryText: {
     // 선택된 초안 개수 요약.
     ...typography.cardTitle,
@@ -1672,8 +1664,7 @@ const styles = StyleSheet.create({
     color: "#18201c",
   },
   bulkResetButton: {
-    // 선택 상태를 초기화하는 박스 위 작은 텍스트 버튼.
-    alignSelf: "flex-start",
+    // 선택 상태를 초기화하는 버튼. 선택 개수 텍스트 옆에 인라인으로 붙는다.
     minHeight: 28,
     borderRadius: 999,
     flexDirection: "row",

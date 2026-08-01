@@ -3,6 +3,7 @@ const kakaoNativeAppKey = process.env.EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY || "";
 module.exports = ({ config }) => {
   const plugins = [
     ...(config.plugins || []),
+    "expo-video",
     [
       "@react-native-seoul/naver-login",
       {

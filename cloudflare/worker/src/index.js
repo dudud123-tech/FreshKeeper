@@ -11,6 +11,7 @@ const MAX_CLASSIFICATION_NAMES = 30;
 const MAX_CLASSIFICATION_FEEDBACK_ITEMS = 30;
 const MIN_COMMUNITY_VOTES = 3;
 const MIN_COMMUNITY_AGREEMENT = 0.6;
+const MIN_GLOBAL_EXCLUSION_VOTERS = 3;
 const DEFAULT_CLASSIFICATION = {
   category: "기타",
   storage: "냉장",
@@ -996,15 +997,31 @@ async function handleResolveProductExclusions(request, env) {
   const session = await authenticatedSession(request, env.DB);
   const subjectKey = classificationSubjectKey(clientId, session?.account_id || "");
   const placeholders = names.map(() => "?").join(", ");
-  const result = await env.DB.prepare(
-    `SELECT normalized_name
-     FROM product_candidate_exclusions
-     WHERE subject_key = ? AND normalized_name IN (${placeholders})`
-  ).bind(subjectKey, ...names.map((item) => item.normalizedName)).all();
+  const normalizedNameValues = names.map((item) => item.normalizedName);
+
+  const [personalResult, globalResult] = await Promise.all([
+    env.DB.prepare(
+      `SELECT normalized_name
+       FROM product_candidate_exclusions
+       WHERE subject_key = ? AND normalized_name IN (${placeholders})`
+    ).bind(subjectKey, ...normalizedNameValues).all(),
+    env.DB.prepare(
+      `SELECT normalized_name
+       FROM product_candidate_exclusions
+       WHERE normalized_name IN (${placeholders})
+       GROUP BY normalized_name
+       HAVING COUNT(DISTINCT subject_key) >= ?`
+    ).bind(...normalizedNameValues, MIN_GLOBAL_EXCLUSION_VOTERS).all()
+  ]);
+
+  const excludedNames = new Set([
+    ...(personalResult?.results || []).map((row) => row.normalized_name),
+    ...(globalResult?.results || []).map((row) => row.normalized_name)
+  ]);
 
   return json({
     ok: true,
-    excludedNames: (result?.results || []).map((row) => row.normalized_name)
+    excludedNames: [...excludedNames]
   });
 }
 

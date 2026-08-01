@@ -3,6 +3,7 @@ package com.palchonajae.freshkeeper
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -30,6 +31,10 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
   ReactContextBaseJavaModule(reactContext) {
 
   override fun getName(): String = "CoupangImageDetector"
+
+  companion object {
+    private const val TAG = "CoupangImageDetector"
+  }
 
   @ReactMethod
   fun detectProductImages(
@@ -65,6 +70,10 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
           key.contains("전체상품다시담기") ||
           key.contains("후기작성")
       }
+      Log.d(TAG, "bitmap=${bitmap.width}x${bitmap.height} coordinateSize=${coordinateWidth}x${coordinateHeight} isKurlyCapture=$isKurlyCapture")
+      for (line in normalizedLines) {
+        Log.d(TAG, "ocrLine id=${line.id} x=${line.x} y=${line.y} w=${line.width} h=${line.height} text=${line.text}")
+      }
       val mat = Mat()
       Utils.bitmapToMat(bitmap, mat)
 
@@ -89,10 +98,20 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
           bitmapHeight = bitmap.height,
           coordinateWidth = coordinateWidth,
           coordinateHeight = coordinateHeight
-        ) ?: continue
+        )
+        if (line == null) {
+          Log.d(TAG, "no product line matched for thumbnail rect=$cropRect")
+          continue
+        }
         val draftName = matchDraftName(draftNames, line.text) ?: cleanupProductName(line.text)
-        if (draftName.isBlank()) continue
-        if (usedRects.any { intersectionRatio(it, cropRect) > 0.45 }) continue
+        if (draftName.isBlank()) {
+          Log.d(TAG, "blank draftName for line=${line.text}")
+          continue
+        }
+        if (usedRects.any { intersectionRatio(it, cropRect) > 0.45 }) {
+          Log.d(TAG, "rect already used, skipping line=${line.text} rect=$cropRect")
+          continue
+        }
 
         usedRects.add(cropRect)
         usedDraftNames.add(normalizeText(draftName))
@@ -209,26 +228,45 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
 
       val absolute = Rect(rect.x + searchRect.x, rect.y + searchRect.y, rect.width, rect.height)
       val square = expandToSquare(absolute, expectedSide, bitmapWidth, bitmapHeight)
-      if (square.x > bitmapWidth * 0.34) continue
+      // 실제 상품 썸네일은 항상 화면 왼쪽 끝에 거의 붙어(x≈2~5%) 나열된다. 헤더/배지처럼
+      // 안쪽으로 들어간 오탐 요소를 걸러내려면 기존 0.34 기준은 너무 느슨하다.
+      if (square.x > bitmapWidth * 0.10) {
+        Log.d(TAG, "reject x-position rect=$square bitmapWidth=$bitmapWidth")
+        continue
+      }
       val ratio = square.width.toDouble() / max(1.0, square.height.toDouble())
-      if (ratio < 0.72 || ratio > 1.38) continue
-      if (!looksLikePhoto(mat, square)) continue
+      if (ratio < 0.72 || ratio > 1.38) {
+        Log.d(TAG, "reject aspect-ratio rect=$square ratio=$ratio")
+        continue
+      }
+      val photoStats = photoStats(mat, square)
+      if (!(photoStats.first > 13.0 && photoStats.second > 0.01)) {
+        Log.d(TAG, "reject looksLikePhoto rect=$square stddev=${photoStats.first} edgeRatio=${photoStats.second}")
+        continue
+      }
 
       val leftColumnBonus = if (square.x < bitmapWidth * 0.32) 40.0 else 0.0
       val sizeScore = 120.0 - abs(square.width - expectedSide)
       val score = rect.area() * 0.015 + sizeScore + leftColumnBonus
+      Log.d(TAG, "candidate rect=$square score=$score stddev=${photoStats.first} edgeRatio=${photoStats.second}")
       candidates.add(square to score)
     }
 
     roi.release()
     mask.release()
-    return candidates
+    val accepted = candidates
       .sortedByDescending { it.second }
-      .fold(mutableListOf<Rect>()) { accepted, candidate ->
-        if (accepted.none { intersectionRatio(it, candidate.first) > 0.28 }) accepted.add(candidate.first)
-        accepted
+      .fold(mutableListOf<Rect>()) { acc, candidate ->
+        if (acc.none { intersectionRatio(it, candidate.first) > 0.28 }) {
+          acc.add(candidate.first)
+        } else {
+          Log.d(TAG, "reject overlap-dedup rect=${candidate.first}")
+        }
+        acc
       }
       .sortedBy { it.y }
+    Log.d(TAG, "detectThumbnailRects accepted=${accepted.size} $accepted")
+    return accepted
   }
 
   private fun inferKurlyThumbnailRect(
@@ -271,7 +309,7 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
         val lineKey = normalizeText(line.text)
         centerY >= rectTop - yPadding &&
           centerY <= rectBottom + yPadding &&
-          line.x >= rectRight + coordinateWidth * 0.025 &&
+          line.x >= rectRight - coordinateWidth * 0.01 &&
           line.x < coordinateWidth * 0.88 &&
           isLikelyProductName(lineKey)
       }
@@ -306,6 +344,13 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
   }
 
   private fun looksLikePhoto(mat: Mat, rect: Rect): Boolean {
+    val (stddev, edgeRatio) = photoStats(mat, rect)
+    val result = stddev > 13.0 && edgeRatio > 0.01
+    if (!result) Log.d(TAG, "reject looksLikePhoto(kurly-fallback) rect=$rect stddev=$stddev edgeRatio=$edgeRatio")
+    return result
+  }
+
+  private fun photoStats(mat: Mat, rect: Rect): Pair<Double, Double> {
     val roi = Mat(mat, rect)
     val gray = Mat()
     Imgproc.cvtColor(roi, gray, Imgproc.COLOR_RGBA2GRAY)
@@ -323,7 +368,7 @@ class CoupangImageDetectorModule(private val reactContext: ReactApplicationConte
     mean.release()
     std.release()
     edges.release()
-    return stddev > 13.0 && edgeRatio > 0.01
+    return stddev to edgeRatio
   }
 
   private fun expandToSquare(rect: Rect, expectedSide: Int, bitmapWidth: Int, bitmapHeight: Int): Rect {

@@ -10,8 +10,7 @@ class SharedImagePackage : ReactPackage {
     return listOf(
       SharedImageModule(reactContext),
       CoupangImageDetectorModule(reactContext),
-      ReceiptImageNormalizerModule(reactContext),
-      ReceiptTextDetectorModule(reactContext)
+      ReceiptImageNormalizerModule(reactContext)
     )
   }
 

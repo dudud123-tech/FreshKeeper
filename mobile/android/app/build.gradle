@@ -93,7 +93,7 @@ android {
         applicationId 'com.palchonajae.freshkeeper'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
+        versionCode 13
         versionName "1.0.0"
         manifestPlaceholders = [kakaoNativeAppKey: kakaoNativeAppKey]
 
@@ -165,8 +165,7 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
-    implementation("org.opencv:opencv:4.10.0")
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.opencv:opencv:4.11.0")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";

@@ -5,14 +5,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // 정적 require이어야 Metro가 번들에 포함시키므로 배열로 하드코딩한다.
 const pages = [
-  { key: "1", type: "image", source: require("../../assets/tutorial/1page.png") },
-  { key: "2", type: "image", source: require("../../assets/tutorial/2page.png") },
-  { key: "3", type: "image", source: require("../../assets/tutorial/3page.png") },
+  { key: "1", type: "image", source: require("../../assets/tutorial/1page.webp") },
+  { key: "2", type: "image", source: require("../../assets/tutorial/2page.webp") },
+  { key: "3", type: "image", source: require("../../assets/tutorial/3page.webp") },
   { key: "4", type: "video", source: require("../../assets/tutorial/4page.mp4") },
   { key: "5", type: "video", source: require("../../assets/tutorial/5page.mp4") },
   { key: "6", type: "video", source: require("../../assets/tutorial/6page.mp4") },
-  { key: "7", type: "image", source: require("../../assets/tutorial/7page.png") },
-  { key: "8", type: "image", source: require("../../assets/tutorial/8page.png") }
+  { key: "7", type: "image", source: require("../../assets/tutorial/7page.webp") },
+  { key: "8", type: "image", source: require("../../assets/tutorial/8page.webp") }
 ];
 
 const { width: screenWidth } = Dimensions.get("window");

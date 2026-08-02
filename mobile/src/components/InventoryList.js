@@ -415,7 +415,7 @@ export default function InventoryList({
           )}
         </View>
 
-        {visibleItems.length > 0 ? <BannerAdSlot /> : null}
+        {visibleItems.length > 0 && visibleItems.length < 10 ? <BannerAdSlot /> : null}
       </View>
     </ScrollView>
   );

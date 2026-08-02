@@ -18,7 +18,6 @@ import { suggestedExpiryDate } from "../utils/expiryPresets";
 import { showInterstitialAd } from "../utils/interstitialAd";
 import { chooseItemImage } from "../utils/itemImagePicker";
 import { buildOcrCoordinateOptions, chooseBestOcrCoordinateOption, draftNameForOcrLine, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
-import { detectReceiptAiTextLineBoxes } from "../utils/receiptAiTextDetector";
 import { normalizeReceiptImageForOcr } from "../utils/receiptImageNormalizer";
 import { alignOcrLinesWithDetectedBoxes, detectReceiptTextLineBoxes } from "../utils/receiptTextLineDetector";
 import { calibrateOcrLineBoxes } from "../utils/ocrBoxCalibrator";
@@ -187,10 +186,8 @@ export function useReceiptFlow({
       lines = ocrCalibration.lines || lines;
 
       if (sourceType === "receipt" && ocrCalibration.appliedCount === 0) {
-        const aiTextBoxes = await detectReceiptAiTextLineBoxes(imageUri);
-        const detectedTextBoxes = aiTextBoxes.length ? aiTextBoxes : await detectReceiptTextLineBoxes(imageUri);
-        const requestedBoxSource = aiTextBoxes.length ? "dbnet-text-line" : "opencv-text-line";
-        lines = alignOcrLinesWithDetectedBoxes(lines, detectedTextBoxes, requestedBoxSource);
+        const detectedTextBoxes = await detectReceiptTextLineBoxes(imageUri);
+        lines = alignOcrLinesWithDetectedBoxes(lines, detectedTextBoxes, "opencv-text-line");
       }
 
       // 실물 영수증에 한해 "OCR 좌표를 얼마나 믿을 수 있는가"를 계산한다.
@@ -202,7 +199,7 @@ export function useReceiptFlow({
         const linesWithBoxCount = lines.filter((line) => line?.box).length;
         const calibratedCount = ocrCalibration.appliedCount > 0
           ? ocrCalibration.appliedCount
-          : lines.filter((line) => line.boxSource === "dbnet-text-line" || line.boxSource === "opencv-text-line").length;
+          : lines.filter((line) => line.boxSource === "opencv-text-line").length;
         coordinateConfidence = linesWithBoxCount > 0 ? calibratedCount / linesWithBoxCount : 0;
       }
 

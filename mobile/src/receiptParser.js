@@ -66,6 +66,9 @@ const noiseWords = [
   "충전기",
   "케이블",
   "샛별배송",
+  "품절",
+  "반품",
+  "주문번호",
   "배송완료",
   "배송조회",
   "배송주문관리",
@@ -171,7 +174,10 @@ const noisePatterns = [
   /물참조/i,
   /^CPN$/i,
   /^SCO\s*:/i,
-  /균일가\s*\d+\s*원/i
+  /균일가\s*\d+\s*원/i,
+  /총\s*\d+\s*건/,
+  /주문\s*(접기|펼치기)/,
+  /상품\s*(모두)?\s*보기/
 ];
 
 const foodHints = [
@@ -258,6 +264,12 @@ export function parseReceiptLines(text) {
     .slice(0, MAX_CANDIDATES);
 }
 
+// 네이티브(OpenCV) 상품 사진 매칭은 썸네일 옆 줄을 좌표만 보고 고르기 때문에 가격 줄을
+// 상품명으로 오인해 그대로 후보로 만들 수 있다. 그런 후보를 JS 파서 기준으로 다시 검증한다.
+export function isProductNameCandidate(text) {
+  return parseReceiptLines(String(text || "")).length > 0;
+}
+
 function scoreLine(line, visualIndex, totalLines) {
   const original = line.normalized;
   const compact = original.replace(/\s/g, "");
@@ -265,6 +277,7 @@ function scoreLine(line, visualIndex, totalLines) {
   let score = 0;
 
   if (!cleaned) return { ...line, name: "", score: -10 };
+  if (isPriceOnlyLine(original)) return { ...line, name: "", score: -10 };
   if (isNoiseLine(original) || isNoiseLine(cleaned)) score -= 8;
   if (hasPricePattern(original)) score += 4;
   if (hasQuantityPattern(original)) score += 1;
@@ -390,6 +403,19 @@ function isNoiseLine(line) {
 
 function isAfterPaymentArea(line) {
   return /(합계|결제|승인|카드|현금|잔돈|거스름|부가\s*세|과세|면세)/i.test(line);
+}
+
+// "6,500원 1개", "9,765원 10,500원 1개"처럼 가격과 수량만 있는 줄은 상품명이 아니다.
+// cleanProductName의 가격 제거 정규식들은 가격이 줄 "끝"에 붙어 있는 경우만 처리하므로
+// 줄 전체가 가격인 경우는 그대로 통과해 버린다. 그런 줄을 여기서 명시적으로 걸러낸다.
+function isPriceOnlyLine(line) {
+  const withoutPriceAndQuantity = line
+    .replace(/\s/g, "")
+    .replace(/\d{1,3}(?:,\d{3})+\s*원?/g, "")
+    .replace(/\d+\s*원/g, "")
+    .replace(/\d+\s*(개|입|팩|봉|병|캔|매|장|줄|박스|세트|종)/g, "")
+    .replace(/[()[\].,\-·]/g, "");
+  return !/[가-힣A-Za-z]{2,}/.test(withoutPriceAndQuantity);
 }
 
 function isMostlyDigits(line) {

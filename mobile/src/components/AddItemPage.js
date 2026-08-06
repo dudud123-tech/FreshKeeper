@@ -25,6 +25,7 @@ export default function AddItemPage({
   setManualImageUri,
   manualPurchaseUrl,
   setManualPurchaseUrl,
+  manualSubmitting,
   category,
   setCategory,
   categories,
@@ -62,6 +63,7 @@ export default function AddItemPage({
   bulkDraftForm,
   applyBulkDraftForm,
   addAllDrafts,
+  bulkSubmitting,
   resetReceiptDrafts,
   draftForms,
   DEFAULT_EXPIRY_TYPE,
@@ -114,14 +116,20 @@ export default function AddItemPage({
 
                 {mode === "manual" ? (
                   <View style={styles.form}>
+                    {manualPurchaseUrl?.trim() ? (
+                      <View style={styles.affiliateDisclosureBanner}>
+                        <Text style={styles.affiliateDisclosureText}>
+                          {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
+                        </Text>
+                      </View>
+                    ) : null}
                     {/* 직접 등록에서는 상품명 왼쪽에 대표 이미지를 붙여 둔다. */}
                     <Field label={"\uc0c1\ud488\uba85"}>
                       <View style={styles.manualNameRow}>
                         <Pressable
                           style={styles.manualNameImageButton}
                           accessibilityLabel={"\uc0c1\ud488 \uc0ac\uc9c4 \ubcc0\uacbd"}
-                          onLongPress={changeManualImage}
-                          delayLongPress={300}
+                          onPress={changeManualImage}
                         >
                           <Image
                             source={manualImageUri ? { uri: manualImageUri } : galleryIcon}
@@ -189,7 +197,11 @@ export default function AddItemPage({
                         inputMode="url"
                       />
                     </Field>
-                    <PrimaryButton label={"\ub4f1\ub85d\ud558\uae30"} onPress={submitManual} />
+                    <PrimaryButton
+                      label={manualSubmitting ? "\ub4f1\ub85d \uc911..." : "\ub4f1\ub85d\ud558\uae30"}
+                      onPress={submitManual}
+                      disabled={manualSubmitting}
+                    />
                   </View>
                 ) : (
                   <View style={styles.form}>
@@ -257,9 +269,12 @@ export default function AddItemPage({
                                   <Text style={styles.bulkResetText}>{"초기화"}</Text>
                                 </Pressable>
                               </View>
-                              <Pressable style={styles.bulkSubmitButton} onPress={addAllDrafts}>
+                              <Pressable
+                                style={[styles.bulkSubmitButton, bulkSubmitting && styles.bulkSubmitButtonDisabled]}
+                                onPress={bulkSubmitting ? undefined : addAllDrafts}
+                              >
                                 <Image source={storageTabIcon} resizeMode="contain" style={styles.bulkSubmitIcon} />
-                                <Text style={styles.bulkSubmitText}>{"\ubcf4\uad00\ud568 \uc800\uc7a5"}</Text>
+                                <Text style={styles.bulkSubmitText}>{bulkSubmitting ? "\ub4f1\ub85d \uc911..." : "\ubcf4\uad00\ud568 \uc800\uc7a5"}</Text>
                                 <Text style={styles.bulkSubmitChevron}>{"›"}</Text>
                               </Pressable>
                             </View>
@@ -283,8 +298,7 @@ export default function AddItemPage({
                                   </Pressable>
                                   <Pressable
                                     accessibilityLabel={"\uc0c1\ud488 \uc0ac\uc9c4 \ubcc0\uacbd"}
-                                    onLongPress={() => pickDraftImage?.(draft)}
-                                    delayLongPress={300}
+                                    onPress={() => pickDraftImage?.(draft)}
                                   >
                                     <Image
                                       source={getFoodImageSource({
@@ -1213,6 +1227,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10
   },
+  affiliateDisclosureBanner: {
+    // 공정위 지침 + 쿠팡 파트너스 가이드: 대가성 문구는 게시물 최상단에, 본문보다
+    // 크거나 눈에 띄는 색으로 노출해야 한다(2026-08-04 최종 승인 반려 후 위치 수정).
+    borderRadius: 10,
+    backgroundColor: "#fff0e7",
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  affiliateDisclosureText: {
+    ...typography.bodyStrong,
+    color: "#d95f3d"
+  },
   receiptStep: {
     // 영수증 관련 보조 단계가 있으면 묶는 카드 구역.
     gap: 10,
@@ -1694,6 +1720,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 7,
     paddingHorizontal: 12
+  },
+  bulkSubmitButtonDisabled: {
+    opacity: 0.6
   },
   bulkSubmitIcon: {
     // 보관함 저장 버튼 아이콘.

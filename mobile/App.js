@@ -73,6 +73,7 @@ export default function App() {
     setManualImageUri,
     manualPurchaseUrl,
     setManualPurchaseUrl,
+    manualSubmitting,
     category,
     setCategory,
     storage,
@@ -177,6 +178,7 @@ export default function App() {
     toggleCommerceCropBox,
     applyBulkDraftForm,
     addAllDrafts,
+    bulkSubmitting,
     resetReceiptDrafts,
     removeDraft,
     toggleDraftExcluded,
@@ -475,6 +477,7 @@ export default function App() {
               setManualImageUri={setManualImageUri}
               manualPurchaseUrl={manualPurchaseUrl}
               setManualPurchaseUrl={setManualPurchaseUrl}
+              manualSubmitting={manualSubmitting}
               category={category}
               setCategory={setCategory}
               categories={categories}
@@ -514,6 +517,7 @@ export default function App() {
               bulkDraftForm={bulkDraftForm}
               applyBulkDraftForm={applyBulkDraftForm}
               addAllDrafts={addAllDrafts}
+              bulkSubmitting={bulkSubmitting}
               resetReceiptDrafts={resetReceiptDrafts}
               draftForms={draftForms}
               DEFAULT_EXPIRY_TYPE={DEFAULT_EXPIRY_TYPE}

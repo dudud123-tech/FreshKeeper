@@ -108,12 +108,14 @@ export default function InventoryList({
     const rawUrl = String(url || "").trim();
     if (!rawUrl) return;
     const nextUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-    const supported = await Linking.canOpenURL(nextUrl);
-    if (!supported) {
+    try {
+      // canOpenURL은 Android 11+ 패키지 가시성 정책 때문에 실제로 열리는 링크도
+      // false를 반환하는 경우가 흔해서(false negative), 사전 체크 없이 바로 열고
+      // 실패하면 그때 안내한다.
+      await Linking.openURL(nextUrl);
+    } catch {
       Alert.alert("링크 열기 실패", "이 링크를 열 수 없습니다.");
-      return;
     }
-    Linking.openURL(nextUrl);
   }
 
   return (
@@ -277,6 +279,13 @@ export default function InventoryList({
                           </Pressable>
                         </View>
                       </View>
+                      {editForm.purchaseUrl?.trim() ? (
+                        <View style={styles.affiliateDisclosureBanner}>
+                          <Text style={styles.affiliateDisclosureText}>
+                            {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
+                          </Text>
+                        </View>
+                      ) : null}
                       <Field label={EDIT_COPY.productName}>
                         <TextInput
                           value={editForm.name}
@@ -333,7 +342,7 @@ export default function InventoryList({
                     </View>
                   ) : (
                     <View style={styles.itemContentRow}>
-                      <Pressable onLongPress={() => onChangeItemImage?.(item.id)} delayLongPress={350}>
+                      <Pressable onPress={() => onChangeItemImage?.(item.id)}>
                         <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
                       </Pressable>
                       <View style={styles.itemContent}>
@@ -1031,6 +1040,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     color: "#18201c",
     paddingHorizontal: 12
+  },
+  affiliateDisclosureBanner: {
+    // 공정위 지침 + 쿠팡 파트너스 가이드: 대가성 문구는 게시물 최상단에, 본문보다
+    // 크거나 눈에 띄는 색으로 노출해야 한다(2026-08-04 최종 승인 반려 후 위치 수정).
+    borderRadius: 10,
+    backgroundColor: "#fff0e7",
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  affiliateDisclosureText: {
+    ...typography.bodyStrong,
+    color: "#d95f3d"
   },
   dateButton: {
     minHeight: 40,

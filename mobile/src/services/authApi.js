@@ -145,10 +145,12 @@ export async function signInWithNaver() {
   const result = await NaverLogin.login();
   if (!result?.isSuccess || !result.successResponse?.accessToken) {
     if (result?.failureResponse?.isCancel) return { cancelled: true, user: null };
+    console.warn("Naver login failureResponse", JSON.stringify(result?.failureResponse || {}));
     throw new Error(
-      result?.failureResponse?.lastErrorDescriptionFromNaverSDK
-      || result?.failureResponse?.message
-      || result?.failureResponse?.lastErrorCodeFromNaverSDK
+      [
+        result?.failureResponse?.lastErrorCodeFromNaverSDK,
+        result?.failureResponse?.lastErrorDescriptionFromNaverSDK || result?.failureResponse?.message
+      ].filter(Boolean).join(": ")
       || "naver_access_token_missing"
     );
   }

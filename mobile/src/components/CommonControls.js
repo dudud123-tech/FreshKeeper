@@ -60,9 +60,12 @@ export function ChoiceGroup({ label, options, value, onChange, formatLabel = (op
   );
 }
 
-export function PrimaryButton({ label, onPress }) {
+export function PrimaryButton({ label, onPress, disabled }) {
   return (
-    <Pressable style={styles.primaryButton} onPress={onPress}>
+    <Pressable
+      style={[styles.primaryButton, disabled && styles.primaryButtonDisabled]}
+      onPress={disabled ? undefined : onPress}
+    >
       <Text style={styles.primaryButtonText}>{label}</Text>
     </Pressable>
   );
@@ -234,6 +237,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#1f7a5a",
     alignItems: "center",
     justifyContent: "center"
+  },
+  primaryButtonDisabled: {
+    opacity: 0.6
   },
   primaryButtonText: {
     ...typography.label,

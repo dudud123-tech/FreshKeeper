@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { configureExpiryNotificationHandler, scheduleExpiryNotifications } from "../services/notificationScheduler";
 
-export const DEFAULT_NOTIFICATION_SETTINGS = { enabled: false, hour: 9, minute: 0 };
+export const DEFAULT_NOTIFICATION_SETTINGS = { enabled: true, hour: 9, minute: 0 };
 
 configureExpiryNotificationHandler();
 

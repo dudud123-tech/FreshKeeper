@@ -3,7 +3,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image } from "react-native";
 import { recognizeReceiptImage } from "../ocr";
-import { parseReceiptLines } from "../receiptParser";
+import { isProductNameCandidate, parseReceiptLines } from "../receiptParser";
 import { buildOcrFeedbackPayload, feedbackFingerprint, sendOcrFeedback } from "../services/ocrFeedbackApi";
 import {
   filterExcludedProductNames,
@@ -15,12 +15,12 @@ import {
 import { extractCommerceProductImages } from "../utils/commerceImageExtractor";
 import { daysUntil, todayIso } from "../utils/date";
 import { suggestedExpiryDate } from "../utils/expiryPresets";
-import { showInterstitialAd } from "../utils/interstitialAd";
 import { chooseItemImage } from "../utils/itemImagePicker";
 import { buildOcrCoordinateOptions, chooseBestOcrCoordinateOption, draftNameForOcrLine, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
 import { normalizeReceiptImageForOcr } from "../utils/receiptImageNormalizer";
 import { alignOcrLinesWithDetectedBoxes, detectReceiptTextLineBoxes } from "../utils/receiptTextLineDetector";
 import { calibrateOcrLineBoxes } from "../utils/ocrBoxCalibrator";
+import { searchCoupangProducts } from "../services/coupangApi";
 
 export const DEFAULT_FEEDBACK_SETTINGS = { enabled: true };
 // 실물 영수증에서 OCR 좌표 보정이 "충분히 맞았다"고 볼 수 있는 최소 비율.
@@ -44,6 +44,34 @@ function guessGalleryImageKind(asset) {
   if (aspect >= 2.05 && longer <= 3200) return "screen";
   if (longer >= 1800 && aspect < 1.95) return "paper";
   return "unknown";
+}
+
+// 네이티브(OpenCV)는 상품 썸네일 오른쪽 줄 중 x가 가장 작은 줄을 상품명으로 고르는데,
+// 컬리처럼 상품명·옵션·가격이 같은 열에 세로로 쌓여 있으면 가격 줄이 몇 px 더 왼쪽이라는
+// 이유만으로 가격을 상품명으로 집어버린다. 그래서 "썸네일이 어디 있는지"만 네이티브를
+//믿고, "그 옆 어느 줄이 상품명인지"는 여기서 다시 고른다. 상품명은 항상 옵션/가격보다
+// 위에 있으므로, 유효한 상품명 후보 중 가장 위쪽 줄을 고르면 된다.
+function productLineForCropBox(cropBox, lines, coordinateSize) {
+  const box = cropBox?.box;
+  const coordinateWidth = coordinateSize?.width;
+  if (!box || !coordinateWidth) return null;
+
+  const boxRight = box.x + box.width;
+  const yPadding = Math.max(10, box.height * 0.18);
+  return lines
+    .filter((line) => {
+      const lineBox = line?.box;
+      if (!lineBox) return false;
+      const centerY = lineBox.y + lineBox.height / 2;
+      return (
+        centerY >= box.y - yPadding &&
+        centerY <= box.y + box.height + yPadding &&
+        lineBox.x >= boxRight - coordinateWidth * 0.01 &&
+        lineBox.x < coordinateWidth * 0.88 &&
+        isProductNameCandidate(line.text)
+      );
+    })
+    .sort((a, b) => a.box.y - b.box.y)[0] || null;
 }
 
 function inferReceiptImageKind(imageAsset, sourceType, options, displaySize) {
@@ -89,6 +117,7 @@ export function useReceiptFlow({
   const [excludedDrafts, setExcludedDrafts] = useState([]);
   const [draftForms, setDraftForms] = useState({});
   const [bulkDraftForm, setBulkDraftForm] = useState({ expiry: suggestedExpiryDate("", "기타", "냉장") });
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [receiptStatus, setReceiptStatus] = useState("영수증을 촬영하거나 주문내역 캡처를 불러오면 상품 후보를 자동으로 만듭니다.");
   const [feedbackSettings, setFeedbackSettings] = useState(DEFAULT_FEEDBACK_SETTINGS);
   const [feedbackStatus, setFeedbackStatus] = useState("");
@@ -221,7 +250,8 @@ export function useReceiptFlow({
         return;
       }
 
-      setSelectedOcrLineIds(lines.filter((line) => isOcrLineInDrafts(line, nextDrafts)).map((line) => line.id));
+      let selectedLineIds = lines.filter((line) => isOcrLineInDrafts(line, nextDrafts)).map((line) => line.id);
+      setSelectedOcrLineIds(selectedLineIds);
       const commerceImageResult = await extractCommerceProductImages({
         imageUri,
         imageSize: displaySize,
@@ -230,22 +260,49 @@ export function useReceiptFlow({
         draftNames: nextDrafts
       });
 
-      if (commerceImageResult.draftNames?.length) {
-        nextDrafts = commerceImageResult.draftNames;
+      // 네이티브가 찾은 썸네일마다 어떤 줄이 상품명인지 JS에서 다시 정한다(위 주석 참고).
+      // 상품이 아닌 썸네일(배송완료/반품완료 상태 아이콘 등)은 후보가 없어 자연히 걸러진다.
+      const commerceCrops = (commerceImageResult.cropBoxes || [])
+        .map((cropBox) => {
+          const line = productLineForCropBox(cropBox, lines, coordinateSize);
+          if (!line) return null;
+          return { ...cropBox, lineId: line.id, draftName: draftNameForOcrLine(line) };
+        })
+        .filter(Boolean);
+
+      // imageMap은 상품명을 키로 쓰므로, 위에서 상품명을 다시 정했으면 같이 다시 만들어야 한다.
+      const commerceImageMap = {};
+      commerceCrops.forEach((cropBox) => {
+        if (cropBox.imageUri) commerceImageMap[cropBox.draftName] = cropBox.imageUri;
+      });
+
+      const commerceDraftNames = Array.from(new Set(commerceCrops.map((cropBox) => cropBox.draftName)));
+      if (commerceDraftNames.length) {
+        nextDrafts = commerceDraftNames;
       }
-      if (commerceImageResult.selectedLineIds?.length) {
+      if (commerceCrops.length) {
         // 상품 사진 인식(OpenCV)이 일부 상품에서 실패해도, 텍스트로 이미 선택된
         // 상품까지 함께 사라지면 안 되므로 교체가 아니라 합쳐야 한다.
-        setSelectedOcrLineIds((previousIds) =>
-          Array.from(new Set([...previousIds, ...commerceImageResult.selectedLineIds]))
+        selectedLineIds = Array.from(
+          new Set([...selectedLineIds, ...commerceCrops.map((cropBox) => cropBox.lineId)])
         );
+        setSelectedOcrLineIds(selectedLineIds);
       }
-      setCommerceCropBoxes(commerceImageResult.cropBoxes || []);
-      nextDrafts = await filterExcludedProductNames(nextDrafts);
-      setSelectedOcrLineIds(
-        lines.filter((line) => isOcrLineInDrafts(line, nextDrafts)).map((line) => line.id)
-      );
-      setReceiptDrafts(nextDrafts, commerceImageResult.imageMap || {});
+      setCommerceCropBoxes(commerceCrops);
+      const filteredDrafts = await filterExcludedProductNames(nextDrafts);
+      const excludedDraftNames = nextDrafts.filter((name) => !filteredDrafts.includes(name));
+      if (excludedDraftNames.length) {
+        // 이미 확정된 선택(텍스트 매칭 + 상품 사진 매칭)을 통째로 다시 계산하면
+        // 가격 등 다른 줄이 우연히 텍스트가 겹쳐 잘못 선택될 수 있다. 제외된
+        // 상품에 해당하는 줄만 골라서 빼는 방식으로 안전하게 처리한다.
+        selectedLineIds = selectedLineIds.filter((id) => {
+          const line = lines.find((candidate) => candidate.id === id);
+          return line ? !isOcrLineInDrafts(line, excludedDraftNames) : true;
+        });
+        setSelectedOcrLineIds(selectedLineIds);
+      }
+      nextDrafts = filteredDrafts;
+      setReceiptDrafts(nextDrafts, commerceImageMap);
       setReceiptSelectorMode("box");
       setReceiptSelectorVisible(true);
       const sourceLabel = sourceType === "coupang" ? "쿠팡 주문내역" : "이미지";
@@ -587,13 +644,29 @@ export function useReceiptFlow({
     uploadProductClassificationFeedback([classificationFeedbackItem(draftName, draftForm)]);
   }
 
-  function addAllDrafts() {
-    if (!drafts.length) return;
+  async function addAllDrafts() {
+    if (!drafts.length || bulkSubmitting) return;
     const finalDrafts = drafts.filter((draftName) => !excludedDrafts.includes(draftName));
     if (!finalDrafts.length) {
       setReceiptStatus("등록할 상품 후보가 없습니다. 필요한 상품을 다시 선택해 주세요.");
       return;
     }
+
+    setBulkSubmitting(true);
+    const purchaseUrlsByDraft = {};
+    try {
+      // 영수증/주문내역에는 구매 링크가 없으니, 상품명으로 쿠팡을 검색해서 채운다.
+      // 실패하거나 못 찾은 건 그냥 빈 링크로 등록한다(등록 자체를 막지 않음).
+      const results = await Promise.all(
+        finalDrafts.map((draftName) => searchCoupangProducts(draftName))
+      );
+      finalDrafts.forEach((draftName, index) => {
+        purchaseUrlsByDraft[draftName] = results[index]?.[0]?.productUrl || "";
+      });
+    } finally {
+      setBulkSubmitting(false);
+    }
+
     const nextItems = finalDrafts.map((draftName) => {
       const draftForm = draftForms[draftName] || defaultDraftForm(draftName);
       return {
@@ -604,7 +677,8 @@ export function useReceiptFlow({
         storage: draftForm.storage,
         expiryType: defaultExpiryType,
         expiry: draftForm.expiry || bulkDraftForm.expiry,
-        imageUri: draftForm.imageUri || ""
+        imageUri: draftForm.imageUri || "",
+        purchaseUrl: purchaseUrlsByDraft[draftName] || ""
       };
     });
     setItems((current) => [...nextItems, ...current]);
@@ -614,7 +688,6 @@ export function useReceiptFlow({
     setDraftForms({});
     setTotalHighlighted(true);
     goToPage(inventoryPage);
-    showInterstitialAd();
     uploadCurrentOcrFeedback("auto", finalDrafts, initialDrafts.length ? initialDrafts : drafts);
     uploadProductClassificationFeedback(
       finalDrafts.map((draftName) =>
@@ -798,6 +871,7 @@ export function useReceiptFlow({
     toggleCommerceCropBox,
     applyBulkDraftForm,
     addAllDrafts,
+    bulkSubmitting,
     resetReceiptDrafts,
     removeDraft,
     toggleDraftExcluded,

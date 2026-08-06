@@ -1,10 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import BannerAdSlot from "./BannerAdSlot";
 import { typography } from "../theme/typography";
 import { daysUntil, itemCreatedDate } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
+import { fetchBestCategoryProducts } from "../services/coupangApi";
 
+async function openExternalUrl(url) {
+  const trimmed = String(url || "").trim();
+  if (!trimmed || !/^https?:\/\//i.test(trimmed)) return;
+  // canOpenURL은 Android 11+ 패키지 가시성 정책 때문에 실제로 열리는 링크도
+  // false를 반환하는 경우가 흔해서(false negative), 사전 체크 없이 바로 연다.
+  try {
+    await Linking.openURL(trimmed);
+  } catch {
+    // 조용히 무시 — 상품 카드는 실패해도 별도 안내 없이 그냥 아무 반응 없음
+  }
+}
+
+const shoppingCartIcon = require("../../assets/actions/shopping_cart_80dp.png");
 const expiredDashboardIcon = require("../../assets/home/priority_high_80dp.png");
 const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
 const weekDashboardIcon = require("../../assets/home/calendar_month.png");
@@ -51,6 +65,18 @@ export default function HomePage({
 }) {
   const [repurchasePanelVisible, setRepurchasePanelVisible] = useState(false);
   const [layoutWidth, setLayoutWidth] = useState(0);
+  const [bestCategoryProducts, setBestCategoryProducts] = useState([]);
+
+  useEffect(() => {
+    if (!repurchasePanelVisible || bestCategoryProducts.length) return;
+    let cancelled = false;
+    fetchBestCategoryProducts().then((products) => {
+      if (!cancelled) setBestCategoryProducts(products);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [repurchasePanelVisible, bestCategoryProducts.length]);
   const activeItems = items.filter((item) => item.status !== "completed");
   const completedItems = items.filter((item) => item.status === "completed");
   const urgentItems = [...activeItems]
@@ -188,7 +214,7 @@ export default function HomePage({
               item={item}
               width={priorityCardWidth}
               onPress={() => onOpenInventory("urgent")}
-              onLongPress={() => onChangeItemImage?.(item.id)}
+              onChangeItemImage={() => onChangeItemImage?.(item.id)}
             />
           ))}
         </ScrollView>
@@ -200,7 +226,7 @@ export default function HomePage({
       )}
 
       {repurchasePanelVisible ? (
-        <RepurchasePanel items={repurchaseItems} />
+        <RepurchasePanel items={repurchaseItems} suggestedProducts={bestCategoryProducts} />
       ) : null}
 
       <View style={styles.sectionHeader}>
@@ -225,30 +251,56 @@ export default function HomePage({
   );
 }
 
-function RepurchasePanel({ items }) {
-  if (!items.length) {
-    return (
-      <View style={styles.repurchasePanel}>
-        <Text style={styles.repurchasePanelTitle}>다시 살 상품이 아직 없습니다</Text>
-        <Text style={styles.repurchasePanelText}>완료한 상품이나 임박 상품에 구매 링크를 넣으면 여기에서 바로 열 수 있어요.</Text>
-      </View>
-    );
-  }
-
+function RepurchasePanel({ items, suggestedProducts }) {
   return (
     <View style={styles.repurchasePanel}>
-      <View style={styles.repurchasePanelHeader}>
-        <View>
-          <Text style={styles.repurchasePanelTitle}>다시 구매 바로가기</Text>
-          <Text style={styles.repurchasePanelText}>완료했거나 임박한 상품의 구매 링크를 모아 보여드려요.</Text>
+      {items.length ? (
+        <>
+          <View style={styles.repurchasePanelHeader}>
+            <View>
+              <Text style={styles.repurchasePanelTitle}>다시 구매 바로가기</Text>
+              <Text style={styles.repurchasePanelText}>완료했거나 임박한 상품의 구매 링크를 모아 보여드려요.</Text>
+            </View>
+          </View>
+          <View style={styles.repurchaseList}>
+            {items.map((item) => (
+              <RepurchaseItem key={item.id} item={item} />
+            ))}
+          </View>
+        </>
+      ) : (
+        <>
+          <Text style={styles.repurchasePanelTitle}>다시 살 상품이 아직 없습니다</Text>
+          <Text style={styles.repurchasePanelText}>완료한 상품이나 임박 상품에 구매 링크를 넣으면 여기에서 바로 열 수 있어요.</Text>
+        </>
+      )}
+
+      {suggestedProducts?.length ? (
+        <View style={styles.suggestedProductsBlock}>
+          <Text style={styles.suggestedProductsTitle}>식품 인기상품</Text>
+          <View style={styles.affiliateDisclosureBanner}>
+            <Text style={styles.affiliateDisclosureText}>
+              {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
+            </Text>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestedProductsRow}>
+            {suggestedProducts.map((product, index) => (
+              <CoupangProductCard key={`${product.productId}-${index}`} product={product} />
+            ))}
+          </ScrollView>
         </View>
-      </View>
-      <View style={styles.repurchaseList}>
-        {items.map((item) => (
-          <RepurchaseItem key={item.id} item={item} />
-        ))}
-      </View>
+      ) : null}
     </View>
+  );
+}
+
+function CoupangProductCard({ product }) {
+  return (
+    <Pressable style={styles.coupangProductCard} onPress={() => openExternalUrl(product.productUrl)}>
+      <Image source={{ uri: product.productImage }} resizeMode="cover" style={styles.coupangProductImage} />
+      <Text style={styles.coupangProductName} numberOfLines={2}>{product.productName}</Text>
+      <Text style={styles.coupangProductPrice}>{(product.productPrice || 0).toLocaleString("ko-KR")}원</Text>
+    </Pressable>
   );
 }
 
@@ -265,12 +317,13 @@ function RepurchaseItem({ item }) {
       Alert.alert("링크 확인", "http:// 또는 https://로 시작하는 구매 링크를 넣어주세요.");
       return;
     }
-    const supported = await Linking.canOpenURL(url);
-    if (!supported) {
+    try {
+      // canOpenURL은 Android 11+ 패키지 가시성 정책 때문에 실제로 열리는 링크도
+      // false를 반환하는 경우가 흔해서(false negative), 사전 체크 없이 바로 연다.
+      await Linking.openURL(url);
+    } catch {
       Alert.alert("링크 열기 실패", "이 링크를 열 수 없습니다.");
-      return;
     }
-    Linking.openURL(url);
   }
 
   return (
@@ -282,7 +335,19 @@ function RepurchaseItem({ item }) {
           <Text style={[styles.repurchaseDday, days <= 1 && styles.dDayDanger]}>{labelForDays(days)}</Text>
         </View>
         <Text style={styles.repurchaseMeta}>{item.storage} · {item.expiry}</Text>
-        <Pressable style={[styles.purchaseButton, !item.purchaseUrl && styles.purchaseButtonMuted]} onPress={openPurchaseUrl}>
+        <Pressable
+          style={[styles.purchaseButton, !item.purchaseUrl && styles.purchaseButtonMuted]}
+          onPress={openPurchaseUrl}
+          accessibilityRole="button"
+          accessibilityLabel={item.purchaseUrl ? "구매 링크 열기" : "구매 링크 없음"}
+        >
+          <View style={[styles.purchaseCartIconWrap, !item.purchaseUrl && styles.purchaseCartIconWrapMuted]}>
+            <Image
+              source={shoppingCartIcon}
+              resizeMode="contain"
+              style={[styles.purchaseCartIcon, !item.purchaseUrl && styles.purchaseCartIconMuted]}
+            />
+          </View>
           <Text style={[styles.purchaseButtonText, !item.purchaseUrl && styles.purchaseButtonTextMuted]}>
             {item.purchaseUrl ? "구매 링크 열기" : "구매 링크 등록 필요"}
           </Text>
@@ -292,7 +357,7 @@ function RepurchaseItem({ item }) {
   );
 }
 
-function PriorityCard({ item, width, onPress, onLongPress }) {
+function PriorityCard({ item, width, onPress, onChangeItemImage }) {
   const days = daysUntil(item.expiry);
   return (
     <Pressable
@@ -304,11 +369,11 @@ function PriorityCard({ item, width, onPress, onLongPress }) {
         pressed && styles.priorityCardPressed
       ]}
       onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={350}
     >
       <View style={styles.priorityTopRow}>
-        <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
+        <Pressable onPress={onChangeItemImage}>
+          <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
+        </Pressable>
       </View>
       <Text maxFontSizeMultiplier={1.3} style={styles.priorityName} numberOfLines={2}>{item.name}</Text>
       <View style={styles.priorityDdayRow}>
@@ -325,7 +390,7 @@ function RecentItem({ item, onChangeItemImage }) {
   const days = daysUntil(item.expiry);
   return (
     <View style={styles.recentItem}>
-      <Pressable onLongPress={() => onChangeItemImage?.(item.id)} delayLongPress={350}>
+      <Pressable onPress={() => onChangeItemImage?.(item.id)}>
         <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.recentImage} />
       </Pressable>
       <View style={styles.recentBody}>
@@ -673,7 +738,7 @@ const styles = StyleSheet.create({
   },
   // 오른쪽 "더보기 >" 텍스트입니다.
   moreText: {
-    ...typography.captionStrong,
+    ...typography.bodyStrong,
     color: "#68716b",
   },
   // "이번 주 먼저 먹을 것" 카드 3개를 가로로 배치하는 줄입니다.
@@ -746,14 +811,37 @@ const styles = StyleSheet.create({
   },
   purchaseButton: {
     alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
     borderRadius: 999,
     backgroundColor: "#1f7a5a",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     marginTop: 9
   },
   purchaseButtonMuted: {
     backgroundColor: "#eef4f1"
+  },
+  purchaseCartIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(255,255,255,0.24)",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  purchaseCartIconWrapMuted: {
+    backgroundColor: "transparent"
+  },
+  purchaseCartIcon: {
+    width: 15,
+    height: 15,
+    tintColor: "#fff"
+  },
+  purchaseCartIconMuted: {
+    tintColor: "#68716b",
+    opacity: 0.6
   },
   purchaseButtonText: {
     ...typography.captionStrong,
@@ -761,6 +849,56 @@ const styles = StyleSheet.create({
   },
   purchaseButtonTextMuted: {
     color: "#68716b"
+  },
+  // 쿠팡 파트너스 대가성 문구. 골드박스/인기상품처럼 파트너스 링크가 보이는
+  // 섹션 최상단에 눈에 띄게 노출해야 한다(문서: docs/tunable-options.md 참고).
+  affiliateDisclosureBanner: {
+    borderRadius: 10,
+    backgroundColor: "#fff0e7",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 10
+  },
+  affiliateDisclosureText: {
+    ...typography.bodyStrong,
+    color: "#d95f3d"
+  },
+  suggestedProductsBlock: {
+    marginTop: 16
+  },
+  suggestedProductsTitle: {
+    ...typography.bodyStrong,
+    color: "#18201c",
+  },
+  suggestedProductsRow: {
+    gap: 10,
+    marginTop: 10,
+    paddingRight: 4
+  },
+  coupangProductCard: {
+    width: 120,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e6e4df",
+    backgroundColor: "#fff",
+    padding: 8
+  },
+  coupangProductImage: {
+    width: "100%",
+    height: 100,
+    borderRadius: 8,
+    backgroundColor: "#f4f1eb"
+  },
+  coupangProductName: {
+    ...typography.caption,
+    color: "#18201c",
+    marginTop: 6,
+    minHeight: 32
+  },
+  coupangProductPrice: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+    marginTop: 4
   },
   // 이번 주 카드 한 장입니다. 카드 높이, 테두리, 내부 여백을 담당합니다.
   priorityCard: {

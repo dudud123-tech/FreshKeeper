@@ -168,6 +168,10 @@ export default {
           geminiProxyToken: Boolean(env.GEMINI_PROXY_TOKEN),
           geminiApiKey: Boolean(env.GEMINI_API_KEY),
           workersAi: Boolean(env.AI)
+        },
+        coupang: {
+          accessKey: Boolean(env.COUPANG_ACCESS_KEY),
+          secretKey: Boolean(env.COUPANG_SECRET_KEY)
         }
       });
     }
@@ -202,6 +206,26 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/api/receipt-candidates") {
       return handleReceiptCandidates(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/coupang/deeplink") {
+      return handleCoupangDeeplink(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/coupang/search") {
+      return handleCoupangSearch(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/coupang/goldbox") {
+      return handleCoupangGoldbox(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/coupang/bestcategories") {
+      return handleCoupangBestCategories(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/coupang/commission") {
+      return handleCoupangCommissionReport(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/api/product-classifications/resolve") {
@@ -1073,6 +1097,359 @@ async function handleUpdateProductExclusions(request, env) {
 
   await env.DB.batch(statements);
   return json({ ok: true, excludedCount: exclude.length, includedCount: include.length });
+}
+
+// 쿠팡 파트너스 Open API 딥링크 변환. 문서: 파일/쿠팡/api_guide.md
+const COUPANG_API_HOST = "https://api-gateway.coupang.com";
+const COUPANG_DEEPLINK_PATH = "/v2/providers/affiliate_open_api/apis/openapi/v1/deeplink";
+const MAX_COUPANG_URLS_PER_REQUEST = 10;
+const COUPANG_HOSTS = new Set(["www.coupang.com", "coupang.com", "m.coupang.com", "link.coupang.com"]);
+
+async function handleCoupangDeeplink(request, env) {
+  const accessKey = safeString(env.COUPANG_ACCESS_KEY, 200);
+  const secretKey = safeString(env.COUPANG_SECRET_KEY, 200);
+  if (!accessKey || !secretKey) return json({ ok: false, error: "coupang_not_configured" }, 503);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const rawUrls = Array.isArray(payload?.urls) ? payload.urls : payload?.url ? [payload.url] : [];
+  const urls = rawUrls
+    .map((value) => safeString(value, 2000))
+    .filter((value) => isCoupangUrl(value))
+    .slice(0, MAX_COUPANG_URLS_PER_REQUEST);
+
+  if (!urls.length) return json({ ok: false, error: "no_valid_coupang_urls" }, 400);
+
+  const authorization = await signCoupangRequest("POST", COUPANG_DEEPLINK_PATH, secretKey, accessKey);
+
+  let coupangResponse;
+  try {
+    coupangResponse = await fetch(`${COUPANG_API_HOST}${COUPANG_DEEPLINK_PATH}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authorization
+      },
+      body: JSON.stringify({ coupangUrls: urls })
+    });
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "coupang_deeplink_fetch_failed", error: safeString(error?.message, 200) }));
+    return json({ ok: false, error: "coupang_request_failed" }, 502);
+  }
+
+  const body = await coupangResponse.json().catch(() => null);
+  if (!coupangResponse.ok || !body || body.rCode !== "0") {
+    console.warn(JSON.stringify({
+      event: "coupang_deeplink_rejected",
+      status: coupangResponse.status,
+      rCode: body?.rCode,
+      message: safeString(body?.rMessage || body?.message, 200)
+    }));
+    return json({ ok: false, error: "coupang_deeplink_failed" }, 502);
+  }
+
+  const links = Array.isArray(body.data)
+    ? body.data
+        .map((entry) => ({
+          originalUrl: safeString(entry?.originalUrl, 2000),
+          shortenUrl: safeString(entry?.shortenUrl, 500)
+        }))
+        .filter((entry) => entry.originalUrl && entry.shortenUrl)
+    : [];
+
+  return json({ ok: true, links });
+}
+
+function isCoupangUrl(value) {
+  if (!/^https?:\/\//i.test(value)) return false;
+  try {
+    return COUPANG_HOSTS.has(new URL(value).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+// 상품명으로 쿠팡을 검색해 파트너스 링크가 이미 붙은 productUrl을 받아온다.
+// 문서: 파일/쿠팡/문서.md의 "GET /products/search". 분당 최대 50회 호출 제한(쿠팡 측).
+const COUPANG_SEARCH_PATH = "/v2/providers/affiliate_open_api/apis/openapi/products/search";
+const MAX_COUPANG_SEARCH_LIMIT = 10;
+
+async function handleCoupangSearch(request, env) {
+  const accessKey = safeString(env.COUPANG_ACCESS_KEY, 200);
+  const secretKey = safeString(env.COUPANG_SECRET_KEY, 200);
+  if (!accessKey || !secretKey) return json({ ok: false, error: "coupang_not_configured" }, 503);
+
+  const requestUrl = new URL(request.url);
+  const keyword = safeString(requestUrl.searchParams.get("keyword"), 200);
+  if (!keyword) return json({ ok: false, error: "missing_keyword" }, 400);
+
+  const requestedLimit = Number(requestUrl.searchParams.get("limit"));
+  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 5, 1), MAX_COUPANG_SEARCH_LIMIT);
+  const query = `keyword=${encodeURIComponent(keyword)}&limit=${limit}`;
+  const uri = `${COUPANG_SEARCH_PATH}?${query}`;
+
+  const authorization = await signCoupangRequest("GET", uri, secretKey, accessKey);
+
+  let coupangResponse;
+  try {
+    coupangResponse = await fetch(`${COUPANG_API_HOST}${uri}`, {
+      method: "GET",
+      headers: { Authorization: authorization }
+    });
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "coupang_search_fetch_failed", error: safeString(error?.message, 200) }));
+    return json({ ok: false, error: "coupang_request_failed" }, 502);
+  }
+
+  const body = await coupangResponse.json().catch(() => null);
+  if (!coupangResponse.ok || !body || body.rCode !== "0") {
+    console.warn(JSON.stringify({
+      event: "coupang_search_rejected",
+      status: coupangResponse.status,
+      rCode: body?.rCode,
+      message: safeString(body?.rMessage || body?.message, 200)
+    }));
+    return json({ ok: false, error: "coupang_search_failed" }, 502);
+  }
+
+  const products = Array.isArray(body?.data?.productData)
+    ? body.data.productData
+        .map((item) => ({
+          productId: safeNumber(item?.productId),
+          productName: safeString(item?.productName, 200),
+          productImage: safeString(item?.productImage, 1000),
+          productPrice: safeNumber(item?.productPrice),
+          productUrl: safeString(item?.productUrl, 1000),
+          isRocket: Boolean(item?.isRocket)
+        }))
+        .filter((item) => item.productUrl)
+    : [];
+
+  return json({ ok: true, products });
+}
+
+// 골드박스(오늘의 특가) — 매일 오전 7:30 갱신. 문서: 파일/쿠팡/문서.md
+const COUPANG_GOLDBOX_PATH = "/v2/providers/affiliate_open_api/apis/openapi/products/goldbox";
+
+async function handleCoupangGoldbox(request, env) {
+  const accessKey = safeString(env.COUPANG_ACCESS_KEY, 200);
+  const secretKey = safeString(env.COUPANG_SECRET_KEY, 200);
+  if (!accessKey || !secretKey) return json({ ok: false, error: "coupang_not_configured" }, 503);
+
+  const authorization = await signCoupangRequest("GET", COUPANG_GOLDBOX_PATH, secretKey, accessKey);
+
+  let coupangResponse;
+  try {
+    coupangResponse = await fetch(`${COUPANG_API_HOST}${COUPANG_GOLDBOX_PATH}`, {
+      method: "GET",
+      headers: { Authorization: authorization }
+    });
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "coupang_goldbox_fetch_failed", error: safeString(error?.message, 200) }));
+    return json({ ok: false, error: "coupang_request_failed" }, 502);
+  }
+
+  const body = await coupangResponse.json().catch(() => null);
+  if (!coupangResponse.ok || !body || body.rCode !== "0") {
+    console.warn(JSON.stringify({
+      event: "coupang_goldbox_rejected",
+      status: coupangResponse.status,
+      rCode: body?.rCode,
+      message: safeString(body?.rMessage || body?.message, 200)
+    }));
+    return json({ ok: false, error: "coupang_goldbox_failed" }, 502);
+  }
+
+  return json({ ok: true, products: normalizeCoupangProductList(body.data) });
+}
+
+// 카테고리별 베스트 상품. 1012 = 식품(이 앱의 그로서리 카테고리들이 전부 여기 속함).
+const COUPANG_BESTCATEGORIES_PATH = "/v2/providers/affiliate_open_api/apis/openapi/products/bestcategories";
+const DEFAULT_COUPANG_CATEGORY_ID = 1012;
+
+async function handleCoupangBestCategories(request, env) {
+  const accessKey = safeString(env.COUPANG_ACCESS_KEY, 200);
+  const secretKey = safeString(env.COUPANG_SECRET_KEY, 200);
+  if (!accessKey || !secretKey) return json({ ok: false, error: "coupang_not_configured" }, 503);
+
+  const requestUrl = new URL(request.url);
+  const categoryId = Number(requestUrl.searchParams.get("categoryId")) || DEFAULT_COUPANG_CATEGORY_ID;
+  const limit = Math.min(Math.max(Number(requestUrl.searchParams.get("limit")) || 10, 1), 100);
+  const uri = `${COUPANG_BESTCATEGORIES_PATH}/${categoryId}?limit=${limit}`;
+
+  const authorization = await signCoupangRequest("GET", uri, secretKey, accessKey);
+
+  let coupangResponse;
+  try {
+    coupangResponse = await fetch(`${COUPANG_API_HOST}${uri}`, {
+      method: "GET",
+      headers: { Authorization: authorization }
+    });
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "coupang_bestcategories_fetch_failed", error: safeString(error?.message, 200) }));
+    return json({ ok: false, error: "coupang_request_failed" }, 502);
+  }
+
+  const body = await coupangResponse.json().catch(() => null);
+  if (!coupangResponse.ok || !body || body.rCode !== "0") {
+    console.warn(JSON.stringify({
+      event: "coupang_bestcategories_rejected",
+      status: coupangResponse.status,
+      rCode: body?.rCode,
+      message: safeString(body?.rMessage || body?.message, 200)
+    }));
+    return json({ ok: false, error: "coupang_bestcategories_failed" }, 502);
+  }
+
+  return json({ ok: true, products: normalizeCoupangProductList(body.data) });
+}
+
+function normalizeCoupangProductList(data) {
+  if (!Array.isArray(data)) return [];
+  const seenProductIds = new Set();
+  return data
+    .map((item) => ({
+      productId: safeNumber(item?.productId),
+      productName: safeString(item?.productName, 200),
+      productImage: safeString(item?.productImage, 1000),
+      productPrice: safeNumber(item?.productPrice),
+      productUrl: safeString(item?.productUrl, 1000),
+      isRocket: Boolean(item?.isRocket)
+    }))
+    .filter((item) => {
+      if (!item.productUrl) return false;
+      // 쿠팡 API 응답 자체에 같은 productId가 중복으로 들어있는 경우가 있어서
+      // (앱 쪽 React 리스트 key 충돌로 이어짐) 여기서 한 번 걸러준다.
+      if (item.productId != null) {
+        if (seenProductIds.has(item.productId)) return false;
+        seenProductIds.add(item.productId);
+      }
+      return true;
+    });
+}
+
+// 일별 수익 리포트(클릭/주문/취소/수수료/GMV). 개발자 본인 확인용 — 반드시 토큰으로
+// 보호한다(쿠팡 파트너스 수익 데이터라 아무나 URL을 알아내면 보이면 안 됨).
+const COUPANG_COMMISSION_PATH = "/v2/providers/affiliate_open_api/apis/openapi/reports/commission";
+
+async function handleCoupangCommissionReport(request, env) {
+  const requestUrl = new URL(request.url);
+  const reportToken = safeString(env.COUPANG_REPORT_TOKEN, 200);
+  if (!reportToken || requestUrl.searchParams.get("token") !== reportToken) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const accessKey = safeString(env.COUPANG_ACCESS_KEY, 200);
+  const secretKey = safeString(env.COUPANG_SECRET_KEY, 200);
+  if (!accessKey || !secretKey) return htmlPage("<p>COUPANG_ACCESS_KEY / COUPANG_SECRET_KEY가 설정되지 않았습니다.</p>");
+
+  const today = new Date();
+  const endDate = requestUrl.searchParams.get("endDate") || formatYyyymmdd(today);
+  const startDate = requestUrl.searchParams.get("startDate") || formatYyyymmdd(new Date(today.getTime() - 29 * 86400000));
+
+  const query = `startDate=${startDate}&endDate=${endDate}`;
+  const uri = `${COUPANG_COMMISSION_PATH}?${query}`;
+  const authorization = await signCoupangRequest("GET", uri, secretKey, accessKey);
+
+  let coupangResponse;
+  try {
+    coupangResponse = await fetch(`${COUPANG_API_HOST}${uri}`, {
+      method: "GET",
+      headers: { Authorization: authorization }
+    });
+  } catch (error) {
+    return htmlPage(`<p>요청 실패: ${safeString(error?.message, 200)}</p>`);
+  }
+
+  const body = await coupangResponse.json().catch(() => null);
+  if (!coupangResponse.ok || !body || body.rCode !== "0") {
+    return htmlPage(`<p>쿠팡 응답 오류: ${safeString(body?.rMessage || body?.message, 200) || coupangResponse.status}</p>`);
+  }
+
+  const rows = Array.isArray(body.data) ? body.data : [];
+  const totals = rows.reduce(
+    (acc, row) => ({
+      commission: acc.commission + (Number(row.commission) || 0),
+      click: acc.click + (Number(row.click) || 0),
+      order: acc.order + (Number(row.order) || 0),
+      cancel: acc.cancel + (Number(row.cancel) || 0),
+      gmv: acc.gmv + (Number(row.gmv) || 0)
+    }),
+    { commission: 0, click: 0, order: 0, cancel: 0, gmv: 0 }
+  );
+
+  const rowsHtml = rows
+    .map(
+      (row) => `<tr>
+        <td>${safeString(row.date, 20)}</td>
+        <td>${Number(row.click) || 0}</td>
+        <td>${Number(row.order) || 0}</td>
+        <td>${Number(row.cancel) || 0}</td>
+        <td>${(Number(row.gmv) || 0).toLocaleString("ko-KR")}원</td>
+        <td>${(Number(row.commission) || 0).toLocaleString("ko-KR")}원</td>
+      </tr>`
+    )
+    .join("");
+
+  return htmlPage(`
+    <h1>쿠팡 파트너스 수익 리포트</h1>
+    <p>${startDate} ~ ${endDate}</p>
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead><tr><th>날짜</th><th>클릭</th><th>주문</th><th>취소</th><th>GMV</th><th>수수료</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot><tr>
+        <td>합계</td>
+        <td>${totals.click}</td>
+        <td>${totals.order}</td>
+        <td>${totals.cancel}</td>
+        <td>${totals.gmv.toLocaleString("ko-KR")}원</td>
+        <td>${totals.commission.toLocaleString("ko-KR")}원</td>
+      </tr></tfoot>
+    </table>
+  `);
+}
+
+function formatYyyymmdd(date) {
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  return `${yyyy}${mm}${dd}`;
+}
+
+async function signCoupangRequest(method, uri, secretKey, accessKey) {
+  const [path, query = ""] = uri.split("?");
+  const datetime = coupangSignedDate();
+  const message = `${datetime}${method}${path}${query}`;
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secretKey),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signatureBytes = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  const signature = [...new Uint8Array(signatureBytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+
+  return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${datetime}, signature=${signature}`;
+}
+
+function coupangSignedDate() {
+  // yyMMdd'T'HHmmss'Z', GMT. 쿠팡 가이드의 SimpleDateFormat("yyMMdd'T'HHmmss'Z'")와 동일 포맷.
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const yy = pad(now.getUTCFullYear() % 100);
+  const MM = pad(now.getUTCMonth() + 1);
+  const dd = pad(now.getUTCDate());
+  const HH = pad(now.getUTCHours());
+  const mm = pad(now.getUTCMinutes());
+  const ss = pad(now.getUTCSeconds());
+  return `${yy}${MM}${dd}T${HH}${mm}${ss}Z`;
 }
 
 async function handleReceiptCandidates(request, env) {

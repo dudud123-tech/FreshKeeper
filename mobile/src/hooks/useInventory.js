@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { categories } from "../categories";
-import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { daysUntil, itemCreatedTime, todayIso } from "../utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
 import {
@@ -9,6 +8,7 @@ import {
   pickItemImageFromLibrary,
   takeItemImagePhoto
 } from "../utils/itemImagePicker";
+import { searchCoupangProducts } from "../services/coupangApi";
 
 const ITEM_STATUS_ACTIVE = "active";
 const ITEM_STATUS_COMPLETED = "completed";
@@ -59,6 +59,7 @@ export function useInventory({
   const [name, setName] = useState("");
   const [manualImageUri, setManualImageUri] = useState("");
   const [manualPurchaseUrl, setManualPurchaseUrl] = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
   const [category, setCategory] = useState(categories[0]);
   const [storage, setStorage] = useState(storageTypes[0]);
   const [expiry, setExpiry] = useState(() => suggestedExpiryDate("", categories[0], storageTypes[0]));
@@ -160,24 +161,43 @@ export function useInventory({
     return true;
   }
 
-  function submitManual() {
-    const added = addItem({
-      name,
-      category,
-      storage,
-      expiryType: defaultExpiryType,
-      expiry,
-      imageUri: manualImageUri,
-      purchaseUrl: normalizePurchaseUrl(manualPurchaseUrl)
-    });
-    if (!added) return;
-    setName("");
-    setManualImageUri("");
-    setManualPurchaseUrl("");
-    setCategory(categories[0]);
-    setStorage(storageTypes[0]);
-    setExpiry(suggestedExpiryDate("", categories[0], storageTypes[0]));
-    onManualSubmit?.();
+  async function submitManual() {
+    if (manualSubmitting) return;
+    if (!name.trim() || !expiry.trim()) {
+      Alert.alert("입력 필요", "상품명과 날짜를 입력해 주세요.");
+      return;
+    }
+
+    let purchaseUrl = normalizePurchaseUrl(manualPurchaseUrl);
+    setManualSubmitting(true);
+    try {
+      // 구매 링크를 직접 안 붙였으면 상품명으로 쿠팡을 검색해서 자동으로 채운다.
+      // 실패하거나 결과가 없으면 그냥 빈 링크로 저장한다(등록 자체는 막지 않음).
+      if (!purchaseUrl) {
+        const products = await searchCoupangProducts(name);
+        purchaseUrl = products[0]?.productUrl || "";
+      }
+
+      const added = addItem({
+        name,
+        category,
+        storage,
+        expiryType: defaultExpiryType,
+        expiry,
+        imageUri: manualImageUri,
+        purchaseUrl
+      });
+      if (!added) return;
+      setName("");
+      setManualImageUri("");
+      setManualPurchaseUrl("");
+      setCategory(categories[0]);
+      setStorage(storageTypes[0]);
+      setExpiry(suggestedExpiryDate("", categories[0], storageTypes[0]));
+      onManualSubmit?.();
+    } finally {
+      setManualSubmitting(false);
+    }
   }
 
   async function pickManualImage() {
@@ -269,7 +289,7 @@ export function useInventory({
       storage: item.storage,
       expiryType: item.expiryType || defaultExpiryType,
       expiry: item.expiry,
-      purchaseUrl: item.purchaseUrl || DEFAULT_PURCHASE_URL
+      purchaseUrl: item.purchaseUrl || ""
     });
     onStartEditScroll?.(item.id);
   }
@@ -310,6 +330,7 @@ export function useInventory({
     setManualImageUri,
     manualPurchaseUrl,
     setManualPurchaseUrl,
+    manualSubmitting,
     category,
     setCategory,
     storage,

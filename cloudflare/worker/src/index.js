@@ -1118,11 +1118,16 @@ async function handleCoupangDeeplink(request, env) {
   }
 
   const rawUrls = Array.isArray(payload?.urls) ? payload.urls : payload?.url ? [payload.url] : [];
-  const urls = rawUrls
+  const candidateUrls = rawUrls
     .map((value) => safeString(value, 2000))
     .filter((value) => isCoupangUrl(value))
     .slice(0, MAX_COUPANG_URLS_PER_REQUEST);
 
+  if (!candidateUrls.length) return json({ ok: false, error: "no_valid_coupang_urls" }, 400);
+
+  // link.coupang.com/a/... 같은 단축 링크(쿠팡 앱 "공유하기"로 만든 링크 등)는
+  // 딥링크 API가 그대로 못 받는다 — 리다이렉트를 한 번 풀어서 실제 상품 URL을 얻는다.
+  const urls = (await Promise.all(candidateUrls.map(resolveCoupangShortUrl))).filter(Boolean);
   if (!urls.length) return json({ ok: false, error: "no_valid_coupang_urls" }, 400);
 
   const authorization = await signCoupangRequest("POST", COUPANG_DEEPLINK_PATH, secretKey, accessKey);
@@ -1171,6 +1176,28 @@ function isCoupangUrl(value) {
     return COUPANG_HOSTS.has(new URL(value).hostname.toLowerCase());
   } catch {
     return false;
+  }
+}
+
+// link.coupang.com/a/... 같은 단축 링크는 리다이렉트(Location 헤더)만 한 번 읽어서
+// 실제 상품 URL로 바꾼다 — 페이지 본문은 요청하지 않는다(redirect: "manual").
+// www.coupang.com/m.coupang.com/coupang.com URL은 이미 원본이라 그대로 돌려준다.
+async function resolveCoupangShortUrl(url) {
+  let host = "";
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (host !== "link.coupang.com") return url;
+
+  try {
+    const response = await fetch(url, { redirect: "manual" });
+    const location = response.headers.get("location");
+    return location && isCoupangUrl(location) ? location : null;
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "coupang_short_url_resolve_failed", error: safeString(error?.message, 200) }));
+    return null;
   }
 }
 

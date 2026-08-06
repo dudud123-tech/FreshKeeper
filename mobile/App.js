@@ -71,8 +71,6 @@ export default function App() {
     setName,
     manualImageUri,
     setManualImageUri,
-    manualPurchaseUrl,
-    setManualPurchaseUrl,
     manualSubmitting,
     category,
     setCategory,
@@ -81,6 +79,7 @@ export default function App() {
     expiry,
     setExpiry,
     editingId,
+    editSubmitting,
     editForm,
     setEditForm,
     categoryFilter,
@@ -475,8 +474,6 @@ export default function App() {
               setName={setName}
               manualImageUri={manualImageUri}
               setManualImageUri={setManualImageUri}
-              manualPurchaseUrl={manualPurchaseUrl}
-              setManualPurchaseUrl={setManualPurchaseUrl}
               manualSubmitting={manualSubmitting}
               category={category}
               setCategory={setCategory}
@@ -547,6 +544,7 @@ export default function App() {
               focusItemId={focusItemId}
               clearFocusItem={() => setFocusItemId("")}
               editingId={editingId}
+              editSubmitting={editSubmitting}
               editForm={editForm}
               setEditForm={setEditForm}
               categories={categories}

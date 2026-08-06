@@ -67,6 +67,7 @@ export default function InventoryList({
   focusItemId,
   clearFocusItem,
   editingId,
+  editSubmitting,
   editForm,
   setEditForm,
   categories,
@@ -274,8 +275,11 @@ export default function InventoryList({
                           <Pressable style={styles.editBannerCancelAction} onPress={cancelEdit}>
                             <Text style={styles.editBannerCancelText}>{EDIT_COPY.cancel}</Text>
                           </Pressable>
-                          <Pressable style={styles.editBannerSaveAction} onPress={saveEdit}>
-                            <Text style={styles.editBannerSaveText}>{EDIT_COPY.save}</Text>
+                          <Pressable
+                            style={[styles.editBannerSaveAction, editSubmitting && styles.editBannerSaveActionDisabled]}
+                            onPress={editSubmitting ? undefined : saveEdit}
+                          >
+                            <Text style={styles.editBannerSaveText}>{editSubmitting ? "저장 중..." : EDIT_COPY.save}</Text>
                           </Pressable>
                         </View>
                       </View>
@@ -308,11 +312,10 @@ export default function InventoryList({
                           autoCapitalize="none"
                           autoCorrect={false}
                           autoComplete="off"
-                          importantForAutofill="no"
+                          importantForAutofill="noExcludeDescendants"
                           spellCheck={false}
                           keyboardType="url"
                           inputMode="url"
-                          textContentType="URL"
                           returnKeyType="done"
                           disableFullscreenUI
                           style={styles.input}
@@ -1022,6 +1025,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 10,
     paddingVertical: 5
+  },
+  editBannerSaveActionDisabled: {
+    opacity: 0.6
   },
   editBannerCancelText: {
     ...typography.captionStrong,

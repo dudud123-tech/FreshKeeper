@@ -8,7 +8,7 @@ import {
   pickItemImageFromLibrary,
   takeItemImagePhoto
 } from "../utils/itemImagePicker";
-import { searchCoupangProducts } from "../services/coupangApi";
+import { convertToPartnerLink, searchCoupangProducts } from "../services/coupangApi";
 
 const ITEM_STATUS_ACTIVE = "active";
 const ITEM_STATUS_COMPLETED = "completed";
@@ -58,12 +58,12 @@ export function useInventory({
   const [mode, setMode] = useState("receipt");
   const [name, setName] = useState("");
   const [manualImageUri, setManualImageUri] = useState("");
-  const [manualPurchaseUrl, setManualPurchaseUrl] = useState("");
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [category, setCategory] = useState(categories[0]);
   const [storage, setStorage] = useState(storageTypes[0]);
   const [expiry, setExpiry] = useState(() => suggestedExpiryDate("", categories[0], storageTypes[0]));
   const [editingId, setEditingId] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
   const [editForm, setEditForm] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("전체");
   const [sortMode, setSortMode] = useState(sortOptions[0]);
@@ -168,15 +168,15 @@ export function useInventory({
       return;
     }
 
-    let purchaseUrl = normalizePurchaseUrl(manualPurchaseUrl);
     setManualSubmitting(true);
+    let purchaseUrl = "";
     try {
-      // 구매 링크를 직접 안 붙였으면 상품명으로 쿠팡을 검색해서 자동으로 채운다.
-      // 실패하거나 결과가 없으면 그냥 빈 링크로 저장한다(등록 자체는 막지 않음).
-      if (!purchaseUrl) {
-        const products = await searchCoupangProducts(name);
-        purchaseUrl = products[0]?.productUrl || "";
-      }
+      // 직접등록엔 구매 링크 입력칸이 없다(URL 타입 입력창에 삼성패스 자동완성이
+      // 자꾸 떠서 상품명 입력을 방해해 뺐음, 2026-08-06). 저장 시점에 상품명으로
+      // 쿠팡을 백그라운드에서 검색해서 채운다. 실패/결과 없음도 그냥 빈 링크로
+      // 저장한다(등록 자체는 막지 않음). 링크를 고치고 싶으면 보관함 수정에서.
+      const products = await searchCoupangProducts(name);
+      purchaseUrl = products[0]?.productUrl || "";
 
       const added = addItem({
         name,
@@ -190,7 +190,6 @@ export function useInventory({
       if (!added) return;
       setName("");
       setManualImageUri("");
-      setManualPurchaseUrl("");
       setCategory(categories[0]);
       setStorage(storageTypes[0]);
       setExpiry(suggestedExpiryDate("", categories[0], storageTypes[0]));
@@ -299,11 +298,33 @@ export function useInventory({
     setEditForm(null);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
+    if (editSubmitting) return;
     if (!editForm?.name?.trim() || !editForm?.expiry?.trim()) {
       Alert.alert("입력 필요", "상품명과 날짜를 입력해 주세요.");
       return;
     }
+
+    let purchaseUrl = normalizePurchaseUrl(editForm.purchaseUrl);
+    const originalItem = items.find((item) => item.id === editingId);
+    const hadPurchaseUrlBefore = Boolean(String(originalItem?.purchaseUrl || "").trim());
+    setEditSubmitting(true);
+    try {
+      // 링크 칸이 비어있어도, 원래 링크가 있던 상품이면 사용자가 일부러 지운 것이니
+      // 존중해서 빈 채로 저장한다. 애초에 링크가 없던 상품일 때만 상품명으로 쿠팡을
+      // 검색해서 자동으로 채운다. 검색 실패/결과 없음도 그냥 빈 링크로 저장한다.
+      if (!purchaseUrl && !hadPurchaseUrlBefore) {
+        const products = await searchCoupangProducts(editForm.name);
+        purchaseUrl = products[0]?.productUrl || "";
+      } else if (purchaseUrl) {
+        // 직접 붙여넣은(또는 예전부터 있던) 링크가 일반 쿠팡 링크일 수 있으니
+        // 파트너스 링크로 변환한다. 이미 파트너스 링크면 그대로 돌아온다.
+        purchaseUrl = await convertToPartnerLink(purchaseUrl);
+      }
+    } finally {
+      setEditSubmitting(false);
+    }
+
     setItems((current) =>
       current.map((item) =>
         item.id === editingId
@@ -311,7 +332,7 @@ export function useInventory({
               ...item,
               ...editForm,
               name: editForm.name.trim(),
-              purchaseUrl: normalizePurchaseUrl(editForm.purchaseUrl)
+              purchaseUrl
             }
           : item
       )
@@ -328,8 +349,6 @@ export function useInventory({
     setName,
     manualImageUri,
     setManualImageUri,
-    manualPurchaseUrl,
-    setManualPurchaseUrl,
     manualSubmitting,
     category,
     setCategory,
@@ -338,6 +357,7 @@ export function useInventory({
     expiry,
     setExpiry,
     editingId,
+    editSubmitting,
     editForm,
     setEditForm,
     categoryFilter,

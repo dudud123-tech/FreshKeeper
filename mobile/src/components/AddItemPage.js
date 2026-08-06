@@ -23,8 +23,6 @@ export default function AddItemPage({
   setName,
   manualImageUri,
   setManualImageUri,
-  manualPurchaseUrl,
-  setManualPurchaseUrl,
   manualSubmitting,
   category,
   setCategory,
@@ -116,13 +114,6 @@ export default function AddItemPage({
 
                 {mode === "manual" ? (
                   <View style={styles.form}>
-                    {manualPurchaseUrl?.trim() ? (
-                      <View style={styles.affiliateDisclosureBanner}>
-                        <Text style={styles.affiliateDisclosureText}>
-                          {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
-                        </Text>
-                      </View>
-                    ) : null}
                     {/* 직접 등록에서는 상품명 왼쪽에 대표 이미지를 붙여 둔다. */}
                     <Field label={"\uc0c1\ud488\uba85"}>
                       <View style={styles.manualNameRow}>
@@ -184,18 +175,6 @@ export default function AddItemPage({
                     </View>
                     <Field label={"\uc18c\ube44\uae30\ud55c"}>
                       <DateButton value={expiry} onPress={() => openCalendar(expiry, setExpiry)} />
-                    </Field>
-                    <Field label={"구매 링크"}>
-                      <TextInput
-                        value={manualPurchaseUrl}
-                        onChangeText={setManualPurchaseUrl}
-                        placeholder={"쿠팡 공유 링크를 붙여넣어 주세요"}
-                        style={styles.input}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        keyboardType="url"
-                        inputMode="url"
-                      />
                     </Field>
                     <PrimaryButton
                       label={manualSubmitting ? "\ub4f1\ub85d \uc911..." : "\ub4f1\ub85d\ud558\uae30"}
@@ -1226,18 +1205,6 @@ const styles = StyleSheet.create({
     color: "#18201c",
     paddingHorizontal: 12,
     paddingVertical: 10
-  },
-  affiliateDisclosureBanner: {
-    // 공정위 지침 + 쿠팡 파트너스 가이드: 대가성 문구는 게시물 최상단에, 본문보다
-    // 크거나 눈에 띄는 색으로 노출해야 한다(2026-08-04 최종 승인 반려 후 위치 수정).
-    borderRadius: 10,
-    backgroundColor: "#fff0e7",
-    paddingHorizontal: 10,
-    paddingVertical: 8
-  },
-  affiliateDisclosureText: {
-    ...typography.bodyStrong,
-    color: "#d95f3d"
   },
   receiptStep: {
     // 영수증 관련 보조 단계가 있으면 묶는 카드 구역.

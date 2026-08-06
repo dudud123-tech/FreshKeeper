@@ -314,8 +314,9 @@ export default function InventoryList({
                           autoComplete="off"
                           importantForAutofill="noExcludeDescendants"
                           spellCheck={false}
-                          keyboardType="url"
-                          inputMode="url"
+                          // keyboardType="url"(안드로이드 TYPE_TEXT_VARIATION_URI)이
+                          // 삼성패스 자동완성 제안을 부르는 실제 트리거로 보여서 뺐다.
+                          // 대부분 링크를 붙여넣기로 넣으니 기본 키보드로도 무리 없음.
                           returnKeyType="done"
                           disableFullscreenUI
                           style={styles.input}

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import BannerAdSlot from "./BannerAdSlot";
 import { typography } from "../theme/typography";
 import { daysUntil, itemCreatedDate } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
 import { fetchBestCategoryProducts } from "../services/coupangApi";
+import { computePersonalRankings } from "../utils/personalRankings";
 
 async function openExternalUrl(url) {
   const trimmed = String(url || "").trim();
@@ -66,6 +67,8 @@ export default function HomePage({
   const [repurchasePanelVisible, setRepurchasePanelVisible] = useState(false);
   const [layoutWidth, setLayoutWidth] = useState(0);
   const [bestCategoryProducts, setBestCategoryProducts] = useState([]);
+  const [rankingModalVisible, setRankingModalVisible] = useState(false);
+  const personalRankings = useMemo(() => computePersonalRankings(items), [items]);
 
   useEffect(() => {
     if (!repurchasePanelVisible || bestCategoryProducts.length) return;
@@ -173,7 +176,19 @@ export default function HomePage({
           <Text style={styles.growthFooterText}>다음 단계까지 {growthReport.remainingXp} XP</Text>
           <Text style={styles.growthFooterText}>누적 {growthReport.xp} XP</Text>
         </View>
+        <Pressable
+          style={styles.growthRankingLink}
+          onPress={() => setRankingModalVisible(true)}
+        >
+          <Text style={styles.growthRankingLinkText}>나의 냉장고 랭킹 보기 &gt;</Text>
+        </Pressable>
       </Pressable>
+
+      <PersonalRankingModal
+        visible={rankingModalVisible}
+        onClose={() => setRankingModalVisible(false)}
+        rankings={personalRankings}
+      />
 
       <View style={styles.dashboardStatsCard}>
         {dashboardStats.map((stat, index) => (
@@ -248,6 +263,56 @@ export default function HomePage({
 
       <BannerAdSlot />
     </ScrollView>
+  );
+}
+
+function PersonalRankingModal({ visible, onClose, rankings }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.rankingBackdrop} onPress={onClose}>
+        <ScrollView
+          contentContainerStyle={styles.rankingScrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Pressable style={styles.rankingCard} onPress={() => {}}>
+            <Text style={styles.rankingCardTitle}>나의 냉장고 랭킹</Text>
+            {rankings ? (
+              <>
+                <RankingSection title="가장 많이 등록한 상품" entries={rankings.mostRegistered} unit="번" />
+                <RankingSection title="소비기한을 놓친 상품" entries={rankings.mostMissed} unit="번" />
+                <RankingSection title="가장 많이 다룬 카테고리" entries={rankings.topCategories} unit="개" />
+              </>
+            ) : (
+              <View style={styles.rankingEmpty}>
+                <Text style={styles.rankingEmptyText}>
+                  아직 데이터가 부족해요. 상품을 몇 개 더 등록하면 나만의 랭킹을 보여드릴게요.
+                </Text>
+              </View>
+            )}
+            <Pressable style={styles.rankingCloseButton} onPress={onClose}>
+              <Text style={styles.rankingCloseButtonText}>닫기</Text>
+            </Pressable>
+          </Pressable>
+        </ScrollView>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function RankingSection({ title, entries, unit }) {
+  if (!entries.length) return null;
+  return (
+    <View style={styles.rankingSection}>
+      <Text style={styles.rankingSectionTitle}>{title}</Text>
+      {entries.map((entry, index) => (
+        <View key={`${entry.label}-${index}`} style={styles.rankingRow}>
+          <Text style={styles.rankingRowRank}>{index + 1}</Text>
+          <Text style={styles.rankingRowLabel} numberOfLines={1}>{entry.label}</Text>
+          <Text style={styles.rankingRowCount}>{entry.count}{unit}</Text>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -720,6 +785,87 @@ const styles = StyleSheet.create({
     marginTop: 8
   },
   growthFooterText: {
+    ...typography.captionStrong,
+    color: "#68716b",
+  },
+  growthRankingLink: {
+    marginTop: 10,
+    alignSelf: "flex-start"
+  },
+  growthRankingLinkText: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+  },
+  rankingBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.48)",
+    justifyContent: "center"
+  },
+  rankingScrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingVertical: 12
+  },
+  rankingCard: {
+    marginHorizontal: 16,
+    borderRadius: 22,
+    backgroundColor: "#fff",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 }
+  },
+  rankingCardTitle: {
+    ...typography.sectionTitle,
+    color: "#18201c",
+    marginBottom: 12
+  },
+  rankingSection: {
+    marginBottom: 16
+  },
+  rankingSectionTitle: {
+    ...typography.bodyStrong,
+    color: "#18201c",
+    marginBottom: 8
+  },
+  rankingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 5
+  },
+  rankingRowRank: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+    width: 18
+  },
+  rankingRowLabel: {
+    ...typography.body,
+    color: "#18201c",
+    flex: 1
+  },
+  rankingRowCount: {
+    ...typography.captionStrong,
+    color: "#68716b",
+  },
+  rankingEmpty: {
+    paddingVertical: 20
+  },
+  rankingEmptyText: {
+    ...typography.body,
+    color: "#68716b",
+    textAlign: "center"
+  },
+  rankingCloseButton: {
+    marginTop: 6,
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16
+  },
+  rankingCloseButtonText: {
     ...typography.captionStrong,
     color: "#68716b",
   },

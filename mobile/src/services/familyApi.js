@@ -18,7 +18,8 @@ export function cleanItemForFamilySync(item, { defaultExpiryType, todayIso }) {
     createdAt: item.createdAt || new Date().toISOString(),
     status: item.status === "completed" ? "completed" : "active",
     completedAt: item.status === "completed" ? item.completedAt || "" : "",
-    favorite: Boolean(item.favorite)
+    favorite: Boolean(item.favorite),
+    purchaseUrl: item.purchaseUrl || ""
   };
 }
 

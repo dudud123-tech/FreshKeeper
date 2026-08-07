@@ -20,6 +20,21 @@
 | --- | --- | --- | --- |
 | 박스 모드 vs 색칠 모드 전환 임계값 | `COORDINATE_CONFIDENCE_THRESHOLD` in `mobile/src/hooks/useReceiptFlow.js` | `0.5` | 실물 영수증 OCR 좌표 신뢰도가 이 값 미만이면 자동으로 색칠(드래그) 모드로 전환 |
 
+## 가족 공유 동기화 (Cloudflare Worker + 앱)
+
+| 옵션 | 위치 | 설명 |
+| --- | --- | --- |
+| 가족 동기화 대상 필드 | `mobile/src/services/familyApi.js`(`cleanItemForFamilySync`), `cloudflare/worker/src/index.js`(`normalizeFamilyItems`, `handleGetFamilyItems`, `handlePutFamilyItems`), `cloudflare/worker/migrations/0016_family_group_items_purchase_url.sql` | ⚠️ **가족 공유 스키마에 없는 필드는 앱 재시작마다 조용히 사라진다.** 가족 공유가 켜져 있으면 앱을 켤 때마다 서버 데이터로 로컬 상품 목록을 통째로 덮어쓰는데(`useFamilySync.js`의 마운트 시 자동 `pullFamilyItems`, `addLocal` 없이 호출됨 — 병합이 아니라 전체 교체), `cleanItemForFamilySync`에 없는 필드는 서버에 애초에 저장이 안 되니 다음 pull에서 지워진다. 구매 링크(`purchaseUrl`)가 이 이유로 사라지는 버그가 있었다(2026-08-07 수정, `family_group_items` 테이블에 `purchase_url` 컬럼 추가). **새 상품 필드를 추가할 때마다 이 동기화 화이트리스트에도 넣어야 한다는 걸 잊지 말 것.** |
+| 잔여 위험(수정 안 됨) | `useFamilySync.js`의 마운트 시 자동 pull | 스키마에 필드를 넣어도, 로컬 저장 직후 push가 서버에 반영되기 전에 다음 pull이 먼저 오면 그 사이 값은 여전히 덮어써질 수 있다(전체 교체 방식이라 병합이 아님). 지금은 필드 누락만 고쳤고, pull-vs-push 경합 자체는 별도 개선 과제로 남겨둠. |
+
+## 개인 랭킹 (홈 화면 냉장고 관리단계 카드)
+
+| 옵션 | 위치 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| 랭킹 표시 최소 표본 수 | `MIN_RANKING_SAMPLE_SIZE` in `mobile/src/utils/personalRankings.js` | `5` | 등록한 상품이 이 개수 미만이면 랭킹 대신 "아직 데이터가 부족해요" 빈 상태를 보여줌 |
+
+전부 로컬 `items` 배열로 클라이언트에서 계산한다(서버 호출 없음) — 로그인 여부와 무관하게 항상 동작. "가장 많이 등록한 상품"/"소비기한을 놓친 상품"은 `normalizeProductName`으로 표기 차이를 묶어서 센다. (2026-08-07)
+
 ## 릴리즈 빌드
 
 | 옵션 | 위치 | 설명 |

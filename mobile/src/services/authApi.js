@@ -108,7 +108,19 @@ export async function signInWithKakao() {
 
   await initializeKakao();
   const { login, me } = await import("@react-native-kakao/user");
-  const result = await login();
+  let result;
+  try {
+    result = await login();
+  } catch (error) {
+    const message = String(error?.message || "");
+    if (/keyhash/i.test(message)) {
+      // 카카오 개발자 콘솔에 이 빌드의 서명 키 해시가 등록 안 된 경우.
+      // 직접 keytool/openssl로 계산할 필요 없이 SDK가 실제 값을 알려준다.
+      const keyHash = await getKeyHashAndroidSafe();
+      throw new Error(`Android keyHash validation failed. 등록 필요한 키 해시: ${keyHash || "확인 실패"}`);
+    }
+    throw error;
+  }
   if (!result?.idToken) throw new Error("kakao_id_token_missing");
   const profile = await me().catch(() => null);
 
@@ -304,6 +316,15 @@ async function initializeKakao() {
   const { initializeKakaoSDK } = await import("@react-native-kakao/core");
   await initializeKakaoSDK(KAKAO_NATIVE_APP_KEY);
   initializedKakaoAppKey = KAKAO_NATIVE_APP_KEY;
+}
+
+async function getKeyHashAndroidSafe() {
+  try {
+    const { getKeyHashAndroid } = await import("@react-native-kakao/core");
+    return await getKeyHashAndroid();
+  } catch {
+    return "";
+  }
 }
 
 async function initializeNaver() {

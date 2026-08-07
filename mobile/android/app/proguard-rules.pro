@@ -50,3 +50,27 @@
 -dontwarn javax.annotation.**
 -dontwarn retrofit2.KotlinExtensions
 -dontwarn retrofit2.KotlinExtensions$*
+
+# Kakao Login SDK — 카카오 SDK는 AAR에 consumer proguard 규칙을 사실상 안 넣어준다
+# (v2-user에 AppLifecycleObserver 두 줄이 전부).
+# 카카오 SDK는 내부적으로 Gson을 쓰는데, Gson의 EnumTypeAdapter 생성자는 enum 상수를
+# 이름으로 되찾는다:  classOfT.getField(constant.name())
+# Enum.name()은 생성자에 박힌 원본 문자열("TokenNotFound")을 그대로 돌려주는 반면
+# R8은 static 필드명을 a, b... 로 바꿔버려서 getField가 못 찾고 터진다:
+#   "java.lang.NoSuchFieldException: TokenNotFound"
+#   (com.kakao.sdk.common.model.ClientErrorCause.TokenNotFound)
+# 이 예외는 OkHttp Dispatcher 백그라운드 스레드에서 나는 FATAL이라 JS try/catch로
+# 못 막고 앱이 그대로 강제 종료된다. 증상 세 가지가 전부 이것 하나 때문이었다:
+# 카카오 로그인 크래시, 카카오 로그아웃 크래시, 그리고 구글로 로그인해도 로그아웃 시
+# 크래시(signOutAccount가 provider와 무관하게 항상 카카오 logout을 호출해서).
+# (2026-08-07, minify를 켠 cc5a039 커밋부터 깨져 있었는데 그동안 테스트를 안 해서 늦게 발견)
+-keep class com.kakao.sdk.** { *; }
+-dontwarn com.kakao.sdk.**
+
+# 위와 같은 Gson enum 패턴은 다른 라이브러리에서도 언제든 터질 수 있어서,
+# enum 상수 이름은 전역으로 보존한다(난독화 대상에서만 빼는 거라 크기 영향은 미미).
+-keepclassmembers enum * {
+    <fields>;
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}

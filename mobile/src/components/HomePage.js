@@ -279,13 +279,6 @@ function PersonalRankingModal({ visible, onClose, rankings }) {
             <Text style={styles.rankingCardTitle}>나의 냉장고 랭킹</Text>
             {rankings ? (
               <>
-                {hasAnyPurchaseUrl(rankings) ? (
-                  <View style={styles.affiliateDisclosureBanner}>
-                    <Text style={styles.affiliateDisclosureText}>
-                      {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
-                    </Text>
-                  </View>
-                ) : null}
                 <RankingSection title="가장 많이 등록한 상품" entries={rankings.mostRegistered} unit="번" />
                 <RankingSection title="소비기한을 놓친 상품" entries={rankings.mostMissed} unit="번" />
                 <RankingSection title="가장 많이 다룬 카테고리" entries={rankings.topCategories} unit="개" />
@@ -304,12 +297,6 @@ function PersonalRankingModal({ visible, onClose, rankings }) {
         </ScrollView>
       </Pressable>
     </Modal>
-  );
-}
-
-function hasAnyPurchaseUrl(rankings) {
-  return [...(rankings?.mostRegistered || []), ...(rankings?.mostMissed || [])].some(
-    (entry) => entry.purchaseUrl
   );
 }
 

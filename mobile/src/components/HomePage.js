@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from "react-native-reanimated";
 import BannerAdSlot from "./BannerAdSlot";
 import { typography } from "../theme/typography";
 import { daysUntil, itemCreatedDate } from "../utils/date";
@@ -17,6 +18,28 @@ async function openExternalUrl(url) {
   } catch {
     // 조용히 무시 — 상품 카드는 실패해도 별도 안내 없이 그냥 아무 반응 없음
   }
+}
+
+// "나의 랭킹" 배지 위를 사선으로 스쳐 지나가는 은은한 흰색 하이라이트.
+function ShimmerHighlight() {
+  const translateX = useSharedValue(-24);
+
+  useEffect(() => {
+    translateX.value = withRepeat(
+      withSequence(
+        withTiming(-24, { duration: 0 }),
+        withTiming(100, { duration: 900 }),
+        withTiming(100, { duration: 0 })
+      ),
+      -1
+    );
+  }, [translateX]);
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }, { rotate: "18deg" }]
+  }));
+
+  return <Animated.View pointerEvents="none" style={[styles.growthRankingBadgeShine, shimmerStyle]} />;
 }
 
 const shoppingCartIcon = require("../../assets/actions/shopping_cart_80dp.png");
@@ -157,9 +180,19 @@ export default function HomePage({
         />
         <View style={styles.growthHeader}>
           <View>
-            <View style={styles.growthEyebrowPill}>
-              <Text style={styles.growthEyebrow}>냉장고 관리단계</Text>
-              <Text style={styles.growthEyebrowLeaf}>❤</Text>
+            <View style={styles.growthEyebrowRow}>
+              <View style={styles.growthEyebrowPill}>
+                <Text style={styles.growthEyebrowLeaf}>❤</Text>
+                <Text style={styles.growthEyebrow}>냉장고 관리단계</Text>
+              </View>
+              <Pressable
+                style={styles.growthRankingBadge}
+                onPress={() => setRankingModalVisible(true)}
+              >
+                <ShimmerHighlight />
+                <Text style={styles.growthRankingBadgeIcon}>🏆</Text>
+                <Text style={styles.growthRankingBadgeText}>나의 랭킹</Text>
+              </Pressable>
             </View>
             <Text style={styles.growthTitle}>
               <Text>{growthLevel.name}</Text>
@@ -176,12 +209,6 @@ export default function HomePage({
           <Text style={styles.growthFooterText}>다음 단계까지 {growthReport.remainingXp} XP</Text>
           <Text style={styles.growthFooterText}>누적 {growthReport.xp} XP</Text>
         </View>
-        <Pressable
-          style={styles.growthRankingLink}
-          onPress={() => setRankingModalVisible(true)}
-        >
-          <Text style={styles.growthRankingLinkText}>나의 냉장고 랭킹 보기 &gt;</Text>
-        </Pressable>
       </Pressable>
 
       <PersonalRankingModal
@@ -731,6 +758,12 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingRight: 112
   },
+  growthEyebrowRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 7
+  },
   growthEyebrowPill: {
     alignSelf: "flex-start",
     flexDirection: "row",
@@ -740,7 +773,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 4,
-    marginBottom: 7,
     marginLeft: -4
   },
   growthEyebrow: {
@@ -800,13 +832,32 @@ const styles = StyleSheet.create({
     ...typography.captionStrong,
     color: "#68716b",
   },
-  growthRankingLink: {
-    marginTop: 10,
-    alignSelf: "flex-start"
+  growthRankingBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#e8f7ef",
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    overflow: "hidden"
   },
-  growthRankingLinkText: {
+  growthRankingBadgeShine: {
+    position: "absolute",
+    top: -8,
+    bottom: -8,
+    left: 0,
+    width: 10,
+    backgroundColor: "rgba(255,255,255,0.65)"
+  },
+  growthRankingBadgeIcon: {
+    fontSize: 11
+  },
+  growthRankingBadgeText: {
     ...typography.captionStrong,
     color: "#1f7a5a",
+    fontSize: 11
   },
   rankingBackdrop: {
     flex: 1,

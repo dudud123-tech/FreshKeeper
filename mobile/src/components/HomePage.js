@@ -308,18 +308,20 @@ function RankingSection({ title, entries, unit }) {
       {entries.map((entry, index) => (
         <View key={`${entry.label}-${index}`} style={styles.rankingRow}>
           <Text style={styles.rankingRowRank}>{index + 1}</Text>
-          <Text style={styles.rankingRowLabel} numberOfLines={1}>{entry.label}</Text>
+          <View style={styles.rankingRowLabelWrap}>
+            <Text style={styles.rankingRowLabel} numberOfLines={1}>{entry.label}</Text>
+            {entry.purchaseUrl ? (
+              <Pressable
+                style={styles.rankingCartButton}
+                onPress={() => openExternalUrl(entry.purchaseUrl)}
+                accessibilityRole="button"
+                accessibilityLabel="구매 링크 열기"
+              >
+                <Image source={shoppingCartIcon} resizeMode="contain" style={styles.rankingCartIcon} />
+              </Pressable>
+            ) : null}
+          </View>
           <Text style={styles.rankingRowCount}>{entry.count}{unit}</Text>
-          {entry.purchaseUrl ? (
-            <Pressable
-              style={styles.rankingCartButton}
-              onPress={() => openExternalUrl(entry.purchaseUrl)}
-              accessibilityRole="button"
-              accessibilityLabel="구매 링크 열기"
-            >
-              <Image source={shoppingCartIcon} resizeMode="contain" style={styles.rankingCartIcon} />
-            </Pressable>
-          ) : null}
         </View>
       ))}
     </View>
@@ -852,10 +854,16 @@ const styles = StyleSheet.create({
     color: "#1f7a5a",
     width: 18
   },
+  rankingRowLabelWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
   rankingRowLabel: {
     ...typography.body,
     color: "#18201c",
-    flex: 1
+    flexShrink: 1
   },
   rankingRowCount: {
     ...typography.captionStrong,
@@ -868,7 +876,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#edf7f2",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 4
+    flexShrink: 0
   },
   rankingCartIcon: {
     width: 15,

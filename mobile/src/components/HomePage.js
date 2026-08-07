@@ -279,6 +279,13 @@ function PersonalRankingModal({ visible, onClose, rankings }) {
             <Text style={styles.rankingCardTitle}>나의 냉장고 랭킹</Text>
             {rankings ? (
               <>
+                {hasAnyPurchaseUrl(rankings) ? (
+                  <View style={styles.affiliateDisclosureBanner}>
+                    <Text style={styles.affiliateDisclosureText}>
+                      {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
+                    </Text>
+                  </View>
+                ) : null}
                 <RankingSection title="가장 많이 등록한 상품" entries={rankings.mostRegistered} unit="번" />
                 <RankingSection title="소비기한을 놓친 상품" entries={rankings.mostMissed} unit="번" />
                 <RankingSection title="가장 많이 다룬 카테고리" entries={rankings.topCategories} unit="개" />
@@ -300,6 +307,12 @@ function PersonalRankingModal({ visible, onClose, rankings }) {
   );
 }
 
+function hasAnyPurchaseUrl(rankings) {
+  return [...(rankings?.mostRegistered || []), ...(rankings?.mostMissed || [])].some(
+    (entry) => entry.purchaseUrl
+  );
+}
+
 function RankingSection({ title, entries, unit }) {
   if (!entries.length) return null;
   return (
@@ -310,6 +323,16 @@ function RankingSection({ title, entries, unit }) {
           <Text style={styles.rankingRowRank}>{index + 1}</Text>
           <Text style={styles.rankingRowLabel} numberOfLines={1}>{entry.label}</Text>
           <Text style={styles.rankingRowCount}>{entry.count}{unit}</Text>
+          {entry.purchaseUrl ? (
+            <Pressable
+              style={styles.rankingCartButton}
+              onPress={() => openExternalUrl(entry.purchaseUrl)}
+              accessibilityRole="button"
+              accessibilityLabel="구매 링크 열기"
+            >
+              <Image source={shoppingCartIcon} resizeMode="contain" style={styles.rankingCartIcon} />
+            </Pressable>
+          ) : null}
         </View>
       ))}
     </View>
@@ -850,6 +873,20 @@ const styles = StyleSheet.create({
   rankingRowCount: {
     ...typography.captionStrong,
     color: "#68716b",
+  },
+  rankingCartButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#edf7f2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 4
+  },
+  rankingCartIcon: {
+    width: 15,
+    height: 15,
+    tintColor: "#1f7a5a"
   },
   rankingEmpty: {
     paddingVertical: 20

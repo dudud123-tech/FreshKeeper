@@ -20,9 +20,12 @@ function wasMissed(item, today) {
 
 // list를 keyFn으로 묶어서 개수 순으로 정렬한 배열을 돌려준다.
 // normalize가 true면 상품명 표기 차이(공백, 괄호 등)를 묶어서 센다.
-function topByCount(list, keyFn, { normalize = false } = {}) {
+// purchaseUrlFn을 주면, 같은 그룹 안에서 구매 링크가 있는 항목을 하나 찾아 붙여준다
+// (카트 아이콘으로 쿠팡 파트너스 링크 열기용).
+function topByCount(list, keyFn, { normalize = false, purchaseUrlFn } = {}) {
   const counts = new Map();
   const labels = new Map();
+  const purchaseUrls = new Map();
   list.forEach((item) => {
     const raw = keyFn(item);
     if (!raw) return;
@@ -30,9 +33,13 @@ function topByCount(list, keyFn, { normalize = false } = {}) {
     if (!key) return;
     counts.set(key, (counts.get(key) || 0) + 1);
     if (!labels.has(key)) labels.set(key, raw);
+    if (purchaseUrlFn && !purchaseUrls.get(key)) {
+      const url = String(purchaseUrlFn(item) || "").trim();
+      if (url) purchaseUrls.set(key, url);
+    }
   });
   return [...counts.entries()]
-    .map(([key, count]) => ({ label: labels.get(key), count }))
+    .map(([key, count]) => ({ label: labels.get(key), count, purchaseUrl: purchaseUrls.get(key) || "" }))
     .sort((a, b) => b.count - a.count);
 }
 
@@ -46,8 +53,14 @@ export function computePersonalRankings(items) {
 
   return {
     totalCount: list.length,
-    mostRegistered: topByCount(list, (item) => item.name, { normalize: true }).slice(0, 5),
-    mostMissed: topByCount(missedItems, (item) => item.name, { normalize: true }).slice(0, 5),
+    mostRegistered: topByCount(list, (item) => item.name, {
+      normalize: true,
+      purchaseUrlFn: (item) => item.purchaseUrl
+    }).slice(0, 5),
+    mostMissed: topByCount(missedItems, (item) => item.name, {
+      normalize: true,
+      purchaseUrlFn: (item) => item.purchaseUrl
+    }).slice(0, 5),
     topCategories: topByCount(list, (item) => item.category).slice(0, 5)
   };
 }

@@ -24,6 +24,7 @@ import LaunchScreen from "./src/components/LaunchScreen";
 import OnboardingScreen from "./src/components/OnboardingScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
 import SettingsPanel from "./src/components/SettingsPanel";
+import WhatsNewModal from "./src/components/WhatsNewModal";
 import { useAuth } from "./src/hooks/useAuth";
 import { useExpiryNotifications } from "./src/hooks/useExpiryNotifications";
 import { useFamilySync } from "./src/hooks/useFamilySync";
@@ -39,6 +40,7 @@ import { chooseItemImage } from "./src/utils/itemImagePicker";
 const STORAGE_KEY = "fresh-keeper-mobile-items-v1";
 const SETTINGS_KEY = "fresh-keeper-mobile-settings-v1";
 const ONBOARDING_KEY = "fresh-keeper-onboarding-seen-v1";
+const LAST_SEEN_VERSION_KEY = "fresh-keeper-last-seen-version-code-v1";
 const storageTypes = ["냉장", "냉동", "실온"];
 const categoryFilters = ["전체", ...categories];
 const sortOptions = ["소비기한순", "등록일순"];
@@ -244,6 +246,8 @@ export default function App() {
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [updateRequired, setUpdateRequired] = useState(false);
   const [updatePlayStoreUrl, setUpdatePlayStoreUrl] = useState("");
+  const [whatsNewVisible, setWhatsNewVisible] = useState(false);
+  const [whatsNewContent, setWhatsNewContent] = useState(null);
   const sharedImageInFlightRef = useRef(false);
   const createReceiptCandidatesRef = useRef(createReceiptCandidates);
 
@@ -255,7 +259,7 @@ export default function App() {
     if (Platform.OS !== "android") return;
     // 서버가 정한 최소 버전보다 낮으면 업데이트 화면으로 막는다. 서버 응답이
     // 없거나(오프라인 등) 버전 정보를 못 읽으면 그냥 통과시킨다(fail open).
-    fetchAndroidVersionRequirement().then((requirement) => {
+    fetchAndroidVersionRequirement().then(async (requirement) => {
       if (!requirement) return;
       const currentVersionCode = Number(Constants.expoConfig?.android?.versionCode);
       const minVersionCode = Number(requirement.minSupportedVersionCode);
@@ -263,7 +267,22 @@ export default function App() {
       if (currentVersionCode < minVersionCode) {
         setUpdatePlayStoreUrl(requirement.playStoreUrl || "");
         setUpdateRequired(true);
+        return; // 업데이트부터 해야 하니, 새소식은 실제로 새 버전을 켰을 때 보여준다.
       }
+
+      // 방금 업데이트해서 이전에 기록해둔 버전보다 지금 버전이 높으면 새소식을 한 번
+      // 보여준다. 처음 설치한 사용자는 비교할 이전 기록이 없으니 그냥 지금 버전만
+      // 조용히 기록하고 넘어간다(온보딩 화면이 그 역할을 대신함).
+      const storedRaw = await AsyncStorage.getItem(LAST_SEEN_VERSION_KEY);
+      const storedVersionCode = storedRaw ? Number(storedRaw) : null;
+      if (storedVersionCode !== null && currentVersionCode > storedVersionCode) {
+        const whatsNew = requirement.whatsNew;
+        if (whatsNew && Number(whatsNew.versionCode) === currentVersionCode) {
+          setWhatsNewContent(whatsNew);
+          setWhatsNewVisible(true);
+        }
+      }
+      await AsyncStorage.setItem(LAST_SEEN_VERSION_KEY, String(currentVersionCode));
     });
   }, []);
 
@@ -476,6 +495,11 @@ export default function App() {
           {launchVisible ? <LaunchScreen onDone={finishLaunch} /> : null}
           {!launchVisible && onboardingVisible ? <OnboardingScreen onDone={finishOnboarding} /> : null}
           {updateRequired ? <ForceUpdateScreen playStoreUrl={updatePlayStoreUrl} /> : null}
+          <WhatsNewModal
+            visible={!launchVisible && whatsNewVisible}
+            content={whatsNewContent}
+            onClose={() => setWhatsNewVisible(false)}
+          />
         </>
       }
     >

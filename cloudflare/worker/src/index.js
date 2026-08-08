@@ -161,6 +161,20 @@ const AI_CANDIDATE_ALLOW_HINTS = [
 const MIN_SUPPORTED_ANDROID_VERSION_CODE = 1;
 const ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.palchonajae.freshkeeper";
 
+// 업데이트 직후 첫 실행에서 한 번 보여줄 "새로워진 점" 안내. versionCode가 앱의
+// 실제 배포 버전과 일치할 때만 노출된다(mobile/App.js에서 직접 비교). 재빌드 없이
+// 문구만 고칠 수 있게 서버 쪽에 둔 것 — 새 버전 낼 때마다 이 값을 그 versionCode로
+// 갱신하고 배포하면 된다.
+const ANDROID_WHATS_NEW = {
+  versionCode: 19,
+  title: "이번 업데이트에서 달라진 점",
+  items: [
+    "카카오 로그인/로그아웃 중 앱이 꺼지던 문제를 고쳤어요",
+    "나의 냉장고 랭킹을 확인할 수 있어요 (자주 산 상품, 놓친 소비기한 등)",
+    "구매 링크 자동완성 정확도를 높였어요"
+  ]
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -188,7 +202,8 @@ export default {
         ok: true,
         android: {
           minSupportedVersionCode: MIN_SUPPORTED_ANDROID_VERSION_CODE,
-          playStoreUrl: ANDROID_PLAY_STORE_URL
+          playStoreUrl: ANDROID_PLAY_STORE_URL,
+          whatsNew: ANDROID_WHATS_NEW
         }
       });
     }

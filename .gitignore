@@ -31,6 +31,10 @@ mobile/.idea/
 mobile/tools/인증키.txt
 client_secret_*.json
 mobile/client_secret_*.json
+mobile/android/keystore.properties
+mobile/android/app/release.keystore
+*.jks
+mobile/android/local-release-build.ps1
 
 # Downloaded model/source artifacts for local experiments
 mobile/tools/dbnet-lab/models/

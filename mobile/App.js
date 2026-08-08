@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -6,6 +7,7 @@ import {
   BackHandler,
   DeviceEventEmitter,
   NativeModules,
+  Platform,
   ScrollView,
   useWindowDimensions,
   View
@@ -15,6 +17,7 @@ import { categories, suggestCategory } from "./src/categories";
 import AddItemPage from "./src/components/AddItemPage";
 import AppShell, { appShellStyles } from "./src/components/AppShell";
 import CalendarModal from "./src/components/CalendarModal";
+import ForceUpdateScreen from "./src/components/ForceUpdateScreen";
 import HomePage from "./src/components/HomePage";
 import InventoryList from "./src/components/InventoryList";
 import LaunchScreen from "./src/components/LaunchScreen";
@@ -27,6 +30,7 @@ import { useFamilySync } from "./src/hooks/useFamilySync";
 import { useGrowthSync } from "./src/hooks/useGrowthSync";
 import { useInventory } from "./src/hooks/useInventory";
 import { useReceiptFlow } from "./src/hooks/useReceiptFlow";
+import { fetchAndroidVersionRequirement } from "./src/services/appVersionApi";
 import {
   todayIso,
 } from "./src/utils/date";
@@ -238,11 +242,29 @@ export default function App() {
   });
   const [launchVisible, setLaunchVisible] = useState(!launchScreenShown);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
+  const [updateRequired, setUpdateRequired] = useState(false);
+  const [updatePlayStoreUrl, setUpdatePlayStoreUrl] = useState("");
   const sharedImageInFlightRef = useRef(false);
   const createReceiptCandidatesRef = useRef(createReceiptCandidates);
 
   useEffect(() => {
     mobileAds().initialize().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    // 서버가 정한 최소 버전보다 낮으면 업데이트 화면으로 막는다. 서버 응답이
+    // 없거나(오프라인 등) 버전 정보를 못 읽으면 그냥 통과시킨다(fail open).
+    fetchAndroidVersionRequirement().then((requirement) => {
+      if (!requirement) return;
+      const currentVersionCode = Number(Constants.expoConfig?.android?.versionCode);
+      const minVersionCode = Number(requirement.minSupportedVersionCode);
+      if (!Number.isFinite(currentVersionCode) || !Number.isFinite(minVersionCode)) return;
+      if (currentVersionCode < minVersionCode) {
+        setUpdatePlayStoreUrl(requirement.playStoreUrl || "");
+        setUpdateRequired(true);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -453,6 +475,7 @@ export default function App() {
           />
           {launchVisible ? <LaunchScreen onDone={finishLaunch} /> : null}
           {!launchVisible && onboardingVisible ? <OnboardingScreen onDone={finishOnboarding} /> : null}
+          {updateRequired ? <ForceUpdateScreen playStoreUrl={updatePlayStoreUrl} /> : null}
         </>
       }
     >

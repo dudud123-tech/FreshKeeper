@@ -12,6 +12,24 @@ const MAX_CLASSIFICATION_FEEDBACK_ITEMS = 30;
 const MIN_COMMUNITY_VOTES = 3;
 const MIN_COMMUNITY_AGREEMENT = 0.6;
 const MIN_GLOBAL_EXCLUSION_VOTERS = 3;
+const RANKINGS_DISPLAY_LIMIT = 30;
+// 개발자 본인이 릴리즈 테스트 중 등록한 것으로 확인된 계정/기기 — 전체 랭킹 집계에서 제외.
+// (2026-08-08) 로그인 계정 2개: dndud123@gmail.com(Google), 팔촌아재(Naver, 개인정보처리방침의 그 개발자).
+// 익명 device: 8개는 전부 개발자의 고정 테스트 영수증(국내산백오이2개입1개 + 국내산청경채150g1팩 +
+// 오뚜기옛날자른당면300g1개 + 홍루이젠호밀빵햄치즈샌드위치74g2개 세트)을 반복 등록한 재설치 흔적으로
+// 본인이 직접 확인해줌 — 다른 익명 device: 기록은 이 세트가 없어 그대로 둠.
+const RANKINGS_EXCLUDED_SUBJECT_KEYS = [
+  "account:453e4abb-c648-4c42-9155-f8f21ac77e1b",
+  "account:452735c3-3b2e-4cf0-b966-2326060aca08",
+  "device:device_mrt849mm_i3ba32k7d84qdryl",
+  "device:device_ms7hrcyj_iz4wkrsyv9i0wvhp",
+  "device:device_msacd8c4_ewn29e26zv67b0sp",
+  "device:device_msdrm42e_gavrt0j13yn08t2i",
+  "device:device_msg0orcz_vctfnmcula2efqlw",
+  "device:device_msh9fvy4_n8a3me6aa1azrkix",
+  "device:device_msi8y23l_tm2ohu1on2y8jlfy",
+  "device:device_msizihce_sg0dt0z4ihbduqgo"
+];
 const DEFAULT_CLASSIFICATION = {
   category: "기타",
   storage: "냉장",
@@ -137,6 +155,12 @@ const AI_CANDIDATE_ALLOW_HINTS = [
   "\uB780"
 ];
 
+// 강제 업데이트 기준. 이 값보다 낮은 versionCode로 실행 중인 앱은 새 화면으로
+// 막고 스토어로 유도한다. 새 버전을 강제하고 싶을 때 이 숫자만 올리고 배포하면 됨
+// (앱 재빌드 불필요 — mobile/android/app/build.gradle의 versionCode와는 별개다).
+const MIN_SUPPORTED_ANDROID_VERSION_CODE = 1;
+const ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.palchonajae.freshkeeper";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -157,6 +181,20 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/account-deletion") {
       return htmlPage(accountDeletionHtml());
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/app-version") {
+      return json({
+        ok: true,
+        android: {
+          minSupportedVersionCode: MIN_SUPPORTED_ANDROID_VERSION_CODE,
+          playStoreUrl: ANDROID_PLAY_STORE_URL
+        }
+      });
+    }
+
+    if (request.method === "GET" && url.pathname === "/rankings") {
+      return handleProductRankingsPage(request, env);
     }
 
     if (request.method === "GET" && url.pathname === "/api/health") {
@@ -419,6 +457,86 @@ function accountDeletionHtml() {
       이메일: <a href="mailto:palchonajae@gmail.com">palchonajae@gmail.com</a>
     </div>
   `);
+}
+
+async function handleProductRankingsPage(request, env) {
+  if (!env.DB) return htmlPage(publicPage("전체 랭킹", "<h1>전체 랭킹</h1><p>서버 데이터베이스가 설정되지 않았습니다.</p>"));
+
+  const excludedPlaceholders = RANKINGS_EXCLUDED_SUBJECT_KEYS.map(() => "?").join(", ");
+  const [summary, ranking] = await Promise.all([
+    env.DB.prepare(
+      `SELECT COUNT(DISTINCT subject_key) as userCount, COUNT(DISTINCT normalized_name) as productCount
+       FROM product_classification_preferences
+       WHERE subject_key NOT IN (${excludedPlaceholders})`
+    ).bind(...RANKINGS_EXCLUDED_SUBJECT_KEYS).first(),
+    env.DB.prepare(
+      `SELECT normalized_name, COUNT(DISTINCT subject_key) as userCount
+       FROM product_classification_preferences
+       WHERE subject_key NOT IN (${excludedPlaceholders})
+       GROUP BY normalized_name
+       ORDER BY userCount DESC, normalized_name ASC
+       LIMIT ?`
+    ).bind(...RANKINGS_EXCLUDED_SUBJECT_KEYS, RANKINGS_DISPLAY_LIMIT).all()
+  ]);
+
+  const rows = ranking?.results || [];
+  const userCount = Number(summary?.userCount) || 0;
+  const productCount = Number(summary?.productCount) || 0;
+  const updatedAt = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+
+  const rankMedal = (rank) => (rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : String(rank));
+
+  const rowsHtml = rows.length
+    ? rows
+        .map(
+          (row, index) => `<li class="rank-item">
+            <span class="rank-badge">${rankMedal(index + 1)}</span>
+            <span class="rank-name">${escapeHtml(row.normalized_name)}</span>
+            <span class="rank-count">${Number(row.userCount) || 0}명 등록</span>
+          </li>`
+        )
+        .join("")
+    : `<li class="rank-empty">아직 등록된 상품이 없어요.</li>`;
+
+  return htmlPage(
+    publicPage(
+      "전체 랭킹",
+      `
+    <style>
+      .rank-list { list-style: none; margin: 24px 0 0; padding: 0; }
+      .rank-item { display: flex; align-items: center; gap: 14px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+      .rank-item:last-child { border-bottom: 0; }
+      .rank-badge { width: 32px; flex-shrink: 0; text-align: center; font-weight: 700; color: var(--green); }
+      .rank-name { flex: 1; font-weight: 600; color: var(--ink); word-break: break-all; }
+      .rank-count { flex-shrink: 0; color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
+      .rank-empty { color: var(--muted); padding: 12px 4px; }
+      .rank-note { margin-top: 24px; font-size: 0.9rem; }
+    </style>
+    <h1>전체 랭킹</h1>
+    <p class="meta">지금까지 ${userCount.toLocaleString("ko-KR")}명이 참여해서 ${productCount.toLocaleString("ko-KR")}개 상품을 등록했어요</p>
+    <p>다른 사람들은 어떤 상품을 많이 등록했는지, 등록해본 사람이 몇 명인지 순위로 보여드려요. 상위 ${RANKINGS_DISPLAY_LIMIT}개까지만 표시해요.</p>
+    <ol class="rank-list">${rowsHtml}</ol>
+    <p class="rank-note">아직 참여 인원이 많지 않아 순위가 자주 바뀔 수 있어요 · 갱신: ${escapeHtml(updatedAt)}</p>
+  `
+    )
+  );
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
+    }
+  });
 }
 
 async function handleGoogleLogin(request, env) {

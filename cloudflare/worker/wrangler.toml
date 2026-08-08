@@ -2,6 +2,7 @@ name = "freshkeeper-ocr-feedback"
 main = "src/index.js"
 compatibility_date = "2026-05-28"
 account_id = "972de950c9f840b912e6bed3a29ca467"
+workers_dev = true
 
 [[d1_databases]]
 binding = "DB"
@@ -18,3 +19,7 @@ bucket_name = "freshkeeper-family-images"
 
 [triggers]
 crons = [ "20 18 * * *" ]
+
+[[routes]]
+pattern = "ranking.lotto-studio.net"
+custom_domain = true

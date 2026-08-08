@@ -79,3 +79,25 @@
 | 수익 리포트 기본 조회 기간 | `handleCoupangCommissionReport` in `cloudflare/worker/src/index.js` | 최근 30일 | `startDate`/`endDate` 쿼리로 override 가능(형식 `yyyyMMdd`, 최대 30일 범위가 쿠팡 API 제약) |
 
 ⚠️ `/api/coupang/goldbox`(오늘의 특가) Worker 엔드포인트는 만들어뒀지만 **앱에서 안 씀** — 실제로 호출해보니 카테고리 필터가 안 되고(음료부터 에어컨, 호텔 숙박권까지 뒤섞여 나옴) `categoryName` 필드도 안 내려줘서 클라이언트에서 식품만 걸러낼 수도 없었다. 이 앱 맥락(유통기한 관리)엔 안 맞아서 홈 화면 위젯을 뺐다. 나중에 다른 용도로 쓸 수도 있어 엔드포인트 자체는 남겨둠. (2026-08-06)
+
+## 전체 랭킹 웹페이지 (Cloudflare Worker)
+
+| 옵션 | 위치 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| 표시 순위 개수 | `RANKINGS_DISPLAY_LIMIT` in `cloudflare/worker/src/index.js` | `30` | `GET /rankings`에서 상위 몇 개 상품까지 보여줄지. SQL `LIMIT`과 화면 표시 개수가 같은 값을 공유함 |
+| 집계 제외 subject_key | `RANKINGS_EXCLUDED_SUBJECT_KEYS` in `cloudflare/worker/src/index.js` | 개발자 본인 계정 2개 | 아래 참고 |
+
+`GET /rankings`는 "상품별로 몇 명이 등록해봤는지" 순위를 공개 HTML로 보여준다. 새 추적 없이 기존 `product_classification_preferences` 테이블(`subject_key`, `normalized_name`이 PK)을 `GROUP BY normalized_name`으로 집계만 한다 — 로그인 계정과 기기(`account:`/`device:` subject_key)를 구분 없이 "참여자 수"로 합산. 이름 표시는 `normalized_name`을 그대로 쓴다(같은 그룹 안에서 `original_name`은 여러 값이 섞여 있어 대표값이 불안정하므로). `htmlPage()`/`publicPage()` 헬퍼를 그대로 재사용하는 `/privacy`, `/account-deletion`과 같은 패턴. 앱에는 아직 링크 연결 안 함(홈 화면에 나중에 추가 예정), 쿠팡 파트너스 구매 링크도 이번엔 뺐다 — 참여자가 적어 적극 홍보 전이라 심플하게 순위만. workers.dev 기본 URL로 서빙 중이며, 나중에 개인 도메인(`lotto-studio.net`)의 서브도메인으로 연결할 계획. (2026-08-08)
+
+⚠️ **개발자 본인의 릴리즈 테스트가 실제 참여자로 집계된다.** `mobile/src/services/clientIdentity.js`의 `client_id`는 AsyncStorage에만 저장되고 재설치·앱 데이터 삭제·새 에뮬레이터마다 랜덤으로 새로 생성되는데, 로그인 없이 테스트하면 서버 입장에선 실제 신규 사용자의 최초 설치와 **완전히 구분이 안 된다**(디버그 플래그·앱 버전 등 판별 필드가 애초에 없음). 실제로 1위 "국내산백오이2개입1개"(테스트용으로 반복 등록하던 상품)의 등록 10건 중 8건이 로그인 없는 익명 `device:` 기록이었고 날짜가 릴리즈 버그 수정 이력(위 "릴리즈 빌드" 절의 08-02/08-04/08-06/08-07)과 겹쳤다. 로그인 계정으로 확인 가능했던 2건(`dndud123@gmail.com` Google 계정, "팔촌아재" Naver 계정 — 둘 다 개발자 본인)만 `RANKINGS_EXCLUDED_SUBJECT_KEYS`로 집계에서 제외했고, 이걸로 총계가 23명/132개 → 21명/129개로 줄어 애초에 알고 있던 기준치와 일치했다. **익명 `device:` 기록은 실제 1회성 이탈 사용자와 데이터 패턴(한 세션에 몇 개 등록하고 다시 안 옴)이 똑같아 구분할 근거가 없어 그대로 뒀다** — 완전한 해결은 아니고, 로그인 안 한 테스트 노이즈는 여전히 섞여 있을 수 있다는 걸 감안해서 볼 것. (2026-08-08)
+
+`/rankings`는 Cloudflare 커스텀 도메인 `ranking.lotto-studio.net`에도 연결되어 있다(`cloudflare/worker/wrangler.toml`의 `[[routes]]`, `pattern = "ranking.lotto-studio.net"`, `custom_domain = true` — DNS 레코드도 `wrangler deploy`가 자동 생성). 워커 전체가 이 커스텀 도메인에서도 그대로 서빙되므로 `/api/health` 등 다른 경로도 이 도메인으로 접근 가능하지만, 실제 사용 목적은 랭킹 페이지뿐이다. ⚠️ **`[[routes]]`를 추가하면 Wrangler가 `workers_dev`를 기본값 `false`로 취급해서 기존 `*.workers.dev` URL을 배포 시 자동으로 꺼버린다.** 앱의 모든 백엔드 호출(`mobile/src/services/*Api.js`)이 `freshkeeper-ocr-feedback.dndud123.workers.dev`를 하드코딩해서 쓰고 있어서, 이걸 놓치면 커스텀 도메인 연결 배포 한 번으로 앱 전체가 즉시 먹통이 된다(실제로 겪음 — 첫 배포 직후 `/api/health`가 404). `wrangler.toml`에 `workers_dev = true`를 명시로 넣어야 커스텀 라우트를 추가하면서도 기존 workers.dev URL이 계속 살아있다. 배포 직후 전 세계 엣지에 반영되는 데 수십 초 정도 걸려 그 사이엔 두 URL 다 간헐적으로 404가 날 수 있다(정상, 전파 지연일 뿐). (2026-08-08)
+
+## 강제 업데이트 (Cloudflare Worker + 앱)
+
+| 옵션 | 위치 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| 최소 지원 Android versionCode | `MIN_SUPPORTED_ANDROID_VERSION_CODE` in `cloudflare/worker/src/index.js` | `1`(사실상 비활성) | 이 값보다 낮은 `versionCode`로 실행 중인 앱은 `ForceUpdateScreen`으로 전체 화면을 막고 Play 스토어로 유도한다. **강제 업데이트를 걸고 싶으면 이 숫자만 올리고 `wrangler deploy`하면 끝 — 앱 재빌드/재배포 불필요**(오래된 설치본을 막는 게 목적이라 서버만 바뀌면 됨) |
+| Play 스토어 URL | `ANDROID_PLAY_STORE_URL` in `cloudflare/worker/src/index.js` | `https://play.google.com/store/apps/details?id=com.palchonajae.freshkeeper` | 업데이트 화면의 버튼이 여는 주소 |
+
+앱은 시작 시 `GET /api/app-version`을 한 번 호출해서(`mobile/src/services/appVersionApi.js`) 현재 설치된 `versionCode`(`expo-constants`의 `Constants.expoConfig.android.versionCode`)와 비교한다. **네트워크 실패/서버 오류/버전 정보를 못 읽는 경우엔 그냥 통과시킨다(fail open)** — 서버 장애로 앱 전체가 막히면 안 되기 때문. `Constants.expoConfig`는 빌드 시점에 `app.json`에서 값을 읽어 번들에 박아 넣으므로, 이 체크가 정확하려면 **`app.json`의 `android.versionCode`와 `build.gradle`의 `versionCode`를 계속 동기화해야 한다**(위 "Android versionCode" 항목과 동일한 습관). (2026-08-08)

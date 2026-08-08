@@ -123,12 +123,6 @@ export default function HomePage({
     .slice(0, 4);
   const growthReport = normalizeGrowthProfile(growthProfile) || getGrowthReport(items, reminderDays);
   const growthLevel = levelNames[growthReport.level - 1] || levelNames[0];
-  const dashboardReport = normalizeDashboardReport(growthDashboardReport) || getDashboardReport({
-    activeItems,
-    completedItems,
-    summary,
-    reminderDays
-  });
   const dashboardStats = [
     {
       label: "만료",
@@ -200,14 +194,13 @@ export default function HomePage({
             </Text>
           </View>
         </View>
-        <Text style={styles.growthMessage}>{dashboardReport.title}</Text>
-        <Text style={styles.growthText}>{dashboardReport.body}</Text>
+        {/* 만료/임박 등 실제 알림성 정보는 바로 아래 통계 카드가 이미 보여주므로,
+            성장 카드는 레벨/진행도에만 집중하고 중복되던 문구 2줄은 뺐다(2026-08-08). */}
         <View style={styles.growthProgressTrack}>
           <View style={[styles.growthProgressFill, { width: `${growthReport.percent}%` }]} />
         </View>
         <View style={styles.growthFooter}>
           <Text style={styles.growthFooterText}>다음 단계까지 {growthReport.remainingXp} XP</Text>
-          <Text style={styles.growthFooterText}>누적 {growthReport.xp} XP</Text>
         </View>
       </Pressable>
 
@@ -815,7 +808,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#edf0ec",
     overflow: "hidden",
-    marginTop: 14
+    marginTop: 14,
+    // 화분 이미지(오른쪽 140px)와 세로로 겹치는 위치라 막대 길이를 그만큼 줄여서
+    // 겹침을 피한다 — growthHeader의 paddingRight와 같은 값(2026-08-08).
+    marginRight: 112
   },
   growthProgressFill: {
     height: "100%",

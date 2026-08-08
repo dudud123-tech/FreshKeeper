@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // 정적 require이어야 Metro가 번들에 포함시키므로 배열로 하드코딩한다.
 const pages = [
-  { key: "1", type: "image", source: require("../../assets/tutorial/1page.webp") },
   { key: "2", type: "image", source: require("../../assets/tutorial/2page.webp") },
   { key: "3", type: "image", source: require("../../assets/tutorial/3page.webp") },
   { key: "4", type: "video", source: require("../../assets/tutorial/4page.mp4") },

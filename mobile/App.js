@@ -16,6 +16,7 @@ import mobileAds from "react-native-google-mobile-ads";
 import { categories, suggestCategory } from "./src/categories";
 import AddItemPage from "./src/components/AddItemPage";
 import AppShell, { appShellStyles } from "./src/components/AppShell";
+import BarcodeScannerModal from "./src/components/BarcodeScannerModal";
 import CalendarModal from "./src/components/CalendarModal";
 import ForceUpdateScreen from "./src/components/ForceUpdateScreen";
 import HomePage from "./src/components/HomePage";
@@ -24,6 +25,7 @@ import LaunchScreen from "./src/components/LaunchScreen";
 import OnboardingScreen from "./src/components/OnboardingScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
 import SettingsPanel from "./src/components/SettingsPanel";
+import SoftUpdatePrompt from "./src/components/SoftUpdatePrompt";
 import WhatsNewModal from "./src/components/WhatsNewModal";
 import { useAuth } from "./src/hooks/useAuth";
 import { useExpiryNotifications } from "./src/hooks/useExpiryNotifications";
@@ -32,9 +34,13 @@ import { useGrowthSync } from "./src/hooks/useGrowthSync";
 import { useInventory } from "./src/hooks/useInventory";
 import { useReceiptFlow } from "./src/hooks/useReceiptFlow";
 import { fetchAndroidVersionRequirement } from "./src/services/appVersionApi";
+import { lookupBarcodeProduct } from "./src/services/barcodeApi";
+import { getCachedBarcodeImage, setCachedBarcodeImage } from "./src/services/barcodeImageCache";
+import { normalizeProductName } from "./src/services/productClassificationApi";
 import {
   todayIso,
 } from "./src/utils/date";
+import { suggestedExpiryDate, suggestedStorage } from "./src/utils/expiryPresets";
 import { chooseItemImage } from "./src/utils/itemImagePicker";
 
 const STORAGE_KEY = "fresh-keeper-mobile-items-v1";
@@ -68,6 +74,11 @@ export default function App() {
   const [page, setPage] = useState(sessionPage);
   const [calendar, setCalendar] = useState({ visible: false, value: todayIso() });
   const [reminderDays, setReminderDays] = useState(3);
+  const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
+  const [barcodeLookupPending, setBarcodeLookupPending] = useState(false);
+  // 처음 보는 바코드를 스캔했을 때만 채워진다 — 이 값이 있으면 직접등록 저장
+  // 성공 시 방금 입력한 상품 정보를 이 바코드로 서버에 등록한다.
+  const [pendingBarcode, setPendingBarcode] = useState("");
   const {
     items,
     setItems,
@@ -123,7 +134,9 @@ export default function App() {
     onStartEditScroll: (itemId) => {
       setTimeout(() => scrollItemToCenter(itemId), 120);
       setTimeout(() => scrollItemToCenter(itemId), 420);
-    }
+    },
+    pendingBarcode,
+    onBarcodeRegistered: () => setPendingBarcode("")
   });
   const [settingsTab, setSettingsTab] = useState("alert");
   const [settingsReady, setSettingsReady] = useState(false);
@@ -174,7 +187,6 @@ export default function App() {
     feedbackStatus,
     normalizeFeedbackSettings,
     createReceiptCandidates,
-    takeReceiptPhoto,
     pickReceiptImage,
     selectReceiptImageForType,
     frameForOcrLine,
@@ -248,12 +260,23 @@ export default function App() {
   const [updatePlayStoreUrl, setUpdatePlayStoreUrl] = useState("");
   const [whatsNewVisible, setWhatsNewVisible] = useState(false);
   const [whatsNewContent, setWhatsNewContent] = useState(null);
+  const [softUpdateVisible, setSoftUpdateVisible] = useState(false);
+  const [softUpdatePlayStoreUrl, setSoftUpdatePlayStoreUrl] = useState("");
   const sharedImageInFlightRef = useRef(false);
   const createReceiptCandidatesRef = useRef(createReceiptCandidates);
 
   useEffect(() => {
     mobileAds().initialize().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    // 스캔한 바코드를 등록 안 하고 화면을 벗어나면(직접등록 탭 이탈, 다른 페이지
+    // 이동 등) pendingBarcode를 비운다 — 나중에 전혀 다른 상품을 저장할 때
+    // 엉뚱하게 이 바코드로 등록돼 버리는 걸 막기 위해서다.
+    if (mode !== "manual" || page !== PAGE_ADD) {
+      setPendingBarcode("");
+    }
+  }, [mode, page]);
 
   useEffect(() => {
     if (Platform.OS !== "android") return;
@@ -268,6 +291,16 @@ export default function App() {
         setUpdatePlayStoreUrl(requirement.playStoreUrl || "");
         setUpdateRequired(true);
         return; // 업데이트부터 해야 하니, 새소식은 실제로 새 버전을 켰을 때 보여준다.
+      }
+
+      // 강제 차단 대상은 아니지만 스토어 최신 버전보다 낮으면, 업데이트할지 그냥
+      // 쓸지 사용자가 고를 수 있게 물어본다(2026-08-08). Play 스토어 자동 업데이트가
+      // 항상 되는 건 아니라서 앱에서도 권유하는 것 — "나중에"를 눌러도 앱은 그대로
+      // 쓸 수 있고, 지속적으로 재확인하도록 매 실행마다 다시 물어본다(별도 저장 안 함).
+      const latestVersionCode = Number(requirement.latestVersionCode);
+      if (Number.isFinite(latestVersionCode) && currentVersionCode < latestVersionCode) {
+        setSoftUpdatePlayStoreUrl(requirement.playStoreUrl || "");
+        setSoftUpdateVisible(true);
       }
 
       // 방금 업데이트해서 이전에 기록해둔 버전보다 지금 버전이 높으면 새소식을 한 번
@@ -412,6 +445,13 @@ export default function App() {
   }
 
   function applyItemImage(itemId, imageUri) {
+    // 바코드로 등록된 상품이면, 나중에 사진을 바꿀 때도 그 바코드의 로컬 사진
+    // 캐시를 같이 갱신한다 — 처음 등록할 때만 사진을 넣어야 저장되는 게 아니라
+    // 언제든 바꾸면 다음 스캔부터 반영되게(2026-08-08, "이후 추가"도 되게 해달라는 피드백).
+    const targetItem = items.find((item) => item.id === itemId);
+    if (targetItem?.barcode) {
+      setCachedBarcodeImage(targetItem.barcode, imageUri);
+    }
     setItems((current) =>
       current.map((item) =>
         item.id === itemId
@@ -450,6 +490,87 @@ export default function App() {
     calendarCallbackRef.current?.(value);
     calendarCallbackRef.current = null;
     setCalendar((current) => ({ ...current, visible: false }));
+  }
+
+  function openBarcodeScanner() {
+    setBarcodeScannerVisible(true);
+  }
+
+  function closeBarcodeScanner() {
+    setBarcodeScannerVisible(false);
+  }
+
+  // 스캔한 바코드에 쓸 사진을 찾는다. 서버(barcode_products)엔 사진이 없으니
+  // 이 기기 안에서만 찾는다. 로컬 캐시만 보면 캐시 기능이 생기기 전에 등록해 둔
+  // 상품은 영영 사진이 안 붙어서(2026-08-08 버그), 실제 보관함 상품에서도 찾는다.
+  async function resolveBarcodeImageUri(barcode, productName) {
+    const cached = await getCachedBarcodeImage(barcode);
+    if (cached) return cached;
+
+    // 1) 같은 바코드로 등록해 둔 상품
+    const byBarcode = items.find((item) => item.barcode === barcode && item.imageUri);
+    if (byBarcode) return byBarcode.imageUri;
+
+    // 2) 같은 상품명으로 등록해 둔 상품(표기 차이는 normalizeProductName으로 흡수)
+    const targetName = normalizeProductName(productName);
+    if (!targetName) return "";
+    const byName = items.find(
+      (item) => item.imageUri && normalizeProductName(item.name) === targetName
+    );
+    return byName?.imageUri || "";
+  }
+
+  async function handleBarcodeScanned(barcode) {
+    setBarcodeScannerVisible(false);
+    setBarcodeLookupPending(true);
+    try {
+      const { ok, product } = await lookupBarcodeProduct(barcode);
+
+      if (!ok) {
+        // 조회 자체가 실패 — 등록된 바코드인지 아닌지 알 수 없다. 여기서 "처음 보는
+        // 바코드"라고 안내해 버리면 이미 등록해 둔 상품을 다시 등록하게 만든다.
+        Alert.alert(
+          "바코드를 확인하지 못했어요",
+          "네트워크 상태를 확인하고 다시 스캔해 주세요."
+        );
+        return;
+      }
+
+      if (product) {
+        // 이미 등록된 바코드 — 이름/카테고리/보관방식은 그대로 채우고
+        // 소비기한만 사용자가 확인/조정하면 된다.
+        const nextCategory = product.category || suggestCategory(product.name);
+        const nextStorage = product.storage || suggestedStorage(product.name, nextCategory, storage);
+        setName(product.name);
+        setCategory(nextCategory);
+        setStorage(nextStorage);
+        setExpiry(
+          Number.isFinite(product.expiryDays)
+            ? todayIso(product.expiryDays)
+            : suggestedExpiryDate(product.name, nextCategory, nextStorage)
+        );
+        setManualImageUri(await resolveBarcodeImageUri(barcode, product.name));
+        setPendingBarcode("");
+        setMode("manual");
+        Alert.alert("상품 정보를 불러왔어요", `"${product.name}" 등록 정보를 채웠어요. 소비기한만 확인해 주세요.`);
+      } else {
+        // 처음 보는 바코드 — 상품명부터 사용자가 입력하게 비워 두고,
+        // 저장에 성공하면 이 바코드로 등록되도록 기억해 둔다.
+        setName("");
+        setManualImageUri("");
+        setCategory(categories[0]);
+        setStorage(storageTypes[0]);
+        setExpiry(suggestedExpiryDate("", categories[0], storageTypes[0]));
+        setPendingBarcode(barcode);
+        setMode("manual");
+        Alert.alert(
+          "처음 보는 바코드예요",
+          "상품명과 정보를 입력해서 등록해 주세요. 한 번 등록하면 다음부터는 자동으로 채워져요."
+        );
+      }
+    } finally {
+      setBarcodeLookupPending(false);
+    }
   }
 
   function scrollItemToCenter(itemId) {
@@ -492,6 +613,11 @@ export default function App() {
             onSwitchToHighlight={switchToHighlightMode}
             onClose={() => setReceiptSelectorVisible(false)}
           />
+          <BarcodeScannerModal
+            visible={barcodeScannerVisible}
+            onScanned={handleBarcodeScanned}
+            onClose={closeBarcodeScanner}
+          />
           {launchVisible ? <LaunchScreen onDone={finishLaunch} /> : null}
           {!launchVisible && onboardingVisible ? <OnboardingScreen onDone={finishOnboarding} /> : null}
           {updateRequired ? <ForceUpdateScreen playStoreUrl={updatePlayStoreUrl} /> : null}
@@ -499,6 +625,11 @@ export default function App() {
             visible={!launchVisible && !updateRequired && whatsNewVisible}
             content={whatsNewContent}
             onClose={() => setWhatsNewVisible(false)}
+          />
+          <SoftUpdatePrompt
+            visible={!launchVisible && !updateRequired && softUpdateVisible}
+            playStoreUrl={softUpdatePlayStoreUrl}
+            onLater={() => setSoftUpdateVisible(false)}
           />
         </>
       }
@@ -533,10 +664,11 @@ export default function App() {
               setExpiry={setExpiry}
               openCalendar={openCalendar}
               submitManual={submitManual}
+              onScanBarcode={openBarcodeScanner}
+              barcodeLookupPending={barcodeLookupPending}
               pickManualImage={pickManualImage}
               takeManualImagePhoto={takeManualImagePhoto}
               changeManualImage={changeManualImage}
-              takeReceiptPhoto={takeReceiptPhoto}
               pickReceiptImage={pickReceiptImage}
               selectReceiptImageForType={selectReceiptImageForType}
               receiptImageTypeChooserVisible={receiptImageTypeChooserVisible}

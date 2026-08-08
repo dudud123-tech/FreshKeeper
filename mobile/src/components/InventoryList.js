@@ -1243,27 +1243,30 @@ const styles = StyleSheet.create({
     borderRadius: 999
   },
   purchaseIconButton: {
+    // 활성/비활성이 옅은 파스텔 톤끼리라 잘 안 구분된다는 피드백(2026-08-08)으로
+    // 활성 상태를 홈 화면 "구매 링크 열기" 버튼과 같은 진초록 채움으로 바꿨다 —
+    // 비활성(테두리만)과 형태 자체가 달라져서 목록을 훑을 때도 바로 구분된다.
     width: 32,
     height: 32,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#b9dfcf",
-    backgroundColor: "#edf7f2",
+    borderColor: "#1f7a5a",
+    backgroundColor: "#1f7a5a",
     alignItems: "center",
     justifyContent: "center"
   },
   purchaseIconButtonDisabled: {
-    borderColor: "#e0e4e1",
-    backgroundColor: "#f3f5f3"
+    borderColor: "#d7dbd8",
+    backgroundColor: "transparent"
   },
   purchaseIcon: {
     width: 21,
     height: 21,
-    tintColor: "#1f7a5a"
+    tintColor: "#fff"
   },
   purchaseIconDisabled: {
-    opacity: 0.28,
-    tintColor: "#68716b"
+    opacity: 0.5,
+    tintColor: "#a2aaa5"
   },
   inlineActionRow: {
     flexDirection: "row",

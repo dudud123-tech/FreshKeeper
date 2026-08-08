@@ -9,6 +9,8 @@ import {
   takeItemImagePhoto
 } from "../utils/itemImagePicker";
 import { convertToPartnerLink, searchCoupangProducts } from "../services/coupangApi";
+import { registerBarcodeProduct } from "../services/barcodeApi";
+import { setCachedBarcodeImage } from "../services/barcodeImageCache";
 
 const ITEM_STATUS_ACTIVE = "active";
 const ITEM_STATUS_COMPLETED = "completed";
@@ -52,7 +54,9 @@ export function useInventory({
   sortOptions,
   reminderDays,
   onManualSubmit,
-  onStartEditScroll
+  onStartEditScroll,
+  pendingBarcode,
+  onBarcodeRegistered
 }) {
   const [items, setItems] = useState([]);
   const [mode, setMode] = useState("receipt");
@@ -185,9 +189,31 @@ export function useInventory({
         expiryType: defaultExpiryType,
         expiry,
         imageUri: manualImageUri,
-        purchaseUrl
+        purchaseUrl,
+        // 바코드로 등록한 상품이면 이 값을 남겨서, 나중에 보관함에서 사진을
+        // 바꿔도 그 바코드의 로컬 사진 캐시를 같이 갱신할 수 있게 한다.
+        barcode: pendingBarcode || ""
       });
       if (!added) return;
+      if (pendingBarcode) {
+        // 처음 보는 바코드였던 경우: 방금 등록한 상품 정보를 서버에 남겨서
+        // 다음에 이 바코드를 스캔하는 사람(나 자신 포함)은 소비기한만 입력하면 되게 한다.
+        // await 없이 fire-and-forget으로 두면 내부에서 던진 예외가 조용히
+        // 묻혀서 등록 자체가 안 될 수 있어(2026-08-08) 반드시 기다린다.
+        await registerBarcodeProduct({
+          barcode: pendingBarcode,
+          name,
+          category,
+          storage,
+          expiryDays: daysUntil(expiry)
+        });
+        // 사진은 서버엔 안 보내고(개인정보/용량) 이 기기에만 바코드와 묶어 남긴다 —
+        // 같은 기기에서 같은 바코드를 다시 스캔하면 사진도 같이 채워지도록.
+        if (manualImageUri) {
+          await setCachedBarcodeImage(pendingBarcode, manualImageUri);
+        }
+        onBarcodeRegistered?.();
+      }
       setName("");
       setManualImageUri("");
       setCategory(categories[0]);

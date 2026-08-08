@@ -9,6 +9,7 @@ import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
 import { getFoodImageSource } from "../utils/foodImages";
 
 const cameraIcon = require("../../assets/actions/action-camera.png");
+const barcodeIcon = require("../../assets/actions/action-barcode.png");
 const galleryIcon = require("../../assets/actions/action-gallery.png");
 const photoRegisterIcon = require("../../assets/actions/action-photo-register.png");
 const directRegisterIcon = require("../../assets/actions/action-direct-register.png");
@@ -36,7 +37,8 @@ export default function AddItemPage({
   openCalendar,
   submitManual,
   changeManualImage,
-  takeReceiptPhoto,
+  onScanBarcode,
+  barcodeLookupPending,
   pickReceiptImage,
   selectReceiptImageForType,
   receiptImageTypeChooserVisible,
@@ -100,7 +102,13 @@ export default function AddItemPage({
                       compact={compactModeCards}
                       icon={photoRegisterIcon}
                       title={"\uc0ac\uc9c4\ub4f1\ub85d"}
-                      onPress={() => setMode("receipt")}
+                      // 예전엔 사진등록 모드로 바꾼 뒤 "구매내역 촬영/스캔" 버튼을
+                      // 따로 눌러야 했다. 촬영(즉석 카메라)은 갤러리에서 방금 찍은
+                      // 사진을 골라도 되니 없앴고, 스캔 흐름을 이 버튼 자체에
+                      // 합쳐서 한 번에 유형 선택+갤러리로 바로 넘어가게 했다
+                      // (2026-08-08, "상품등록-사진등록-구매내역스캔" 3단계가
+                      // 복잡하다는 피드백).
+                      onPress={() => pickReceiptImage()}
                     />
                     <AddModeCard
                       active={mode === "manual"}
@@ -114,6 +122,18 @@ export default function AddItemPage({
 
                 {mode === "manual" ? (
                   <View style={styles.form}>
+                    {/* 바코드를 스캔하면 등록된 상품은 소비기한만, 처음 보는 상품은
+                        상품명부터 자동으로 채워 준다. */}
+                    <Pressable
+                      style={styles.barcodeScanButton}
+                      onPress={onScanBarcode}
+                      disabled={barcodeLookupPending}
+                    >
+                      <Image source={barcodeIcon} resizeMode="contain" style={styles.barcodeScanIcon} />
+                      <Text style={styles.barcodeScanText}>
+                        {barcodeLookupPending ? "\ubc14\ucf54\ub4dc \ud655\uc778 \uc911..." : "\ubc14\ucf54\ub4dc\ub85c \uc2a4\uce94\ud558\uae30"}
+                      </Text>
+                    </Pressable>
                     {/* 직접 등록에서는 상품명 왼쪽에 대표 이미지를 붙여 둔다. */}
                     <Field label={"\uc0c1\ud488\uba85"}>
                       <View style={styles.manualNameRow}>
@@ -184,26 +204,34 @@ export default function AddItemPage({
                   </View>
                 ) : (
                   <View style={styles.form}>
-                    {/* 영수증 모드에서는 카메라/갤러리 진입 버튼부터 보여 준다. */}
-                    <Pressable style={styles.receiptActionButton} onPress={takeReceiptPhoto}>
-                      <View style={styles.receiptActionIconWrap}>
-                        <Image source={cameraIcon} resizeMode="contain" style={styles.receiptHeroIcon} />
+                    {/* 이미지 선택 진입점은 위쪽 "사진등록" 모드 카드 자체다(2026-08-08) —
+                        따로 있던 "구매내역 촬영/스캔" 두 버튼을 없애고 합쳤다. 이미지를
+                        다시 고르고 싶으면 위 모드 카드를 다시 누르면 된다("이미지 다시
+                        선택하기" 버튼은 모드 카드와 기능이 겹쳐서 뺐음, 2026-08-08). */}
+                    {/* 초기화 버튼(왼쪽 위) + "N개 보관함 저장" 버튼(전체 폭),
+                        영수증 이미지 카드보다 위에 둔다(2026-08-08 피드백). */}
+                    {drafts.length > 0 ? (
+                      <View style={styles.bulkSection}>
+                        <Pressable
+                          style={styles.bulkResetButton}
+                          accessibilityLabel={"\uc120\ud0dd \uc0c1\ud488 \ub9ac\uc14b"}
+                          onPress={resetReceiptDrafts}
+                        >
+                          <Image source={resetIcon} resizeMode="contain" style={styles.bulkResetIcon} />
+                          <Text style={styles.bulkResetText}>{"\ucd08\uae30\ud654"}</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.bulkSubmitButton, bulkSubmitting && styles.bulkSubmitButtonDisabled]}
+                          onPress={bulkSubmitting ? undefined : addAllDrafts}
+                        >
+                          <Image source={storageTabIcon} resizeMode="contain" style={styles.bulkSubmitIcon} />
+                          <Text style={styles.bulkSubmitText}>
+                            {bulkSubmitting ? "\ub4f1\ub85d \uc911..." : selectedDraftCount + "\uac1c \ubcf4\uad00\ud568 \uc800\uc7a5"}
+                          </Text>
+                          <Text style={styles.bulkSubmitChevron}>{"›"}</Text>
+                        </Pressable>
                       </View>
-                      <View style={styles.galleryCopy}>
-                        <Text style={styles.receiptHeroTitle}>{"구매내역 촬영"}</Text>
-                        <Text style={styles.receiptHeroText}>{"영수증, 주문내역에서 상품을 찾습니다."}</Text>
-                      </View>
-                    </Pressable>
-
-                    <Pressable style={styles.receiptActionButton} onPress={pickReceiptImage}>
-                      <View style={styles.receiptActionIconWrap}>
-                        <Image source={galleryIcon} resizeMode="contain" style={styles.receiptHeroIcon} />
-                      </View>
-                      <View style={styles.galleryCopy}>
-                        <Text style={styles.receiptHeroTitle}>{"구매내역 스캔"}</Text>
-                        <Text style={styles.receiptHeroText}>{"영수증, 쿠팡·컬리 주문내역도 가능합니다."}</Text>
-                      </View>
-                    </Pressable>
+                    ) : null}
 
                     {/* 영수증 이미지가 있으면 미리보기를 보여 주고 다시 고를 수 있게 한다. */}
                     {receiptImage ? (
@@ -235,29 +263,6 @@ export default function AddItemPage({
                       {/* OCR 결과와 자동 인식된 초안 상품들이 모이는 영역이다. */}
                       {drafts.length > 0 ? (
                         <>
-                          <View style={styles.bulkSection}>
-                            <View style={styles.bulkBox}>
-                              <View style={styles.bulkSummaryWrap}>
-                                <Text style={styles.bulkSummaryText}>{selectedDraftCount + "\uac1c \uc120\ud0dd\ub428"}</Text>
-                                <Pressable
-                                  style={styles.bulkResetButton}
-                                  accessibilityLabel={"선택 상품 리셋"}
-                                  onPress={resetReceiptDrafts}
-                                >
-                                  <Image source={resetIcon} resizeMode="contain" style={styles.bulkResetIcon} />
-                                  <Text style={styles.bulkResetText}>{"초기화"}</Text>
-                                </Pressable>
-                              </View>
-                              <Pressable
-                                style={[styles.bulkSubmitButton, bulkSubmitting && styles.bulkSubmitButtonDisabled]}
-                                onPress={bulkSubmitting ? undefined : addAllDrafts}
-                              >
-                                <Image source={storageTabIcon} resizeMode="contain" style={styles.bulkSubmitIcon} />
-                                <Text style={styles.bulkSubmitText}>{bulkSubmitting ? "\ub4f1\ub85d \uc911..." : "\ubcf4\uad00\ud568 \uc800\uc7a5"}</Text>
-                                <Text style={styles.bulkSubmitChevron}>{"›"}</Text>
-                              </Pressable>
-                            </View>
-                          </View>
                           <View style={styles.draftList}>
                             {drafts.map((draft) => {
                               // 각 초안 상품은 여기서 바로 개별 수정할 수 있다.
@@ -867,29 +872,28 @@ const styles = StyleSheet.create({
     ...typography.captionStrong,
     color: "#a83a2f",
   },
-  receiptActionButton: {
-    // 영수증 촬영/스캔 진입 버튼 카드.
-    minHeight: 86,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#e6e4df",
-    backgroundColor: "#fff",
-    flexDirection: "row",
+  barcodeScanButton: {
+    // 직접 등록 상단의 바코드 스캔 진입. 등록된 바코드면 소비기한만,
+    // 처음 보는 바코드면 상품명부터 자동으로 채워 주는 지름길이라 눈에 띄게 둔다.
+    // 버튼 카드 느낌보단 아이콘을 누르는 느낌으로, 아이콘-텍스트를 세로로 둔다.
+    // 상품명 입력칸까지 여백이 넓으면 등록하기 버튼이 화면 밖으로 밀려나서
+    // (2026-08-08) 위아래 여백을 최소로 줄였다.
     alignItems: "center",
-    justifyContent: "flex-start",
-    gap: 12,
-    overflow: "hidden",
-    paddingHorizontal: 16,
-    paddingVertical: 12
+    justifyContent: "center",
+    gap: 1,
+    paddingVertical: 0,
+    marginBottom: 0
   },
-  receiptActionIconWrap: {
-    // 촬영/갤러리 아이콘을 둘 원형 배경.
-    width: 60,
-    height: 60,
-    borderRadius: 36,
-    backgroundColor: "#edf7f2",
-    alignItems: "center",
-    justifyContent: "center"
+  barcodeScanIcon: {
+    // 아이콘 자체가 버튼 역할을 하도록 큼직하게 둔다. 이미지가 3:1 가로형이라
+    // 폭을 기존(44) 대비 3배로 키우고 높이는 비율에 맞춰 그대로 둔다.
+    width: 132,
+    height: 44,
+    tintColor: "#1f7a5a"
+  },
+  barcodeScanText: {
+    ...typography.captionStrong,
+    color: "#1f7a5a"
   },
   receiptHeroButton: {
     // 큰 영수증 안내 버튼이 있던 경우의 공통 스타일.
@@ -903,24 +907,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 18,
     paddingVertical: 24
-  },
-  receiptHeroIcon: {
-    // 촬영/스캔 버튼 안의 큰 아이콘.
-    width: 50,
-    height: 50
-  },
-  receiptHeroTitle: {
-    // 촬영/스캔 카드의 제목 텍스트.
-    ...typography.cardTitle,
-    color: "#18201c",
-    flexShrink: 1
-  },
-  receiptHeroText: {
-    // 촬영/스캔 카드의 설명 텍스트.
-    ...typography.caption,
-    color: "#8a938d",
-    marginTop: 4,
-    flexShrink: 1
   },
   galleryButton: {
     // 갤러리 진입 버튼이 필요할 때 쓰는 공통 스타일.
@@ -945,11 +931,6 @@ const styles = StyleSheet.create({
     // 갤러리 버튼 제목 텍스트.
     ...typography.cardTitle,
     color: "#18201c",
-  },
-  galleryCopy: {
-    // 버튼 오른쪽의 제목/설명 묶음.
-    flex: 1,
-    gap: 3
   },
   galleryHint: {
     // 갤러리 버튼 보조 설명 텍스트.
@@ -1620,65 +1601,44 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   bulkSection: {
-    // 선택 개수 라벨과 저장 액션 바를 묶는 영역.
+    // 카드(테두리/배경)로 감싸면 답답해 보인다는 피드백(2026-08-08)으로 감싸는
+    // 박스를 없앴다 — 초기화 버튼(왼쪽, 자기 크기만큼만)과 "N개 보관함 저장"
+    // 버튼(오른쪽, 남은 폭 전체)을 한 줄에 나란히 둔다(2026-08-08 재조정).
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     marginTop: 2,
     marginBottom: 8
   },
-  bulkBox: {
-    // 여러 초안을 한 번에 저장할 때 쓰는 얇은 액션 바.
-    minHeight: 52,
+  bulkResetButton: {
+    // 예전엔 선택 개수 텍스트 옆에 붙는 작은 인라인 버튼이었는데, 그 텍스트를
+    // 저장 버튼 라벨("N개 보관함 저장")로 옮기면서 이 버튼만 남아 크기를
+    // 키웠다(2026-08-08).
+    minHeight: 40,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#e6ebe8",
-    borderRadius: 14,
+    borderColor: "#d7dbd8",
     backgroundColor: "#fff",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingLeft: 12,
-    paddingRight: 8,
-    paddingVertical: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2
-  },
-  bulkSummaryWrap: {
-    // 선택 개수를 박스 안 왼쪽에 보여준다.
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    flexShrink: 1
-  },
-  bulkSummaryText: {
-    // 선택된 초안 개수 요약.
-    ...typography.cardTitle,
-    fontSize: 18,
-    color: "#18201c",
-  },
-  bulkResetButton: {
-    // 선택 상태를 초기화하는 버튼. 선택 개수 텍스트 옆에 인라인으로 붙는다.
-    minHeight: 28,
-    borderRadius: 999,
-    flexDirection: "row",
-    alignItems: "center",
     justifyContent: "center",
-    gap: 5,
-    paddingHorizontal: 3
+    gap: 6,
+    paddingHorizontal: 16
   },
   bulkResetIcon: {
     // 초기화 버튼 아이콘.
-    width: 17,
-    height: 17,
+    width: 20,
+    height: 20,
     tintColor: "#68716b"
   },
   bulkResetText: {
-    // 초기화 버튼 글자.
-    ...typography.captionStrong,
+    ...typography.bodyStrong,
     color: "#68716b",
   },
   bulkSubmitButton: {
-    // 선택된 초안들을 보관함에 넣는 메인 버튼.
+    // 선택된 초안들을 보관함에 넣는 메인 버튼. 초기화 버튼과 한 줄에 나란히
+    // 두면서 남은 폭을 다 채우도록 flex:1을 줬다(2026-08-08).
+    flex: 1,
     minHeight: 42,
     borderRadius: 10,
     backgroundColor: "#1f7a5a",

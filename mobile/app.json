@@ -2,7 +2,7 @@
   "expo": {
     "name": "오늘까지야",
     "slug": "fresh-keeper-mobile",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.palchonajae.freshkeeper",
-      "versionCode": 19,
+      "versionCode": 20,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#fbfcfb"
@@ -40,6 +40,12 @@
         "expo-image-picker",
         {
           "cameraPermission": "상품 사진과 영수증을 촬영하기 위해 카메라 권한이 필요합니다."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "바코드를 스캔하려면 카메라 권한이 필요합니다."
         }
       ],
       "expo-secure-store",

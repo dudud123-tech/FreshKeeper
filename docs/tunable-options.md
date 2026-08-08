@@ -93,12 +93,32 @@
 
 `/rankings`는 Cloudflare 커스텀 도메인 `ranking.lotto-studio.net`에도 연결되어 있다(`cloudflare/worker/wrangler.toml`의 `[[routes]]`, `pattern = "ranking.lotto-studio.net"`, `custom_domain = true` — DNS 레코드도 `wrangler deploy`가 자동 생성). 워커 전체가 이 커스텀 도메인에서도 그대로 서빙되므로 `/api/health` 등 다른 경로도 이 도메인으로 접근 가능하지만, 실제 사용 목적은 랭킹 페이지뿐이다. ⚠️ **`[[routes]]`를 추가하면 Wrangler가 `workers_dev`를 기본값 `false`로 취급해서 기존 `*.workers.dev` URL을 배포 시 자동으로 꺼버린다.** 앱의 모든 백엔드 호출(`mobile/src/services/*Api.js`)이 `freshkeeper-ocr-feedback.dndud123.workers.dev`를 하드코딩해서 쓰고 있어서, 이걸 놓치면 커스텀 도메인 연결 배포 한 번으로 앱 전체가 즉시 먹통이 된다(실제로 겪음 — 첫 배포 직후 `/api/health`가 404). `wrangler.toml`에 `workers_dev = true`를 명시로 넣어야 커스텀 라우트를 추가하면서도 기존 workers.dev URL이 계속 살아있다. 배포 직후 전 세계 엣지에 반영되는 데 수십 초 정도 걸려 그 사이엔 두 URL 다 간헐적으로 404가 날 수 있다(정상, 전파 지연일 뿐). (2026-08-08)
 
-## 강제 업데이트 (Cloudflare Worker + 앱)
+## 강제/선택 업데이트 (Cloudflare Worker + 앱)
 
 | 옵션 | 위치 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| 최소 지원 Android versionCode | `MIN_SUPPORTED_ANDROID_VERSION_CODE` in `cloudflare/worker/src/index.js` | `1`(사실상 비활성) | 이 값보다 낮은 `versionCode`로 실행 중인 앱은 `ForceUpdateScreen`으로 전체 화면을 막고 Play 스토어로 유도한다. **강제 업데이트를 걸고 싶으면 이 숫자만 올리고 `wrangler deploy`하면 끝 — 앱 재빌드/재배포 불필요**(오래된 설치본을 막는 게 목적이라 서버만 바뀌면 됨) |
-| Play 스토어 URL | `ANDROID_PLAY_STORE_URL` in `cloudflare/worker/src/index.js` | `https://play.google.com/store/apps/details?id=com.palchonajae.freshkeeper` | 업데이트 화면의 버튼이 여는 주소 |
-| 업데이트 후 "새로워진 점" 안내 | `ANDROID_WHATS_NEW` in `cloudflare/worker/src/index.js` | v19 문구 | 업데이트 직후 첫 실행에서 한 번 뜨는 안내 팝업(`WhatsNewModal`) 내용. `versionCode`가 앱의 실제 `Constants.expoConfig.android.versionCode`와 **정확히 일치할 때만** 뜬다 — **새 버전 낼 때마다 이 값의 `versionCode`를 그 버전으로, `items`를 그 버전에서 바뀐 내용으로 갱신하고 `wrangler deploy`할 것.** 안 바꾸면 새소식이 아예 안 뜨거나(버전 불일치) 예전 문구가 뜬다. 처음 설치한 사용자에게는 안 뜬다(`mobile/App.js`가 `AsyncStorage`에 "마지막으로 본 versionCode"가 없으면 그냥 기록만 하고 넘어감). |
+| 최소 지원 Android versionCode | `MIN_SUPPORTED_ANDROID_VERSION_CODE` in `cloudflare/worker/src/index.js` | `1`(사실상 비활성) | 이 값보다 낮은 `versionCode`로 실행 중인 앱은 `ForceUpdateScreen`으로 전체 화면을 막고 Play 스토어로 유도한다(업데이트 전엔 앱 사용 불가). **오래된 버전에 반드시 고쳐야 할 크래시/보안 문제가 있을 때만 올릴 것** — 그냥 새 기능이 나왔다는 이유로 올리면 안 된다(아래 "최신 versionCode"가 그 용도). 올릴 땐 이 숫자만 바꾸고 `wrangler deploy`하면 끝 — 앱 재빌드/재배포 불필요 |
+| 최신 Android versionCode | `LATEST_ANDROID_VERSION_CODE` in `cloudflare/worker/src/index.js` | `20` | Play 스토어에 지금 올라가 있는 최신 버전. 이 값보다 낮은 사용자에게는 `SoftUpdatePrompt`로 "업데이트할지 그냥 쓸지" 물어보되, **"나중에"를 눌러도 앱은 정상적으로 계속 쓸 수 있다**(강제 아님). Play 스토어 자동 업데이트가 항상 도는 게 아니라서 앱에서도 권유하자는 목적(2026-08-08). "나중에"를 눌러도 별도로 기억 안 하고 **다음 실행 때 다시 물어본다** — 새 버전을 Play 콘솔에 올릴 때마다 이 값을 그 versionCode로 갱신하고 `wrangler deploy`할 것 |
+| Play 스토어 URL | `ANDROID_PLAY_STORE_URL` in `cloudflare/worker/src/index.js` | `https://play.google.com/store/apps/details?id=com.palchonajae.freshkeeper` | 강제/선택 업데이트 화면·팝업의 버튼이 여는 주소 |
+| 업데이트 후 "새로워진 점" 안내 | `ANDROID_WHATS_NEW` in `cloudflare/worker/src/index.js` | v19 문구(v20으로 갱신 필요) | 업데이트 직후 첫 실행에서 한 번 뜨는 안내 팝업(`WhatsNewModal`) 내용. `versionCode`가 앱의 실제 `Constants.expoConfig.android.versionCode`와 **정확히 일치할 때만** 뜬다 — **새 버전 낼 때마다 이 값의 `versionCode`를 그 버전으로, `items`를 그 버전에서 바뀐 내용으로 갱신하고 `wrangler deploy`할 것.** 안 바꾸면 새소식이 아예 안 뜨거나(버전 불일치) 예전 문구가 뜬다. 처음 설치한 사용자에게는 안 뜬다(`mobile/App.js`가 `AsyncStorage`에 "마지막으로 본 versionCode"가 없으면 그냥 기록만 하고 넘어감). |
 
-앱은 시작 시 `GET /api/app-version`을 한 번 호출해서(`mobile/src/services/appVersionApi.js`) 현재 설치된 `versionCode`(`expo-constants`의 `Constants.expoConfig.android.versionCode`)와 비교한다. **네트워크 실패/서버 오류/버전 정보를 못 읽는 경우엔 그냥 통과시킨다(fail open)** — 서버 장애로 앱 전체가 막히면 안 되기 때문. `Constants.expoConfig`는 빌드 시점에 `app.json`에서 값을 읽어 번들에 박아 넣으므로, 이 체크가 정확하려면 **`app.json`의 `android.versionCode`와 `build.gradle`의 `versionCode`를 계속 동기화해야 한다**(위 "Android versionCode" 항목과 동일한 습관). (2026-08-08)
+앱은 시작 시 `GET /api/app-version`을 한 번 호출해서(`mobile/src/services/appVersionApi.js`) 현재 설치된 `versionCode`(`expo-constants`의 `Constants.expoConfig.android.versionCode`)와 비교한다. **네트워크 실패/서버 오류/버전 정보를 못 읽는 경우엔 그냥 통과시킨다(fail open)** — 서버 장애로 앱 전체가 막히면 안 되기 때문. `Constants.expoConfig`는 빌드 시점에 `app.json`에서 값을 읽어 번들에 박아 넣으므로, 이 체크가 정확하려면 **`app.json`의 `android.versionCode`와 `build.gradle`의 `versionCode`를 계속 동기화해야 한다**(위 "Android versionCode" 항목과 동일한 습관).
+
+세 화면/팝업은 우선순위가 있다: ① `updateRequired`(강제, `MIN_SUPPORTED_ANDROID_VERSION_CODE` 미달) → 전체 차단, 다른 건 아무것도 안 뜬다. ② 강제 대상이 아니면서 `LATEST_ANDROID_VERSION_CODE`보다 낮음 → `SoftUpdatePrompt`(선택). ③ 방금 업데이트해서 버전이 올라갔고 `ANDROID_WHATS_NEW.versionCode`가 지금 버전과 일치 → `WhatsNewModal`. ②③은 서로 배타적으로 설계됐다(최신 버전에 막 도착했을 때만 whatsNew가 뜨고, 그땐 이미 최신이라 softUpdate 조건을 만족 안 함) — 두 값을 따로 관리하다 어긋나면(예: `ANDROID_WHATS_NEW.versionCode`를 최신으로 안 올림) 동시에 뜰 수 있으니 새 버전 배포 때 두 값을 같이 갱신할 것. (2026-08-08)
+
+## 바코드 스캔 (직접등록, Cloudflare Worker + 앱)
+
+| 옵션 | 위치 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| 스캔 인식 바코드 타입 | `SCANNED_BARCODE_TYPES` in `mobile/src/components/BarcodeScannerModal.js` | `ean13, ean8, upc_a, upc_e, code128, code39, itf14, qr` | 국내 유통 상품 위주. 늘리려면 `expo-camera`의 `BarcodeType` 목록에서 추가 |
+| 스캔 확정에 필요한 연속 일치 횟수 | `REQUIRED_MATCHING_SCANS` in `mobile/src/components/BarcodeScannerModal.js` | `4` | 프레임 하나만 보고 확정하면(1-shot) 바코드가 막 들어온 순간의 흐릿한 프레임을 잘못 읽는다. 같은 값이 이만큼 연속으로 읽혀야 확정. 다른 값이 끼어들면 처음부터 다시 센다. 인식이 너무 느리면 줄이고, 오인식이 잦으면 늘린다 |
+| 스캔 확정 최소 대기 시간 | `MIN_SCAN_DURATION_MS` in `mobile/src/components/BarcodeScannerModal.js` | `400`(ms) | 위 연속 일치 횟수를 채웠어도 처음 잡힌 뒤 이 시간이 지나야 확정한다(고속 프레임에서 순식간에 4번이 채워지는 걸 방지) |
+| 바코드 문자열 검증 정규식 | `normalizeBarcode()` in `cloudflare/worker/src/index.js` | `^[A-Za-z0-9]{4,64}$` | 이 형식을 벗어난 스캔 결과는 조회/등록 모두 거부(`invalid_barcode`) |
+
+바코드→상품 매핑은 `barcode_products` D1 테이블(`cloudflare/worker/migrations/0017_barcode_products.sql`)에 **전체 사용자가 공유**하는 형태로 저장된다 — `product_classification_catalog`와 같은 설계. 처음 보는 바코드를 스캔하면 상품명(필수)/사진(선택, 로컬 전용)/카테고리/소비기한을 직접 입력해서 저장하고, 저장 성공 시 `POST /api/barcode-products`로 서버에 등록된다(`mobile/src/hooks/useInventory.js`의 `submitManual`). 이미 등록된 바코드를 스캔하면 `GET /api/barcode-products`로 조회해서 상품명/카테고리/보관방식을 자동으로 채우고 소비기한만 사용자가 확인·조정하면 된다. **상품 사진은 서버에 저장하지 않는다** — 개인정보/용량 문제로 기기 로컬에만 남긴다(`barcode_products` 테이블에 이미지 컬럼 자체가 없음). 로컬 저장은 `mobile/src/services/barcodeImageCache.js`가 담당 — `AsyncStorage` 키 `fresh-keeper-barcode-images-v1`에 `{바코드: imageUri}` 맵으로 저장하고, 새 바코드 등록 시 사진을 넣으면 여기 저장되며(`useInventory.js`의 `submitManual`), 같은 기기에서 같은 바코드를 다시 스캔하면 여기서 읽어와 자동으로 채운다(`App.js`의 `handleBarcodeScanned`). **다른 기기/사용자와는 공유되지 않는다** — 처음 등록한 기기에서만 사진이 자동으로 채워지고, 다른 사용자는 이름/카테고리/보관방식/소비기한만 받는다. 동시에 같은 바코드가 두 번 등록되면 먼저 등록된 정보가 우선한다(`ON CONFLICT(barcode) DO NOTHING`, 선착순). 카메라 라이브 프리뷰가 필요해서 이 기능을 위해 `expo-camera`를 새 네이티브 의존성으로 추가했다(기존 `expo-image-picker`는 정적 사진 촬영만 가능, 실시간 스캔 불가).
+
+바코드로 등록한 상품은 `item.barcode` 필드로 원본 바코드를 계속 들고 있는다(`useInventory.js`의 `addItem` 호출부). 사진은 처음 등록할 때만 저장되는 게 아니라, 보관함에서 나중에 사진을 바꿔도(`App.js`의 `applyItemImage`) `item.barcode`가 있으면 그 바코드의 로컬 사진 캐시를 같이 갱신한다.
+
+스캔했을 때 채울 사진은 `App.js`의 `resolveBarcodeImageUri`가 **3단계로** 찾는다: ① 로컬 사진 캐시 → ② 보관함에서 `item.barcode`가 같은 상품 → ③ 보관함에서 `normalizeProductName`이 같은 상품. ②③ 폴백이 있는 이유는, 캐시 기능이 생기기 전에 등록해 둔 상품이나 `barcode` 필드 없이 저장된 예전 상품은 ①만으로는 영영 사진이 안 붙기 때문(2026-08-08 버그).
+
+`lookupBarcodeProduct`는 `{ ok, product }`를 돌려준다 — `ok:false`(조회 실패)와 `product:null`(확실히 미등록)을 **반드시 구분해야 한다**. 예전엔 둘 다 `null`이라, 이미 등록해 둔 바코드인데 네트워크가 잠깐 끊기면 "처음 보는 바코드"로 안내해서 같은 상품을 다시 등록하게 만드는 버그가 있었다(2026-08-08). 조회 실패 시엔 아무것도 채우지 않고 재시도를 안내한다. (2026-08-08)

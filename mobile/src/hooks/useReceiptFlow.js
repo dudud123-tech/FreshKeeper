@@ -344,25 +344,6 @@ export function useReceiptFlow({
     setReceiptImageTypeChooserVisible(true);
   }
 
-  async function takeReceiptPhoto() {
-    setMode("receipt");
-    goToPage(addPage);
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("권한 필요", "영수증을 촬영하려면 카메라 권한이 필요합니다.");
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: false,
-      quality: 0.9
-    });
-
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      await createReceiptCandidates(result.assets[0], { sourceType: "receipt", physicalReceipt: true, fromCamera: true });
-    }
-  }
-
   function openReceiptSelector(mode = "box") {
     setReceiptSelectorMode(mode);
     setReceiptSelectorVisible(true);
@@ -610,14 +591,30 @@ export function useReceiptFlow({
     });
   }
 
+  // 초기화/일괄 저장 후에도 "영수증 이미지 보기" 카드가 남아있던 버그(2026-08-08) —
+  // 두 함수 다 초안(drafts)만 비우고 이미지 자체와 그 OCR 결과는 안 지웠던 게 원인.
+  // 이미지 관련 상태를 한곳에 모아 같이 지운다.
+  function resetReceiptImageState() {
+    setReceiptImage("");
+    setReceiptImageSize({ width: 0, height: 0 });
+    setOcrCoordinateSize(null);
+    setOcrCoordinateOptions([]);
+    setOcrCoordinateModeIndex(0);
+    setReceiptImageLayout({ width: 0, height: 0 });
+    setOcrLines([]);
+    setCommerceCropBoxes([]);
+    setSelectedOcrLineIds([]);
+    setSelectionRects([]);
+    setReceiptSourceType("receipt");
+    setReceiptSelectorMode("box");
+  }
+
   function resetReceiptDrafts() {
     setDrafts([]);
     setInitialDrafts([]);
     setExcludedDrafts([]);
     setDraftForms({});
-    setSelectedOcrLineIds([]);
-    setSelectionRects([]);
-    setCommerceCropBoxes([]);
+    resetReceiptImageState();
     setBulkDraftForm({ expiry: suggestedExpiryDate("", "기타", "냉장") });
     setReceiptStatus("발견된 상품 후보를 비웠습니다. 다시 선택하거나 직접 추가해 주세요.");
   }
@@ -686,6 +683,7 @@ export function useReceiptFlow({
     setDrafts([]);
     setExcludedDrafts([]);
     setDraftForms({});
+    resetReceiptImageState();
     setTotalHighlighted(true);
     goToPage(inventoryPage);
     uploadCurrentOcrFeedback("auto", finalDrafts, initialDrafts.length ? initialDrafts : drafts);
@@ -862,7 +860,6 @@ export function useReceiptFlow({
     feedbackStatus,
     normalizeFeedbackSettings,
     createReceiptCandidates,
-    takeReceiptPhoto,
     pickReceiptImage,
     selectReceiptImageForType,
     frameForOcrLine,

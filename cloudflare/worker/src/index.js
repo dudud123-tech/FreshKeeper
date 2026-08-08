@@ -159,6 +159,13 @@ const AI_CANDIDATE_ALLOW_HINTS = [
 // 막고 스토어로 유도한다. 새 버전을 강제하고 싶을 때 이 숫자만 올리고 배포하면 됨
 // (앱 재빌드 불필요 — mobile/android/app/build.gradle의 versionCode와는 별개다).
 const MIN_SUPPORTED_ANDROID_VERSION_CODE = 1;
+
+// Play 스토어에 지금 올라가 있는 최신 versionCode. 강제 차단(위 값)과는 별개로,
+// 이 값보다 낮은 사용자에게는 "업데이트할지 그냥 쓸지" 물어보는 선택형 팝업을
+// 띄운다(mobile/App.js의 SoftUpdatePrompt) — "나중에"를 눌러도 앱은 정상 실행되고,
+// 다음 실행 때 다시 물어본다(2026-08-08). 새 버전을 Play 콘솔에 올릴 때마다 이
+// 값을 그 versionCode로 갱신하고 배포할 것.
+const LATEST_ANDROID_VERSION_CODE = 20;
 const ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.palchonajae.freshkeeper";
 
 // 업데이트 직후 첫 실행에서 한 번 보여줄 "새로워진 점" 안내. versionCode가 앱의
@@ -166,12 +173,12 @@ const ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=co
 // 문구만 고칠 수 있게 서버 쪽에 둔 것 — 새 버전 낼 때마다 이 값을 그 versionCode로
 // 갱신하고 배포하면 된다.
 const ANDROID_WHATS_NEW = {
-  versionCode: 19,
+  versionCode: 20,
   title: "이번 업데이트에서 달라진 점",
   items: [
-    "카카오 로그인/로그아웃 중 앱이 꺼지던 문제를 고쳤어요",
-    "나의 냉장고 랭킹을 확인할 수 있어요 (자주 산 상품, 놓친 소비기한 등)",
-    "구매 링크 자동완성 정확도를 높였어요"
+    "바코드를 스캔해서 상품을 등록할 수 있어요",
+    "상품 등록 화면을 더 간단하게 정리했어요",
+    "구매 링크가 있는 상품은 카트 아이콘이 더 잘 보이게 바꿨어요"
   ]
 };
 
@@ -202,6 +209,7 @@ export default {
         ok: true,
         android: {
           minSupportedVersionCode: MIN_SUPPORTED_ANDROID_VERSION_CODE,
+          latestVersionCode: LATEST_ANDROID_VERSION_CODE,
           playStoreUrl: ANDROID_PLAY_STORE_URL,
           whatsNew: ANDROID_WHATS_NEW
         }
@@ -295,6 +303,14 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/api/product-exclusions") {
       return handleUpdateProductExclusions(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/barcode-products") {
+      return handleGetBarcodeProduct(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/barcode-products") {
+      return handleRegisterBarcodeProduct(request, env);
     }
 
     if (request.method === "GET" && url.pathname === "/api/growth/profile") {
@@ -1230,6 +1246,87 @@ async function handleUpdateProductExclusions(request, env) {
 
   await env.DB.batch(statements);
   return json({ ok: true, excludedCount: exclude.length, includedCount: include.length });
+}
+
+// 바코드 스캔 등록: 한 번 등록된 바코드는 전체 사용자가 공유해서, 다음 스캔부터는
+// 소비기한만 입력하면 되게 한다. 사진은 개인정보/용량 문제로 서버에 저장하지 않고
+// 기기 로컬(AsyncStorage)에만 남긴다 — docs/tunable-options.md "바코드 스캔" 참고.
+function normalizeBarcode(value) {
+  const barcode = safeString(value, 64).trim();
+  return /^[A-Za-z0-9]{4,64}$/.test(barcode) ? barcode : "";
+}
+
+async function handleGetBarcodeProduct(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  const requestUrl = new URL(request.url);
+  const barcode = normalizeBarcode(requestUrl.searchParams.get("barcode"));
+  if (!barcode) return json({ ok: false, error: "invalid_barcode" }, 400);
+
+  const row = await env.DB.prepare(
+    `SELECT barcode, name, category, storage, expiry_days FROM barcode_products WHERE barcode = ?`
+  ).bind(barcode).first();
+
+  if (!row) return json({ ok: true, product: null });
+
+  return json({
+    ok: true,
+    product: {
+      barcode: row.barcode,
+      name: row.name,
+      category: row.category || "",
+      storage: row.storage || "",
+      expiryDays: row.expiry_days ?? null
+    }
+  });
+}
+
+async function handleRegisterBarcodeProduct(request, env) {
+  if (!env.DB) return json({ ok: false, error: "missing_d1_binding" }, 500);
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const barcode = normalizeBarcode(payload?.barcode);
+  if (!barcode) return json({ ok: false, error: "invalid_barcode" }, 400);
+  const name = safeString(payload?.name, 200).trim();
+  if (!name) return json({ ok: false, error: "invalid_name" }, 400);
+  const category = safeString(payload?.category, 50).trim();
+  const storage = safeString(payload?.storage, 50).trim();
+  const expiryDays = normalizeExpiryDays(payload?.expiryDays);
+
+  const clientId = normalizeClientId(payload?.clientId);
+  const session = await authenticatedSession(request, env.DB);
+  const subjectKey = classificationSubjectKey(clientId, session?.account_id || "");
+  const now = new Date().toISOString();
+
+  // 이미 다른 사용자가 같은 바코드를 등록해뒀다면 먼저 등록된 정보를 그대로 유지한다
+  // (선착순 등록 — 뒤늦게 스캔한 사용자가 실수로 덮어쓰는 걸 방지).
+  await env.DB.prepare(
+    `INSERT INTO barcode_products
+      (barcode, name, category, storage, expiry_days, created_by_subject_key, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(barcode) DO NOTHING`
+  ).bind(barcode, name, category || null, storage || null, expiryDays, subjectKey, now, now).run();
+
+  const row = await env.DB.prepare(
+    `SELECT barcode, name, category, storage, expiry_days FROM barcode_products WHERE barcode = ?`
+  ).bind(barcode).first();
+
+  return json({
+    ok: true,
+    product: {
+      barcode: row.barcode,
+      name: row.name,
+      category: row.category || "",
+      storage: row.storage || "",
+      expiryDays: row.expiry_days ?? null
+    }
+  });
 }
 
 // 쿠팡 파트너스 Open API 딥링크 변환. 문서: 파일/쿠팡/api_guide.md

@@ -496,7 +496,7 @@ export default function App() {
           {!launchVisible && onboardingVisible ? <OnboardingScreen onDone={finishOnboarding} /> : null}
           {updateRequired ? <ForceUpdateScreen playStoreUrl={updatePlayStoreUrl} /> : null}
           <WhatsNewModal
-            visible={!launchVisible && whatsNewVisible}
+            visible={!launchVisible && !updateRequired && whatsNewVisible}
             content={whatsNewContent}
             onClose={() => setWhatsNewVisible(false)}
           />

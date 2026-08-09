@@ -158,7 +158,17 @@ const AI_CANDIDATE_ALLOW_HINTS = [
 // 강제 업데이트 기준. 이 값보다 낮은 versionCode로 실행 중인 앱은 새 화면으로
 // 막고 스토어로 유도한다. 새 버전을 강제하고 싶을 때 이 숫자만 올리고 배포하면 됨
 // (앱 재빌드 불필요 — mobile/android/app/build.gradle의 versionCode와는 별개다).
-const MIN_SUPPORTED_ANDROID_VERSION_CODE = 1;
+//
+// ⚠️ 반드시 Play 스토어에 "이미 올라가 있는" versionCode만 넣을 것. 아직 배포 안 한
+// 번호를 넣으면 전 사용자가 차단 화면에 갇힌 채 스토어에 업데이트가 없어서 앱을
+// 영영 못 쓰게 된다.
+//
+// 지금 20인 이유: v19에는 선택형 업데이트 팝업(SoftUpdatePrompt) 코드가 아예 없어서
+// 서버가 latestVersionCode를 내려줘도 v19 앱은 그걸 읽지 못한다. 그래서 "알림을 받을
+// 수 있는 최소 버전"인 v20까지 한 번은 강제로 끌어올리는 일회성 이주 조치다(2026-08-08).
+// v20 이후로는 이 값을 다시 1로 두고 LATEST_ANDROID_VERSION_CODE만 올려서
+// 부드러운 권유로 가는 게 정상 운영 방식 — 심각한 버그 버전을 죽여야 할 때만 손댈 것.
+const MIN_SUPPORTED_ANDROID_VERSION_CODE = 20;
 
 // Play 스토어에 지금 올라가 있는 최신 versionCode. 강제 차단(위 값)과는 별개로,
 // 이 값보다 낮은 사용자에게는 "업데이트할지 그냥 쓸지" 물어보는 선택형 팝업을

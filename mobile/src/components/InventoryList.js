@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
+import { isCoupangUrl } from "../services/coupangApi";
 import { statusFor, timelineFor } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
 import BannerAdSlot from "./BannerAdSlot";
@@ -11,6 +12,7 @@ const filterIcon = require("../../assets/actions/inventory-filter.png");
 const expandContentIcon = require("../../assets/actions/expand_content.png");
 const collapseContentIcon = require("../../assets/actions/collapse_content_80dp.png");
 const shoppingCartIcon = require("../../assets/actions/shopping_cart_80dp.png");
+const coupangBadgeIcon = require("../../assets/actions/coupang.png");
 const undoIcon = require("../../assets/actions/undo.png");
 const editNoteIcon = require("../../assets/actions/edit_note_80dp.png");
 const deleteIcon = require("../../assets/actions/delete_80dp_.png");
@@ -512,18 +514,27 @@ function ExpiryTimeline({ timeline, children }) {
 
 function PurchaseIconButton({ purchaseUrl, onOpenPurchase, style }) {
   const hasPurchaseUrl = Boolean(String(purchaseUrl || "").trim());
+  const isCoupang = hasPurchaseUrl && isCoupangUrl(purchaseUrl);
   return (
     <Pressable
-      style={[styles.purchaseIconButton, style, !hasPurchaseUrl && styles.purchaseIconButtonDisabled]}
+      style={[
+        styles.purchaseIconButton,
+        isCoupang && styles.purchaseIconButtonCoupang,
+        style,
+        !hasPurchaseUrl && styles.purchaseIconButtonDisabled
+      ]}
       onPress={() => hasPurchaseUrl && onOpenPurchase?.(purchaseUrl)}
       disabled={!hasPurchaseUrl}
       accessibilityRole="button"
       accessibilityLabel={hasPurchaseUrl ? "구매 링크 열기" : "구매 링크 없음"}
     >
       <Image
-        source={shoppingCartIcon}
+        source={isCoupang ? coupangBadgeIcon : shoppingCartIcon}
         resizeMode="contain"
-        style={[styles.purchaseIcon, !hasPurchaseUrl && styles.purchaseIconDisabled]}
+        style={[
+          isCoupang ? styles.purchaseIconCoupang : styles.purchaseIcon,
+          !hasPurchaseUrl && styles.purchaseIconDisabled
+        ]}
       />
     </Pressable>
   );
@@ -1259,10 +1270,28 @@ const styles = StyleSheet.create({
     borderColor: "#d7dbd8",
     backgroundColor: "transparent"
   },
+  // coupang.png는 그 자체로 이미 빨간 원 배지라, 흰색 카트 아이콘용이던 진초록
+  // 채움 위에 얹으면 원 안에 원이 붕 뜬 것처럼 보인다(2026-08-15 피드백). 배경을
+  // 흰색으로 바꾸고 아래 purchaseIconCoupang에서 아이콘도 테두리에 닿을 만큼 키운다.
+  // 처음엔 32px 원 그대로 뒀는데 "조금 더 키워도 될 것 같다"는 피드백(2026-08-15
+  // 재확인)으로 버튼 자체도 같이 키웠다.
+  purchaseIconButtonCoupang: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderColor: "#e6e4df",
+    backgroundColor: "#fff"
+  },
   purchaseIcon: {
     width: 21,
     height: 21,
     tintColor: "#fff"
+  },
+  // coupang.png는 색을 가진 브랜드 배지라 tintColor를 주지 않는다. 컨테이너(32px 원)
+  // 테두리에 거의 닿도록 크게 키운다.
+  purchaseIconCoupang: {
+    width: 40,
+    height: 40
   },
   purchaseIconDisabled: {
     opacity: 0.5,

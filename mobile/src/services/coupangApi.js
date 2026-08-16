@@ -97,6 +97,20 @@ export async function convertToPartnerLink(url) {
   }
 }
 
+// purchaseUrl이 쿠팡 링크인지 판단한다. 구매 링크 버튼에 범용 장바구니 아이콘 대신
+// 쿠팡 아이콘을 보여줄지 정하는 데 쓴다. purchaseUrl은 사용자가 직접 아무 링크나
+// 붙여넣을 수 있는 필드라 쿠팡이 아닐 수도 있다.
+export function isCoupangUrl(url) {
+  const trimmed = String(url || "").trim();
+  if (!trimmed) return false;
+  try {
+    const host = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`).hostname.toLowerCase();
+    return host === "coupang.com" || host.endsWith(".coupang.com");
+  } catch {
+    return false;
+  }
+}
+
 // 카테고리 인기상품. 기본은 식품(1012) — 이 앱의 그로서리 카테고리들이 전부 여기 속한다.
 export async function fetchBestCategoryProducts(categoryId = DEFAULT_FOOD_CATEGORY_ID, limit = 10) {
   try {

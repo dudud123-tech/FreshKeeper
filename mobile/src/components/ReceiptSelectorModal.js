@@ -28,7 +28,8 @@ export default function ReceiptSelectorModal({
   onToggleCropBox,
   onConfirmHighlight,
   onSwitchToHighlight,
-  onClose
+  onCancel,
+  onConfirm
 }) {
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [isReceiptZoomed, setIsReceiptZoomed] = useState(false);
@@ -201,7 +202,9 @@ export default function ReceiptSelectorModal({
 
   function confirmHighlight() {
     if (!isPaintMode) {
-      onClose?.();
+      // 박스 모드는 박스를 누를 때마다 이미 drafts에 바로 반영돼 있으므로, 완료는
+      // 그 상태를 그대로 인정하고 닫기만 하면 된다(되돌릴 스냅샷은 onCancel 쪽 몫).
+      onConfirm?.();
       return;
     }
     if (!selectionRects.length) {
@@ -240,12 +243,12 @@ export default function ReceiptSelectorModal({
   }
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
       <GestureHandlerRootView style={styles.gestureRoot}>
         <SafeAreaView style={styles.selectorScreen}>
           <View style={styles.highlightHeader}>
             <View style={styles.highlightTopBar}>
-              <Pressable style={styles.highlightBackButton} onPress={onClose}>
+              <Pressable style={styles.highlightBackButton} onPress={onCancel}>
                 <Text style={styles.highlightBackText}>‹</Text>
               </Pressable>
               <Text style={styles.highlightScreenTitle}>상품 등록</Text>

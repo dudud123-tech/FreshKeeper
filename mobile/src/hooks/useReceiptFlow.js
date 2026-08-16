@@ -16,7 +16,7 @@ import { extractCommerceProductImages } from "../utils/commerceImageExtractor";
 import { daysUntil, todayIso } from "../utils/date";
 import { suggestedExpiryDate } from "../utils/expiryPresets";
 import { chooseItemImage } from "../utils/itemImagePicker";
-import { buildOcrCoordinateOptions, chooseBestOcrCoordinateOption, draftNameForOcrLine, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
+import { buildOcrCoordinateOptions, chooseBestOcrCoordinateOption, draftNameForOcrLine, filterIsolatedRightEdgeLines, frameForBox, getImageDisplaySize, isOcrLineInDrafts } from "../utils/receiptOverlay";
 import { normalizeReceiptImageForOcr } from "../utils/receiptImageNormalizer";
 import { alignOcrLinesWithDetectedBoxes, detectReceiptTextLineBoxes } from "../utils/receiptTextLineDetector";
 import { calibrateOcrLineBoxes } from "../utils/ocrBoxCalibrator";
@@ -124,6 +124,9 @@ export function useReceiptFlow({
   const [feedbackUploadKey, setFeedbackUploadKey] = useState("");
   const feedbackUploadInFlightRef = useRef(false);
   const classificationRequestRef = useRef(0);
+  // 박스 모드를 열 때(자동 인식 직후 또는 재진입)의 선택 상태 스냅샷. 뒤로가기로
+  // 나갈 때 여기로 되돌린다 — cancelReceiptSelector 참고.
+  const receiptSelectionSnapshotRef = useRef(null);
 
   const activeOcrCoordinateSize = useMemo(() => {
     return ocrCoordinateOptions[ocrCoordinateModeIndex]?.size || ocrCoordinateSize || receiptImageSize;
@@ -218,7 +221,6 @@ export function useReceiptFlow({
         const detectedTextBoxes = await detectReceiptTextLineBoxes(imageUri);
         lines = alignOcrLinesWithDetectedBoxes(lines, detectedTextBoxes, "opencv-text-line");
       }
-
       // 실물 영수증에 한해 "OCR 좌표를 얼마나 믿을 수 있는가"를 계산한다.
       // sourceType(카메라로 찍었는지 갤러리에서 골랐는지)이 아니라 imageKind(실제로
       // 실물 사진인지)로 판단해야 한다 — calibrateOcrLineBoxes는 sourceType과 무관하게
@@ -259,6 +261,18 @@ export function useReceiptFlow({
         lines,
         draftNames: nextDrafts
       });
+
+      // 오른쪽 끝 부근 줄은 실제 상품명이 아니라 아이콘·뱃지 같은 UI 요소일 가능성이
+      // 크다. "왼쪽에 텍스트가 있는지"로 판단하면 헤더 줄의 "coupang" 로고 글자 같은
+      // 것 때문에 안 걸러지는 경우가 있었다(2026-08-15 재확인) — 그래서 텍스트가
+      // 아니라 방금 감지된 상품 썸네일 위치를 기준으로 "왼쪽에 실제 상품 사진이
+      // 있는지"를 본다. 진짜 상품 줄은 항상 왼쪽에 썸네일이 있고, 헤더의 검색·
+      // 장바구니 아이콘은 왼쪽에 썸네일이 없다.
+      const commerceImageBoxes = (commerceImageResult.cropBoxes || []).map((cropBox) => cropBox.box);
+      lines = filterIsolatedRightEdgeLines(lines, coordinateSize.width, coordinateSize.height, commerceImageBoxes);
+      setOcrLines(lines);
+      selectedLineIds = selectedLineIds.filter((id) => lines.some((line) => line.id === id));
+      setSelectedOcrLineIds(selectedLineIds);
 
       // 네이티브가 찾은 썸네일마다 어떤 줄이 상품명인지 JS에서 다시 정한다(위 주석 참고).
       // 상품이 아닌 썸네일(배송완료/반품완료 상태 아이콘 등)은 후보가 없어 자연히 걸러진다.
@@ -303,6 +317,12 @@ export function useReceiptFlow({
       }
       nextDrafts = filteredDrafts;
       setReceiptDrafts(nextDrafts, commerceImageMap);
+      // OCR 자동 인식 결과는 아직 "완료"로 확정된 적이 없는 상태다. 여기서 자동
+      // 인식 결과 자체를 스냅샷으로 삼으면, 아무것도 안 건드리고 바로 뒤로가기를
+      // 눌러도 스냅샷과 현재 상태가 똑같아 되돌린 게 티가 안 난다(2026-08-15 재확인
+      // — 뒤로가기를 눌러도 자동 인식된 상품이 그대로 남아있었음). 확정된 적 없는
+      // 첫 진입의 "취소 기준"은 빈 상태여야 한다.
+      receiptSelectionSnapshotRef.current = { drafts: [], selectedOcrLineIds: [] };
       setReceiptSelectorMode("box");
       setReceiptSelectorVisible(true);
       const sourceLabel = sourceType === "coupang" ? "쿠팡 주문내역" : "이미지";
@@ -345,8 +365,25 @@ export function useReceiptFlow({
   }
 
   function openReceiptSelector(mode = "box") {
+    if (mode === "box") {
+      receiptSelectionSnapshotRef.current = { drafts, selectedOcrLineIds };
+    }
     setReceiptSelectorMode(mode);
     setReceiptSelectorVisible(true);
+  }
+
+  // 박스 모드에서는 박스를 누를 때마다 즉시 drafts/selectedOcrLineIds가 바뀌므로,
+  // "완료"와 "뒤로가기"가 똑같이 그냥 닫기만 하면 뒤로가기도 사실상 확정으로
+  // 동작해버린다(2026-08-15 피드백 — 뒤로가기는 취소처럼 느껴지는데 선택이 그대로
+  // 반영됐다). 위에서 모달을 열 때 떠둔 스냅샷으로, 뒤로가기로 나갈 때만 되돌린다.
+  // 페인트(하이라이트) 모드는 "완료"를 눌러야만 drafts가 바뀌므로 되돌릴 게 없다.
+  function cancelReceiptSelector() {
+    const snapshot = receiptSelectionSnapshotRef.current;
+    if (receiptSelectorMode === "box" && snapshot) {
+      setReceiptDrafts(snapshot.drafts);
+      setSelectedOcrLineIds(snapshot.selectedOcrLineIds);
+    }
+    setReceiptSelectorVisible(false);
   }
 
   function draftNamesFromHighlightedOcr(result) {
@@ -848,6 +885,7 @@ export function useReceiptFlow({
     receiptImageTypeChooserVisible,
     setReceiptImageTypeChooserVisible,
     openReceiptSelector,
+    cancelReceiptSelector,
     applyHighlightedReceiptSelection,
     switchToHighlightMode,
    drafts,

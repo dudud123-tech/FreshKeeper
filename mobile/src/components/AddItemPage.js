@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { typography } from "../theme/typography";
 import { ChoiceGroup, DateButton, Field, PrimaryButton } from "./CommonControls";
+import { openCoupangOrderHistory } from "../utils/coupangLinks";
 import { daysUntil } from "../utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
 import { getFoodImageSource } from "../utils/foodImages";
@@ -16,6 +17,7 @@ const directRegisterIcon = require("../../assets/actions/action-direct-register.
 const inventoryEditIcon = require("../../assets/actions/edit_note_80dp.png");
 const resetIcon = require("../../assets/actions/action-reset.png");
 const storageTabIcon = require("../../assets/tabs/kitchen.png");
+const coupangLogoIcon = require("../../assets/actions/coupang2.png");
 
 export default function AddItemPage({
   mode,
@@ -231,6 +233,26 @@ export default function AddItemPage({
                           <Text style={styles.bulkSubmitChevron}>{"›"}</Text>
                         </Pressable>
                       </View>
+                    ) : null}
+
+                    {/* 아직 캡처 전 빈 상태일 때만 보이는 보조 진입점이다. "사진등록" 모드 카드를
+                        누르면 곧장 위의 이미지 유형 팝업이 뜨기 때문에 평소엔 이 카드가 가려져
+                        있고, 팝업을 뒤로가기로 닫았거나 초기화 후 빈 상태로 돌아왔을 때만
+                        보인다 — 팝업의 바로가기를 놓친 사용자에게 주는 두 번째 기회다.
+                        캡처 후 돌아오는 길(공유하기 → FreshKeeper)은 이미 구현돼 있지만
+                        안내가 전혀 없었어서(SharedImageModule.kt, App.js) 여기서 같이
+                        알려준다(2026-08-13 피드백 대응). */}
+                    {!receiptImage ? (
+                      <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
+                        <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
+                        <View style={styles.orderHistoryShortcutCopy}>
+                          <Text style={styles.orderHistoryShortcutTitle}>{"쿠팡 주문내역 캡처하러 가기"}</Text>
+                          <Text style={styles.orderHistoryShortcutHint}>
+                            {"캡처 후 오늘까지야 앱으로 공유하세요"}
+                          </Text>
+                        </View>
+                        <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
+                      </Pressable>
                     ) : null}
 
                     {/* 영수증 이미지가 있으면 미리보기를 보여 주고 다시 고를 수 있게 한다. */}
@@ -1061,6 +1083,47 @@ const styles = StyleSheet.create({
     borderColor: "#e6e4df",
     backgroundColor: "#fff",
     padding: 14
+  },
+  orderHistoryShortcut: {
+    // 쿠팡 주문내역 캡처하러 가기 카드. "사진등록" 모드에서 아직 이미지를 고르기 전에만 보인다.
+    minHeight: 66,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e6e4df",
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+  orderHistoryShortcutIcon: {
+    // 바로가기 카드 왼쪽 쿠팡 로고. coupang2.png는 정사각형이 아니라 가로로 긴
+    // 워드마크(565×131, 약 4.3:1)라 정사각형 박스에 담으면 세로로 눌린 채 작게
+    // 뜬다 — 실제 비율에 맞춰 가로로 넓게 잡는다. 로고 자체가 색을 가진 브랜드
+    // 이미지라 tintColor는 주지 않는다(다른 단색 액션 아이콘들과 다름).
+    width: 58,
+    height: 14
+  },
+  orderHistoryShortcutCopy: {
+    // 바로가기 카드 제목/설명 묶음.
+    flex: 1,
+    gap: 3
+  },
+  orderHistoryShortcutTitle: {
+    ...typography.cardTitle,
+    color: "#18201c",
+  },
+  orderHistoryShortcutHint: {
+    ...typography.caption,
+    color: "#68716b",
+  },
+  orderHistoryShortcutChevron: {
+    // 바로가기 카드 오른쪽 화살표.
+    color: "#1f7a5a",
+    fontSize: 22,
+    fontWeight: "700",
+    marginTop: -2
   },
   receiptPreviewCard: {
     // 영수증 미리보기 카드.

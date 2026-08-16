@@ -5,7 +5,8 @@ import BannerAdSlot from "./BannerAdSlot";
 import { typography } from "../theme/typography";
 import { daysUntil, itemCreatedDate } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
-import { fetchBestCategoryProducts } from "../services/coupangApi";
+import { fetchBestCategoryProducts, isCoupangUrl } from "../services/coupangApi";
+import { openCoupangOrderHistory } from "../utils/coupangLinks";
 import { computePersonalRankings } from "../utils/personalRankings";
 
 async function openExternalUrl(url) {
@@ -43,6 +44,8 @@ function ShimmerHighlight() {
 }
 
 const shoppingCartIcon = require("../../assets/actions/shopping_cart_80dp.png");
+const coupangBadgeIcon = require("../../assets/actions/coupang.png");
+const coupangLogoIcon = require("../../assets/actions/coupang2.png");
 const expiredDashboardIcon = require("../../assets/home/priority_high_80dp.png");
 const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
 const weekDashboardIcon = require("../../assets/home/calendar_month.png");
@@ -231,6 +234,22 @@ export default function HomePage({
         ))}
       </View>
 
+      {/* 대시보드 통계 카드 바로 아래, 항상 보이는 자리에 둔다 — "다시 구매 바로가기"
+          패널은 기본 접힘 상태라 여기 넣으면 탭을 한 번 더 해야 보이고, 성격도
+          다르다(그건 이미 등록한 상품 재구매, 이건 새 상품 등록용 지름길). 카드
+          스타일은 AddItemPage.js의 orderHistoryShortcut과 동일하게 맞춰 두 화면에서
+          같은 모양으로 인식되게 한다(2026-08-13, 홈 노출 요청 대응). */}
+      <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
+        <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
+        <View style={styles.orderHistoryShortcutCopy}>
+          <Text style={styles.orderHistoryShortcutTitle}>쿠팡 주문내역 캡처하러 가기</Text>
+          <Text style={styles.orderHistoryShortcutHint}>
+            캡처 후 오늘까지야 앱으로 공유하세요
+          </Text>
+        </View>
+        <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
+      </Pressable>
+
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>이번 주 먼저 먹을 것</Text>
         <Pressable onPress={() => setRepurchasePanelVisible((current) => !current)}>
@@ -332,12 +351,16 @@ function RankingSection({ title, entries, unit }) {
             <Text style={styles.rankingRowLabel} numberOfLines={1}>{entry.label}</Text>
             {entry.purchaseUrl ? (
               <Pressable
-                style={styles.rankingCartButton}
+                style={[styles.rankingCartButton, isCoupangUrl(entry.purchaseUrl) && styles.rankingCartButtonCoupang]}
                 onPress={() => openExternalUrl(entry.purchaseUrl)}
                 accessibilityRole="button"
                 accessibilityLabel="구매 링크 열기"
               >
-                <Image source={shoppingCartIcon} resizeMode="contain" style={styles.rankingCartIcon} />
+                <Image
+                  source={isCoupangUrl(entry.purchaseUrl) ? coupangBadgeIcon : shoppingCartIcon}
+                  resizeMode="contain"
+                  style={isCoupangUrl(entry.purchaseUrl) ? styles.rankingCartIconCoupang : styles.rankingCartIcon}
+                />
               </Pressable>
             ) : null}
           </View>
@@ -403,6 +426,7 @@ function CoupangProductCard({ product }) {
 
 function RepurchaseItem({ item }) {
   const days = daysUntil(item.expiry);
+  const isCoupang = isCoupangUrl(item.purchaseUrl);
 
   async function openPurchaseUrl() {
     const url = String(item.purchaseUrl || "").trim();
@@ -433,19 +457,37 @@ function RepurchaseItem({ item }) {
         </View>
         <Text style={styles.repurchaseMeta}>{item.storage} · {item.expiry}</Text>
         <Pressable
-          style={[styles.purchaseButton, !item.purchaseUrl && styles.purchaseButtonMuted]}
+          style={[
+            styles.purchaseButton,
+            isCoupang && styles.purchaseButtonCoupang,
+            !item.purchaseUrl && styles.purchaseButtonMuted
+          ]}
           onPress={openPurchaseUrl}
           accessibilityRole="button"
           accessibilityLabel={item.purchaseUrl ? "구매 링크 열기" : "구매 링크 없음"}
         >
-          <View style={[styles.purchaseCartIconWrap, !item.purchaseUrl && styles.purchaseCartIconWrapMuted]}>
-            <Image
-              source={shoppingCartIcon}
-              resizeMode="contain"
-              style={[styles.purchaseCartIcon, !item.purchaseUrl && styles.purchaseCartIconMuted]}
-            />
-          </View>
-          <Text style={[styles.purchaseButtonText, !item.purchaseUrl && styles.purchaseButtonTextMuted]}>
+          {isCoupang ? (
+            // coupang2.png는 가로로 긴 워드마크라 원형 버튼에 안 어울려서(2026-08-15
+            // 피드백), 여기만 원형 아이콘 없이 로고를 텍스트 옆에 자연스럽게 붙인다.
+            <Image source={coupangLogoIcon} resizeMode="contain" style={styles.purchaseCoupangLogo} />
+          ) : (
+            <View
+              style={[styles.purchaseCartIconWrap, !item.purchaseUrl && styles.purchaseCartIconWrapMuted]}
+            >
+              <Image
+                source={shoppingCartIcon}
+                resizeMode="contain"
+                style={[styles.purchaseCartIcon, !item.purchaseUrl && styles.purchaseCartIconMuted]}
+              />
+            </View>
+          )}
+          <Text
+            style={[
+              styles.purchaseButtonText,
+              isCoupang && styles.purchaseButtonTextCoupang,
+              !item.purchaseUrl && styles.purchaseButtonTextMuted
+            ]}
+          >
             {item.purchaseUrl ? "구매 링크 열기" : "구매 링크 등록 필요"}
           </Text>
         </Pressable>
@@ -925,10 +967,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0
   },
+  // coupang.png는 그 자체로 이미 빨간 원 배지라, 옅은 민트 배경 위에 작게 얹으면
+  // 원 안에 원이 붕 뜬 것처럼 보인다(2026-08-15 피드백). 흰 배경으로 바꾼다.
+  rankingCartButtonCoupang: {
+    backgroundColor: "#fff",
+    // 흰 배경만으로는 랭킹 카드 배경과 구분이 잘 안 된다는 피드백(2026-08-15)으로
+    // 테두리를 추가했는데, 검정 테두리는 너무 튄다는 재피드백으로 회색 계열로 바꿨다.
+    borderWidth: 1,
+    borderColor: "#c7ccc8"
+  },
   rankingCartIcon: {
     width: 15,
     height: 15,
     tintColor: "#1f7a5a"
+  },
+  // coupang.png는 색을 가진 브랜드 배지라 tintColor를 주지 않는다. 컨테이너(26px 원)
+  // 테두리에 거의 닿도록 크게 키운다.
+  rankingCartIconCoupang: {
+    width: 26,
+    height: 26
   },
   rankingEmpty: {
     paddingVertical: 20
@@ -1045,6 +1102,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginTop: 9
   },
+  // 초록 배경 위에 색 있는 coupang2.png 로고를 얹으니 시각적으로 부딪힌다는
+  // 피드백(2026-08-15)으로 쿠팡일 때만 배경을 흰색으로 바꾼다. 카드 배경(#f8fbf9)과
+  // 거의 안 구분돼서 옅은 테두리를 같이 준다.
+  purchaseButtonCoupang: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e6e4df"
+  },
   purchaseButtonMuted: {
     backgroundColor: "#eef4f1"
   },
@@ -1068,12 +1133,22 @@ const styles = StyleSheet.create({
     tintColor: "#68716b",
     opacity: 0.6
   },
+  // coupang2.png(가로 워드마크)를 원형 버튼 없이 텍스트 옆에 자연스럽게 붙인다.
+  // 565×131 원본 비율(약 4.3:1)을 유지.
+  purchaseCoupangLogo: {
+    width: 60,
+    height: 14
+  },
   purchaseButtonText: {
     ...typography.captionStrong,
     color: "#fff",
   },
   purchaseButtonTextMuted: {
     color: "#68716b"
+  },
+  // 배경이 흰색으로 바뀌었으니 흰 글자(#fff)는 안 보인다 — 어두운 텍스트로 바꾼다.
+  purchaseButtonTextCoupang: {
+    color: "#18201c"
   },
   // 쿠팡 파트너스 대가성 문구. 골드박스/인기상품처럼 파트너스 링크가 보이는
   // 섹션 최상단에 눈에 띄게 노출해야 한다(문서: docs/tunable-options.md 참고).
@@ -1238,6 +1313,46 @@ const styles = StyleSheet.create({
     color: "#ef8b1f",
   },
   // 상품이 없을 때 보여주는 빈 카드입니다.
+  // 대시보드 통계 카드 아래 항상 보이는 쿠팡 주문내역 캡처하러 가기 카드. AddItemPage.js의
+  // orderHistoryShortcut과 같은 모양으로 맞춰 두 화면에서 일관되게 보이도록 한다.
+  orderHistoryShortcut: {
+    minHeight: 66,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e6e4df",
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10
+  },
+  // coupang2.png는 정사각형이 아니라 가로로 긴 워드마크(565×131, 약 4.3:1)라
+  // 실제 비율에 맞춰 가로로 넓게 잡는다. 로고 자체가 색을 가진 브랜드 이미지라
+  // tintColor는 주지 않는다.
+  orderHistoryShortcutIcon: {
+    width: 58,
+    height: 14
+  },
+  orderHistoryShortcutCopy: {
+    flex: 1,
+    gap: 3
+  },
+  orderHistoryShortcutTitle: {
+    ...typography.cardTitle,
+    color: "#18201c",
+  },
+  orderHistoryShortcutHint: {
+    ...typography.caption,
+    color: "#68716b",
+  },
+  orderHistoryShortcutChevron: {
+    color: "#1f7a5a",
+    fontSize: 22,
+    fontWeight: "700",
+    marginTop: -2
+  },
   emptyCard: {
     flex: 1,
     minHeight: 116,

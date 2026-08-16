@@ -175,6 +175,7 @@ export default function App() {
     receiptImageTypeChooserVisible,
     setReceiptImageTypeChooserVisible,
     openReceiptSelector,
+    cancelReceiptSelector,
     applyHighlightedReceiptSelection,
     switchToHighlightMode,
     drafts,
@@ -611,7 +612,8 @@ export default function App() {
             onToggleCropBox={toggleCommerceCropBox}
             onConfirmHighlight={applyHighlightedReceiptSelection}
             onSwitchToHighlight={switchToHighlightMode}
-            onClose={() => setReceiptSelectorVisible(false)}
+            onCancel={cancelReceiptSelector}
+            onConfirm={() => setReceiptSelectorVisible(false)}
           />
           <BarcodeScannerModal
             visible={barcodeScannerVisible}

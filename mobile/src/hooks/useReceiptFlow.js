@@ -303,7 +303,16 @@ export function useReceiptFlow({
         setSelectedOcrLineIds(selectedLineIds);
       }
       setCommerceCropBoxes(commerceCrops);
-      const filteredDrafts = await filterExcludedProductNames(nextDrafts);
+      // exclusion 조회와 classification 조회는 서로 무관한 별개 워커 엔드포인트라
+      // 순차로 기다릴 이유가 없다 — 병렬로 같이 보내서 왕복 한 번 분량을 아낀다
+      // (2026-08-16, "여러 단계로 나눠 보내는 게 맞나" 피드백 대응). classification은
+      // exclusion 결과를 기다리지 않고 지금 nextDrafts 그대로로 미리 요청해두고,
+      // exclusion으로 걸러진 이름은 setReceiptDrafts가 draftForms에 없는 이름으로
+      // 취급해 자연히 무시한다.
+      const [filteredDrafts, prefetchedClassifications] = await Promise.all([
+        filterExcludedProductNames(nextDrafts),
+        resolveProductClassifications(nextDrafts)
+      ]);
       const excludedDraftNames = nextDrafts.filter((name) => !filteredDrafts.includes(name));
       if (excludedDraftNames.length) {
         // 이미 확정된 선택(텍스트 매칭 + 상품 사진 매칭)을 통째로 다시 계산하면
@@ -316,7 +325,7 @@ export function useReceiptFlow({
         setSelectedOcrLineIds(selectedLineIds);
       }
       nextDrafts = filteredDrafts;
-      setReceiptDrafts(nextDrafts, commerceImageMap);
+      setReceiptDrafts(nextDrafts, commerceImageMap, prefetchedClassifications);
       // OCR 자동 인식 결과는 아직 "완료"로 확정된 적이 없는 상태다. 여기서 자동
       // 인식 결과 자체를 스냅샷으로 삼으면, 아무것도 안 건드리고 바로 뒤로가기를
       // 눌러도 스냅샷과 현재 상태가 똑같아 되돌린 게 티가 안 난다(2026-08-15 재확인
@@ -571,7 +580,10 @@ export function useReceiptFlow({
     };
   }
 
-  function setReceiptDrafts(nextDrafts, imageMap = {}) {
+  // prefetchedClassifications가 있으면(캡처 직후 filterExcludedProductNames와 병렬로
+  // 이미 받아둔 결과, createReceiptCandidates 참고) 그걸 바로 반영하고 새로 요청하지
+  // 않는다 — 없으면(다른 호출부: toggleOcrLine 등) 기존처럼 내부에서 요청한다.
+  function setReceiptDrafts(nextDrafts, imageMap = {}, prefetchedClassifications = null) {
     const uniqueDrafts = Array.from(new Set(nextDrafts));
     setDrafts(uniqueDrafts);
     setInitialDrafts(uniqueDrafts);
@@ -586,16 +598,17 @@ export function useReceiptFlow({
       });
       return nextForms;
     });
-    void hydrateDraftClassifications(uniqueDrafts);
+    if (prefetchedClassifications) {
+      // 지금 막 시작될 수 있는 다른 요청(hydrateDraftClassifications)이 나중에 도착해서
+      // 이 결과를 덮어쓰지 않도록 요청 ID를 먼저 올려둔다.
+      classificationRequestRef.current += 1;
+      applyClassificationResults(uniqueDrafts, prefetchedClassifications);
+    } else {
+      void hydrateDraftClassifications(uniqueDrafts);
+    }
   }
 
-  async function hydrateDraftClassifications(draftNames) {
-    if (!draftNames.length) return;
-    const requestId = classificationRequestRef.current + 1;
-    classificationRequestRef.current = requestId;
-    const resultMap = await resolveProductClassifications(draftNames);
-    if (classificationRequestRef.current !== requestId) return;
-
+  function applyClassificationResults(draftNames, resultMap) {
     setDraftForms((current) => {
       const nextForms = { ...current };
       for (const draftName of draftNames) {
@@ -626,6 +639,15 @@ export function useReceiptFlow({
       }
       return nextForms;
     });
+  }
+
+  async function hydrateDraftClassifications(draftNames) {
+    if (!draftNames.length) return;
+    const requestId = classificationRequestRef.current + 1;
+    classificationRequestRef.current = requestId;
+    const resultMap = await resolveProductClassifications(draftNames);
+    if (classificationRequestRef.current !== requestId) return;
+    applyClassificationResults(draftNames, resultMap);
   }
 
   // 초기화/일괄 저장 후에도 "영수증 이미지 보기" 카드가 남아있던 버그(2026-08-08) —

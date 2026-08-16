@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Alert } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { categories } from "../categories";
 import { daysUntil, itemCreatedTime, todayIso } from "../utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
@@ -11,6 +12,47 @@ import {
 import { convertToPartnerLink, searchCoupangProducts } from "../services/coupangApi";
 import { registerBarcodeProduct } from "../services/barcodeApi";
 import { setCachedBarcodeImage } from "../services/barcodeImageCache";
+import { sendProductClassificationFeedback } from "../services/productClassificationApi";
+import { normalizeFeedbackSettings } from "./useReceiptFlow";
+
+// App.js가 설정을 저장하는 키와 반드시 같아야 한다(App.js의 SETTINGS_KEY). 보관함
+// 수정 시 분류 피드백을 보낼지 말지 확인하는 용도로만 여기서 직접 읽는다 — 이 훅과
+// useReceiptFlow 훅이 서로의 상태를 모르는 별도 인스턴스라 prop으로 못 받는다.
+const SETTINGS_KEY = "fresh-keeper-mobile-settings-v1";
+
+async function isClassificationFeedbackEnabled() {
+  try {
+    const stored = JSON.parse((await AsyncStorage.getItem(SETTINGS_KEY)) || "{}");
+    return normalizeFeedbackSettings(stored.feedback).enabled;
+  } catch {
+    return true;
+  }
+}
+
+// 등록 직후엔 없던 "실제 정답"이 보관함 수정에서 나온다 — 사용자가 카테고리/보관/
+// 소비기한을 직접 고쳤다는 건 원래 분류(예측이든 등록 당시 값이든)가 틀렸다는
+// 신호라 분류 정확도 개선에 특히 값지다(2026-08-16 피드백). 등록 당시 예측값이
+// 남아있으면(useReceiptFlow.js의 classificationPrediction) 그걸 predicted로 쓰고,
+// 직접등록/바코드 등록처럼 예측이 없었던 상품은 predicted 없이 final만 보낸다.
+function classificationFeedbackItemForEdit(originalItem, editForm) {
+  if (!originalItem) return null;
+  const categoryChanged = editForm.category !== originalItem.category;
+  const storageChanged = editForm.storage !== originalItem.storage;
+  const expiryChanged = editForm.expiry !== originalItem.expiry;
+  if (!categoryChanged && !storageChanged && !expiryChanged) return null;
+
+  const prediction = originalItem.classificationPrediction || {};
+  return {
+    name: editForm.name || originalItem.name,
+    predictedCategory: prediction.category || "",
+    predictedStorage: prediction.storage || "",
+    predictedExpiryDays: prediction.expiryDays,
+    predictedSource: prediction.source || "default",
+    finalCategory: editForm.category || "기타",
+    finalStorage: editForm.storage || "냉장",
+    finalExpiryDays: Math.max(0, daysUntil(editForm.expiry || todayIso(7)))
+  };
+}
 
 const ITEM_STATUS_ACTIVE = "active";
 const ITEM_STATUS_COMPLETED = "completed";
@@ -363,6 +405,15 @@ export function useInventory({
           : item
       )
     );
+
+    // 분류 피드백 전송은 저장을 막으면 안 되니 fire-and-forget으로 보낸다.
+    const feedbackItem = classificationFeedbackItemForEdit(originalItem, editForm);
+    if (feedbackItem) {
+      isClassificationFeedbackEnabled().then((enabled) => {
+        if (enabled) void sendProductClassificationFeedback([feedbackItem]).catch(() => undefined);
+      });
+    }
+
     cancelEdit();
   }
 

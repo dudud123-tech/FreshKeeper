@@ -399,6 +399,7 @@ export default function InventoryList({
                                 <CardIconButton
                                   icon={forkSpoonIcon}
                                   onPress={() => completeItem(item.id)}
+                                  complete
                                   accessibilityLabel="다 먹어서 완료"
                                 />
                                 <FavoriteIconButton
@@ -557,7 +558,7 @@ function FavoriteIconButton({ active, onPress }) {
   );
 }
 
-function CardIconButton({ icon, onPress, danger = false, accessibilityLabel }) {
+function CardIconButton({ icon, onPress, danger = false, complete = false, accessibilityLabel }) {
   return (
     <Pressable
       style={[styles.cardIconButton, danger && styles.cardIconButtonDanger]}
@@ -568,7 +569,7 @@ function CardIconButton({ icon, onPress, danger = false, accessibilityLabel }) {
       <Image
         source={icon}
         resizeMode="contain"
-        style={[styles.cardIcon, danger && styles.cardIconDanger]}
+        style={[styles.cardIcon, danger && styles.cardIconDanger, complete && styles.cardIconComplete]}
       />
     </Pressable>
   );
@@ -1275,10 +1276,9 @@ const styles = StyleSheet.create({
   // 흰색으로 바꾸고 아래 purchaseIconCoupang에서 아이콘도 테두리에 닿을 만큼 키운다.
   // 처음엔 32px 원 그대로 뒀는데 "조금 더 키워도 될 것 같다"는 피드백(2026-08-15
   // 재확인)으로 버튼 자체도 같이 키웠다.
+  // 원 컨테이너는 다른 아이콘 버튼들(즐겨찾기, 수정, 삭제 등)과 크기를 맞춘다 —
+  // 색만 다르고 크기는 통일. 아이콘 자체는 purchaseIconCoupang에서 더 크게 키운다.
   purchaseIconButtonCoupang: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
     borderColor: "#e6e4df",
     backgroundColor: "#fff"
   },
@@ -1335,6 +1335,9 @@ const styles = StyleSheet.create({
     borderColor: "#efd8d3",
     backgroundColor: "#fff7f5"
   },
+  // fork_spoon_80dp.png는 새로 바뀐 체크 아이콘이 초록 원+흰 체크까지 이미 색이
+  // 입혀진 완성형 이미지라(쿠팡 배지와 같은 종류), 버튼 배경에 별도 초록 채움이
+  // 필요 없다 — 기본(흰 배경+테두리) 그대로 두고 아이콘만 키운다.
   cardIcon: {
     width: 21,
     height: 21,
@@ -1342,6 +1345,13 @@ const styles = StyleSheet.create({
   },
   cardIconDanger: {
     tintColor: "#9f3929"
+  },
+  // 이미 색이 입혀진 완성형 아이콘이라 tintColor를 주지 않는다(주면 초록 원과
+  // 흰 체크가 전부 한 색으로 덮여 체크 모양이 안 보인다 — 2026-08-16 실기기로 확인).
+  // 컨테이너(32px 원, 테두리 1px)에 꽉 차도록 키운다.
+  cardIconComplete: {
+    width: 34,
+    height: 34
   },
   normalFill: {
     backgroundColor: "#1f7a5a"

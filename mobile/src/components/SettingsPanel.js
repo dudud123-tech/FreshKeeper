@@ -22,8 +22,6 @@ export default function SettingsPanel({
   setReminderDays,
   notificationSettings,
   setNotificationSettings,
-  planNotificationSettings,
-  setPlanNotificationSettings,
   shareFamilyDigest,
   shareFamilyCode,
   familyCodeInput,
@@ -170,29 +168,11 @@ export default function SettingsPanel({
             />
           </View>
         </View>
-        {/* 먹는 일정 알림. 소비기한 알림과 성격이 달라 시간을 따로 정한다(기본 오후 5시). */}
-        <View style={[styles.dailyAlertBox, planNotificationSettings.enabled && styles.dailyAlertBoxActive]}>
-          <Pressable
-            style={styles.dailyAlertHeader}
-            onPress={() => setPlanNotificationSettings((current) => ({ ...current, enabled: !current.enabled }))}
-          >
-            <View style={styles.dailyAlertCopy}>
-              <Text style={styles.dailyAlertTitle}>그날 먹기로 한 상품을 알려드려요.</Text>
-            </View>
-            <View style={[styles.toggleSwitch, planNotificationSettings.enabled && styles.toggleSwitchActive]}>
-              <View style={[styles.toggleKnob, planNotificationSettings.enabled && styles.toggleKnobActive]} />
-            </View>
-          </Pressable>
-          <View style={styles.timePickerRow}>
-            <TimeField
-              value={`${String(planNotificationSettings.hour).padStart(2, "0")}:${String(planNotificationSettings.minute).padStart(2, "0")}`}
-              onChange={(next) => {
-                const [hour, minute] = next.split(":").map(Number);
-                setPlanNotificationSettings((current) => ({ ...current, hour, minute }));
-              }}
-            />
-          </View>
-        </View>
+        {/* 먹는 일정 알림은 여기에 설정을 두지 않는다. 상품마다 알림 시각을
+            따로 갖는 구조라 "모든 상품 공통 시각"이라는 설정이 들어갈 자리가
+            없고, 일정을 안 잡으면 알림 자체가 없어 on/off 토글도 필요 없다.
+            시각은 먹을 날을 정하는 그 자리(보관함 편집·일정 화면)에서
+            상품별로 바꾼다(2026-08-23). */}
       </View>
       ) : null}
 

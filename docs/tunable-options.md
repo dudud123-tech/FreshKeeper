@@ -28,8 +28,9 @@
 | 일정 알림 예약 범위 | `PLAN_NOTIFICATION_LOOKAHEAD_DAYS` in `mobile/src/utils/mealPlan.js` | `7` | 알림을 미리 예약해 두는 일수. ⚠️ 화면 조회 기간과 일부러 분리했다 — 매일 반복 상품이 있으면 예약 건수가 날짜 수만큼 불어나 아래 `MAX_PLAN_NOTIFICATIONS` 상한을 금방 채우고 뒤쪽 상품이 알림을 못 받는다. 앱을 열 때마다 다시 예약하므로 7일이면 충분하다 |
 | 끼니 슬롯 목록·기본 시간 | `MEAL_SLOTS` in `mobile/src/utils/mealPlan.js` | 아침 08:00 · 점심 12:00 · 저녁 18:00 | 여기에 추가하면 일정 화면·보관함 편집·알림 문구에 자동 반영된다. `defaultTime`은 끼니를 고를 때 알림 시각을 자동으로 채워주는 값 |
 | 반복 주기 목록 | `PLAN_REPEATS` in `mobile/src/utils/mealPlan.js` | 안 함 · 매일 · 매주 | 비타민·약처럼 계속 챙겨 먹는 상품용. 반복이 걸린 상품은 "완료"가 아니라 다음 회차로 넘어간다(`completePlanOccurrence`) — 완료 처리하면 보관함에서 사라지기 때문 |
-| 상품별 알림 시각 우선순위 | `planTimeFor()` in `mobile/src/utils/mealPlan.js` | 상품 지정 → 끼니 기본값 → 설정값 | 상품마다 `plannedTime`을 따로 저장한다. 값이 없으면 끼니 기본 시간, 그것도 없으면 설정의 일정 알림 시간을 쓴다 |
-| 일정 알림 기본(폴백) 시간 | `DEFAULT_PLAN_NOTIFICATION_SETTINGS` in `mobile/src/hooks/useAppNotifications.js` | `17:00` | 상품에도 끼니에도 시간이 없을 때만 쓰이는 폴백. 사용자가 설정 > 알림에서 변경 가능 |
+| 상품별 알림 시각 우선순위 | `planTimeFor()` in `mobile/src/utils/mealPlan.js` | 상품 지정 → 끼니 기본값 → `DEFAULT_PLAN_TIME` | 알림 시각은 상품마다 `plannedTime`으로 따로 저장된다. 일정을 잡는 순간 화면에 보이던 시각이 그대로 확정 저장되므로(`resolvedPlanTime` in `InventoryList.js`, `assignItem` in `SchedulePage.js`) 보통 여기서 끝난다. 뒤의 두 단계는 시각이 저장되기 전에 만들어진 예전 데이터용 안전망 |
+| 새 일정의 기본 알림 시각 | `DEFAULT_PLAN_TIME` in `mobile/src/utils/mealPlan.js` | `18:00` | 먹을 날을 새로 잡을 때 알림 시각 칸에 처음 채워지는 값. ⚠️ 예전에는 설정 > 알림에서 사용자가 정하게 했지만, 일정 알림은 **상품마다 시각을 따로 갖는** 구조라 "모든 상품 공통 시각"이라는 설정이 모델과 어긋나 없앴다. 저녁 끼니(`MEAL_SLOTS`)와 같은 시각으로 맞춰 둔다 |
+| 일정 알림 on/off | (없음) | 항상 켜짐 | ⚠️ 소비기한 알림과 달리 토글이 없다. 소비기한 알림은 상품만 등록하면 저절로 오지만 일정 알림은 사용자가 먹을 날을 직접 잡은 상품만 대상이라, 일정을 안 잡은 상태가 곧 꺼둔 상태다. 알림 자체를 끄고 싶으면 안드로이드 알림 설정에서 `PLAN_NOTIFICATION_CHANNEL_ID` 채널만 끄면 된다 |
 | 일정 알림 예약 상한 | `MAX_PLAN_NOTIFICATIONS` in `mobile/src/services/notificationScheduler.js` | `60` | 상품마다 시각이 다르면 예약 건수가 상품 수만큼 늘어나므로 안드로이드 예약 한도를 넘지 않게 막는 상한. 같은 날 같은 시각인 상품은 한 건으로 묶인다 |
 | 일정 알림 안드로이드 채널 | `PLAN_NOTIFICATION_CHANNEL_ID` in `mobile/src/services/notificationScheduler.js` | `freshkeeper-plan-alerts-v2` | ⚠️ 안드로이드 채널은 한 번 만들어지면 앱이 중요도·소리·진동을 못 바꾼다. 알림 세기를 조정하려면 **반드시 ID 버전을 같이 올려야** 새 설정이 적용된다 |
 | 알림에 싣는 메모 최대 건수 | `MAX_MEMO_LINES` in `mobile/src/services/notificationScheduler.js` | `3` | 한 알림에 여러 상품이 묶일 때 메모 줄이 무한정 늘어나지 않게 하는 상한. 소비기한 알림·일정 알림 양쪽에 같이 적용된다 |

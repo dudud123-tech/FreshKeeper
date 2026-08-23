@@ -40,6 +40,12 @@ export const SCHEDULE_LOOKAHEAD_DAYS = 30;
 // 예약하므로 화면만 30일로 늘리고 예약은 7일로 둔다(2026-08-23).
 export const PLAN_NOTIFICATION_LOOKAHEAD_DAYS = 7;
 
+// 새 일정을 잡을 때 알림 시각 칸에 처음 채워지는 값. 예전에는 설정 화면에서
+// 사용자가 정하게 했지만, 일정 알림은 상품마다 시각을 따로 갖는 구조라
+// "모든 상품 공통 시각"이라는 설정이 모델과 맞지 않아 없앴다. 저녁 끼니와
+// 같은 시각으로 맞춰 둔다(2026-08-23).
+export const DEFAULT_PLAN_TIME = "18:00";
+
 export function mealLabel(mealId) {
   return MEAL_SLOTS.find((slot) => slot.id === mealId)?.label || ALL_DAY_LABEL;
 }
@@ -68,10 +74,6 @@ export function formatPlanTime(time) {
   const isAfternoon = hour >= 12;
   const displayHour = hour % 12 === 0 ? 12 : hour % 12;
   return `${isAfternoon ? "오후" : "오전"} ${displayHour}:${String(minute).padStart(2, "0")}`;
-}
-
-export function toPlanTime(hour, minute) {
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 export function planTimeParts(time, fallback = "18:00") {

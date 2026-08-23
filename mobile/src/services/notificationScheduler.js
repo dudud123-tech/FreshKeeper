@@ -2,11 +2,12 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { daysUntil, daysUntilFrom, parseIsoDate, toIsoDate } from "../utils/date";
 import {
+  DEFAULT_PLAN_TIME,
   formatPlanTime,
   groupPlannedItemsByTime,
+  hasPlan,
   mealLabel,
-  PLAN_NOTIFICATION_LOOKAHEAD_DAYS,
-  toPlanTime
+  PLAN_NOTIFICATION_LOOKAHEAD_DAYS
 } from "../utils/mealPlan";
 
 const NOTIFICATION_CHANNEL_ID = "freshkeeper-expiry-alerts-v2";
@@ -114,24 +115,28 @@ async function prepareNotifications() {
 // 맨 앞의 cancelAllScheduledNotificationsAsync()가 예약된 알림을 전부 지우기
 // 때문에, 두 종류를 각각 다른 함수에서 예약하면 나중에 부른 쪽이 앞쪽 예약을
 // 통째로 날려버린다(2026-08-19).
-export async function scheduleAllNotifications(items, reminderDays, settings, planSettings) {
+export async function scheduleAllNotifications(items, reminderDays, settings) {
   if (Platform.OS === "web") return "웹에서는 알림을 예약하지 않습니다.";
 
   await Notifications.cancelAllScheduledNotificationsAsync();
 
   const expiryEnabled = Boolean(settings?.enabled);
-  const planEnabled = Boolean(planSettings?.enabled);
-  if (!expiryEnabled && !planEnabled) return "알림 꺼짐";
+  // 먹는 일정 알림에는 on/off 설정이 없다. 소비기한 알림은 상품만 등록하면
+  // 저절로 오지만 일정 알림은 사용자가 먹을 날을 직접 잡은 상품만 대상이라,
+  // 일정을 안 잡은 상태가 곧 꺼둔 상태다. 설정에 토글을 두면 같은 일을 두 번
+  // 하게 되고 "상품마다 다른 시각"이라는 모델과도 어긋난다(2026-08-23).
+  const hasAnyPlan = items.some(hasPlan);
+  if (!expiryEnabled && !hasAnyPlan) return "알림 꺼짐";
 
   const unavailableReason = await prepareNotifications();
   if (unavailableReason) return unavailableReason;
 
   const expiryCount = expiryEnabled ? await scheduleExpiryDigests(items, reminderDays, settings) : 0;
-  const planCount = planEnabled ? await schedulePlanReminders(items, planSettings) : 0;
+  const planCount = await schedulePlanReminders(items);
 
   const parts = [];
   if (expiryEnabled) parts.push(`소비기한 ${expiryCount}일치`);
-  if (planEnabled) parts.push(`일정 ${planCount}건`);
+  if (planCount > 0) parts.push(`일정 ${planCount}건`);
   return parts.length > 0 ? `${parts.join(" · ")} 알림 예약됨` : "예약할 알림 없음";
 }
 
@@ -171,10 +176,13 @@ async function scheduleExpiryDigests(items, reminderDays, settings) {
 // 상품마다 정한 시각에 알린다. 같은 날 같은 시각인 상품은 한 건으로 묶어서
 // 알림이 동시에 여러 개 쏟아지지 않게 한다. 시간을 따로 안 정한 상품은
 // 끼니 기본 시간 → 설정의 일정 알림 시간 순으로 폴백한다(mealPlan.planTimeFor).
-async function schedulePlanReminders(items, planSettings) {
+async function schedulePlanReminders(items) {
   let scheduledCount = 0;
   const now = new Date();
-  const fallbackTime = toPlanTime(planSettings.hour, planSettings.minute);
+  // 화면에서 일정을 잡을 때 시각도 함께 저장하므로 여기까지 오는 상품은
+  // 대개 자기 시각을 갖고 있다. 이 폴백은 시각이 저장되기 전에 만들어진
+  // 예전 데이터가 알림에서 아예 빠지지 않게 하는 안전망이다.
+  const fallbackTime = DEFAULT_PLAN_TIME;
 
   for (let offset = 0; offset < PLAN_NOTIFICATION_LOOKAHEAD_DAYS; offset += 1) {
     const dayDate = new Date();

@@ -4,7 +4,7 @@ import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
 import { statusFor, timelineFor, todayIso, weekdayLabel } from "../utils/date";
-import { planBadgeLabel, planTimeFor, PLAN_REPEATS, repeatLabel } from "../utils/mealPlan";
+import { DEFAULT_PLAN_TIME, planBadgeLabel, planTimeFor, PLAN_REPEATS, repeatLabel } from "../utils/mealPlan";
 import { TabButton, TimeField } from "./CommonControls";
 
 
@@ -213,13 +213,13 @@ export default function InventoryList({
                         options={PLAN_REPEATS.map((option) => option.id)}
                         value={editForm.planRepeat || ""}
                         onChange={(value) =>
-                          setEditForm((current) => ({
-                            ...current,
-                            planRepeat: value,
+                          setEditForm((current) => {
                             // 매일 반복은 날짜를 안 물어보므로 시작일이 비어 있으면 오늘로 채운다.
                             // plannedDate가 없으면 일정이 없는 것으로 취급된다(mealPlan.hasPlan).
-                            plannedDate: value === "daily" && !current.plannedDate ? todayIso() : current.plannedDate
-                          }))
+                            const plannedDate =
+                              value === "daily" && !current.plannedDate ? todayIso() : current.plannedDate;
+                            return { ...current, planRepeat: value, plannedDate, ...resolvedPlanTime(current, plannedDate) };
+                          })
                         }
                         formatLabel={(option) => repeatLabel(option)}
                         compact
@@ -228,7 +228,11 @@ export default function InventoryList({
                         <Field label={editForm.planRepeat === "weekly" ? EDIT_COPY.plannedWeekday : EDIT_COPY.plannedDate}>
                           <DateButton
                             value={editForm.plannedDate || todayIso()}
-                            onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
+                            onPress={() =>
+                              openCalendar(editForm.plannedDate || todayIso(), (value) =>
+                                setEditForm((current) => ({ ...current, plannedDate: value, ...resolvedPlanTime(current, value) }))
+                              )
+                            }
                             showWeekday
                           />
                           {editForm.planRepeat === "weekly" ? (
@@ -242,7 +246,7 @@ export default function InventoryList({
                         <Field label={EDIT_COPY.plannedTime}>
                           <View style={styles.planTimeRow}>
                             <TimeField
-                              value={planTimeFor(editForm, "18:00")}
+                              value={planTimeFor(editForm, DEFAULT_PLAN_TIME)}
                               onChange={(next) => setEditForm((current) => ({ ...current, plannedTime: next }))}
                             />
                           </View>
@@ -560,6 +564,14 @@ export default function InventoryList({
     {renderEditSheet()}
     </>
   );
+}
+
+// 일정이 생기는 순간 알림 시각도 같이 확정한다. TimeField는 사용자가 칸을
+// 직접 건드려야만 onChange가 뜨기 때문에, 그냥 두면 화면에는 시각이 보이는데
+// plannedTime은 빈 값으로 저장돼 실제 알림이 다른 시각에 왔다(2026-08-23).
+function resolvedPlanTime(form, plannedDate) {
+  if (!plannedDate) return {};
+  return { plannedTime: planTimeFor(form, DEFAULT_PLAN_TIME) };
 }
 
 function Field({ label, children }) {

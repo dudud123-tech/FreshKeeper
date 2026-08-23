@@ -4,6 +4,7 @@ import { typography } from "../theme/typography";
 import { statusFor, todayIso, weekdayLabel } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
 import {
+  DEFAULT_PLAN_TIME,
   formatPlanTime,
   groupPlannedItemsByDate,
   hasPlan,
@@ -35,13 +36,12 @@ export default function SchedulePage({
   setItemPlan,
   clearItemPlan,
   completeItem,
-  openCalendar,
-  planNotificationTime = "18:00"
+  openCalendar
 }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerDate, setPickerDate] = useState(() => todayIso());
   const [pickerMeal, setPickerMeal] = useState("");
-  const [pickerTime, setPickerTime] = useState("18:00");
+  const [pickerTime, setPickerTime] = useState(DEFAULT_PLAN_TIME);
   const [pickerRepeat, setPickerRepeat] = useState("");
   // 값이 있으면 "새 상품 추가"가 아니라 "이 상품의 일정 수정" 모드다.
   const [editingItem, setEditingItem] = useState(null);
@@ -63,7 +63,7 @@ export default function SchedulePage({
     setEditingItem(null);
     setPickerDate(todayIso());
     setPickerMeal("");
-    setPickerTime(planNotificationTime);
+    setPickerTime(DEFAULT_PLAN_TIME);
     setPickerRepeat("");
     setPickerVisible(true);
   }
@@ -72,7 +72,7 @@ export default function SchedulePage({
     setEditingItem(item);
     setPickerDate(item.plannedDate || todayIso());
     setPickerMeal(item.plannedMeal || "");
-    setPickerTime(planTimeFor(item, planNotificationTime));
+    setPickerTime(planTimeFor(item, DEFAULT_PLAN_TIME));
     setPickerRepeat(item.planRepeat || "");
     setPickerVisible(true);
   }
@@ -107,7 +107,6 @@ export default function SchedulePage({
               <ScheduleRow
                 key={item.id}
                 item={item}
-                planNotificationTime={planNotificationTime}
                 onComplete={() => completeItem(item.id)}
                 onClear={() => clearItemPlan(item.id)}
                 onEdit={() => openPickerForItem(item)}
@@ -131,7 +130,6 @@ export default function SchedulePage({
                   <ScheduleRow
                     key={item.id}
                     item={item}
-                    planNotificationTime={planNotificationTime}
                     onComplete={() => completeItem(item.id)}
                     onClear={() => clearItemPlan(item.id)}
                     onEdit={() => openPickerForItem(item)}
@@ -236,9 +234,9 @@ export default function SchedulePage({
 
 // 일정 한 줄. 소비기한 D-day를 같이 보여줘서 "언제 먹을지"와 "언제까지 먹어야 하는지"
 // 두 축을 한눈에 비교할 수 있게 한다.
-function ScheduleRow({ item, planNotificationTime, onComplete, onClear, onEdit, showPlannedDate = false }) {
+function ScheduleRow({ item, onComplete, onClear, onEdit, showPlannedDate = false }) {
   const status = statusFor(item);
-  const timeLabel = formatPlanTime(planTimeFor(item, planNotificationTime));
+  const timeLabel = formatPlanTime(planTimeFor(item, DEFAULT_PLAN_TIME));
   const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)} 반복` : "";
   return (
     <View style={styles.row}>

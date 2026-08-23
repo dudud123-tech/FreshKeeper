@@ -42,7 +42,6 @@ import {
   todayIso,
 } from "./src/utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "./src/utils/expiryPresets";
-import { toPlanTime } from "./src/utils/mealPlan";
 import { chooseItemImage } from "./src/utils/itemImagePicker";
 
 const STORAGE_KEY = "fresh-keeper-mobile-items-v1";
@@ -226,10 +225,7 @@ export default function App() {
   const {
     notificationSettings,
     setNotificationSettings,
-    planNotificationSettings,
-    setPlanNotificationSettings,
-    normalizeNotificationSettings,
-    normalizePlanNotificationSettings
+    normalizeNotificationSettings
   } = useAppNotifications({ items, reminderDays, settingsReady });
   const {
     familySettings,
@@ -383,7 +379,6 @@ export default function App() {
         const settings = JSON.parse(value);
         if (typeof settings.reminderDays === "number") setReminderDays(settings.reminderDays);
         if (settings.notifications) setNotificationSettings(normalizeNotificationSettings(settings.notifications));
-        if (settings.planNotifications) setPlanNotificationSettings(normalizePlanNotificationSettings(settings.planNotifications));
         if (settings.feedback) setFeedbackSettings(normalizeFeedbackSettings(settings.feedback));
         if (settings.family) {
           const nextFamily = normalizeFamilySettings(settings.family);
@@ -406,12 +401,11 @@ export default function App() {
       JSON.stringify({
         reminderDays,
         notifications: notificationSettings,
-        planNotifications: planNotificationSettings,
         feedback: feedbackSettings,
         family: familySettings
       })
     ).catch(() => undefined);
-  }, [reminderDays, notificationSettings, planNotificationSettings, feedbackSettings, familySettings, settingsReady]);
+  }, [reminderDays, notificationSettings, feedbackSettings, familySettings, settingsReady]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -776,7 +770,6 @@ export default function App() {
               clearItemPlan={clearItemPlan}
               completeItem={completePlanOccurrence}
               openCalendar={openCalendar}
-              planNotificationTime={toPlanTime(planNotificationSettings.hour, planNotificationSettings.minute)}
             />
 
             <ScrollView style={appShellStyles.screen} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">
@@ -787,8 +780,6 @@ export default function App() {
                 setReminderDays={setReminderDays}
                 notificationSettings={notificationSettings}
                 setNotificationSettings={setNotificationSettings}
-                planNotificationSettings={planNotificationSettings}
-                setPlanNotificationSettings={setPlanNotificationSettings}
                 shareFamilyDigest={shareFamilyDigest}
                 shareFamilyCode={shareFamilyCode}
                 familyCodeInput={familyCodeInput}

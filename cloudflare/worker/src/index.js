@@ -175,7 +175,7 @@ const MIN_SUPPORTED_ANDROID_VERSION_CODE = 20;
 // 띄운다(mobile/App.js의 SoftUpdatePrompt) — "나중에"를 눌러도 앱은 정상 실행되고,
 // 다음 실행 때 다시 물어본다(2026-08-08). 새 버전을 Play 콘솔에 올릴 때마다 이
 // 값을 그 versionCode로 갱신하고 배포할 것.
-const LATEST_ANDROID_VERSION_CODE = 22;
+const LATEST_ANDROID_VERSION_CODE = 23;
 const ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.palchonajae.freshkeeper";
 
 // 업데이트 직후 첫 실행에서 한 번 보여줄 "새로워진 점" 안내. versionCode가 앱의
@@ -183,14 +183,14 @@ const ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=co
 // 문구만 고칠 수 있게 서버 쪽에 둔 것 — 새 버전 낼 때마다 이 값을 그 versionCode로
 // 갱신하고 배포하면 된다.
 const ANDROID_WHATS_NEW = {
-  versionCode: 22,
+  versionCode: 23,
   title: "이번 업데이트에서 달라진 점",
   items: [
-    "쿠팡 주문내역으로 바로 이동하는 바로가기가 생겼어요",
-    "캡처 후 공유하기로 더 빠르게 등록할 수 있어요",
-    "캡처 화면 뒤로가기가 더 안전해졌어요",
-    "쿠팡 구매 링크에는 쿠팡 아이콘이 보여요",
-    "튜토리얼을 홈 화면에서 언제든 다시 볼 수 있어요"
+    "상품을 언제 먹을지 정해두면 그 시각에 알려드려요",
+    "비타민·약처럼 챙겨 먹는 건 매일·매주 반복으로 설정할 수 있어요",
+    "홈에서 오늘 먹기로 한 것을 바로 확인하고 체크할 수 있어요",
+    "상품마다 메모를 남기면 알림에 함께 보여드려요",
+    "수정 화면을 정리해 소비기한과 일정을 더 빠르게 바꿀 수 있어요"
   ]
 };
 

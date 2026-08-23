@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
 import { formatDateLabel } from "../utils/date";
 
@@ -61,59 +61,65 @@ export function ChoiceGroup({ label, options, value, onChange, formatLabel = (op
   );
 }
 
-// 값을 위아래로 굴려서 고르는 휠. 설정 화면의 임박 알림기준(ReminderWheel)에서
-// 쓰던 방식을 시/분 선택에도 쓰려고 일반화했다 — +- 버튼만으로 시간을 맞추는 게
-// 불편하다는 피드백 때문이다(2026-08-23). 네이티브 시계 피커를 쓰면 재빌드가
-// 필요해서, 이미 앱에 있는 이 방식을 재사용한다.
-export function WheelSelect({ options, value, onChange, formatValue = (option) => String(option), label }) {
-  const scrollRef = useRef(null);
-  const itemHeight = 44;
+// "HH:MM"을 한 줄에서 직접 입력하는 컨트롤. 휠은 자리를 너무 많이 차지하고
+// +- 버튼은 한 칸씩 눌러야 해서, 두 방식 다 쓰기 불편하다는 피드백으로 바꿨다(2026-08-23).
+// 타이핑 중에는 사용자가 친 문자열을 그대로 두고(지우고 다시 치는 걸 막지 않게),
+// 입력이 끝났을 때 유효 범위로 보정해서 확정한다.
+export function TimeField({ value, onChange }) {
+  const [hourText, setHourText] = useState("");
+  const [minuteText, setMinuteText] = useState("");
+  const [editingPart, setEditingPart] = useState("");
 
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({
-        y: Math.max(options.indexOf(value), 0) * itemHeight,
-        animated: false
-      });
-    });
-  }, [options, value]);
+  const [valueHour = "18", valueMinute = "00"] = String(value || "18:00").split(":");
+  const hourDisplay = editingPart === "hour" ? hourText : valueHour;
+  const minuteDisplay = editingPart === "minute" ? minuteText : valueMinute;
 
-  function selectFromOffset(offsetY) {
-    const index = Math.max(0, Math.min(options.length - 1, Math.round(offsetY / itemHeight)));
-    onChange(options[index]);
+  function commit(part, text) {
+    const digits = text.replace(/\D/g, "");
+    setEditingPart("");
+    if (!digits) return;
+    const max = part === "hour" ? 23 : 59;
+    const clamped = Math.max(0, Math.min(max, Number(digits)));
+    const next = String(clamped).padStart(2, "0");
+    onChange(part === "hour" ? `${next}:${valueMinute}` : `${valueHour}:${next}`);
   }
 
   return (
-    <View style={styles.wheelColumn}>
-      {label ? <Text style={styles.wheelLabel}>{label}</Text> : null}
-      <View style={styles.wheel}>
-        <View pointerEvents="none" style={styles.wheelSelection} />
-        <ScrollView
-          ref={scrollRef}
-          showsVerticalScrollIndicator={false}
-          snapToInterval={itemHeight}
-          decelerationRate="fast"
-          nestedScrollEnabled
-          contentContainerStyle={styles.wheelContent}
-          onMomentumScrollEnd={(event) => selectFromOffset(event.nativeEvent.contentOffset.y)}
-        >
-          {options.map((option) => {
-            const active = option === value;
-            return (
-              <Pressable
-                key={String(option)}
-                style={styles.wheelItem}
-                onPress={() => {
-                  onChange(option);
-                  scrollRef.current?.scrollTo({ y: options.indexOf(option) * itemHeight, animated: true });
-                }}
-              >
-                <Text style={[styles.wheelText, active && styles.wheelTextActive]}>{formatValue(option)}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
+    <View style={styles.timeField}>
+      <TextInput
+        value={hourDisplay}
+        onFocus={() => {
+          setEditingPart("hour");
+          setHourText("");
+        }}
+        onChangeText={setHourText}
+        onBlur={() => commit("hour", hourText)}
+        onSubmitEditing={() => commit("hour", hourText)}
+        keyboardType="number-pad"
+        maxLength={2}
+        selectTextOnFocus
+        placeholder="시"
+        placeholderTextColor="#a0a8a2"
+        style={styles.timeFieldInput}
+      />
+      <Text style={styles.timeFieldColon}>:</Text>
+      <TextInput
+        value={minuteDisplay}
+        onFocus={() => {
+          setEditingPart("minute");
+          setMinuteText("");
+        }}
+        onChangeText={setMinuteText}
+        onBlur={() => commit("minute", minuteText)}
+        onSubmitEditing={() => commit("minute", minuteText)}
+        keyboardType="number-pad"
+        maxLength={2}
+        selectTextOnFocus
+        placeholder="분"
+        placeholderTextColor="#a0a8a2"
+        style={styles.timeFieldInput}
+      />
+      <Text style={styles.timeFieldHint}>24시간 기준</Text>
     </View>
   );
 }
@@ -289,47 +295,37 @@ const styles = StyleSheet.create({
   choiceTextActive: {
     color: "#fff"
   },
-  wheelColumn: {
-    flex: 1,
-    minWidth: 110,
-    gap: 4
-  },
-  wheelLabel: {
-    ...typography.caption,
-    color: "#68716b",
-    textAlign: "center"
-  },
-  wheel: {
-    height: 132,
-    borderRadius: 16,
-    backgroundColor: "#f7faf8",
-    overflow: "hidden"
-  },
-  wheelContent: {
-    paddingVertical: 44
-  },
-  wheelSelection: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    top: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: "#e4f4ed"
-  },
-  wheelItem: {
-    height: 44,
+  timeField: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center"
+    gap: 6,
+    minHeight: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2ddd3",
+    backgroundColor: "#fff",
+    paddingHorizontal: 12
   },
-  wheelText: {
-    ...typography.label,
-    color: "#8a938d",
-  },
-  wheelTextActive: {
+  timeFieldInput: {
+    width: 52,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: "#f6f8f7",
+    textAlign: "center",
     color: "#14583f",
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: "800",
+    paddingVertical: 0
+  },
+  timeFieldColon: {
+    color: "#14583f",
+    fontSize: 18,
     fontWeight: "800"
+  },
+  timeFieldHint: {
+    ...typography.caption,
+    color: "#8a938d",
+    marginLeft: "auto"
   },
   timePickerRow: {
     flexDirection: "row",

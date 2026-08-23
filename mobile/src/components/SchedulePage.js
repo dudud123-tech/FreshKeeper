@@ -13,19 +13,14 @@ import {
   mealLabel,
   overduePlannedItems,
   planTimeFor,
-  planTimeParts,
   scheduleDateLabel,
-  toPlanTime,
   upcomingScheduleDates
 } from "../utils/mealPlan";
-import { ChoiceGroup, DateButton, WheelSelect } from "./CommonControls";
+import { ChoiceGroup, DateButton, TimeField } from "./CommonControls";
 import BannerAdSlot from "./BannerAdSlot";
 
 const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
-// 설정 화면의 알림 시간 선택과 같은 범위를 쓴다 — 범위가 다르면 설정에서 온
-// 폴백 시간(예: 17:07)이 목록에 없어서 +- 버튼이 먹히지 않는다.
-const hourOptions = Array.from({ length: 24 }, (_, index) => index);
-const minuteOptions = Array.from({ length: 60 }, (_, index) => index);
+
 
 // 먹는 일정 화면. 오늘부터 7일을 날짜별 세로 목록으로 보여주고, 각 날짜 안에서
 // 끼니(아침·점심·저녁·종일)로 묶는다. 완료 체크는 보관함과 같은 completeItem을
@@ -176,19 +171,9 @@ export default function SchedulePage({
             {/* 알림 시각은 상품마다 따로 저장된다(item.plannedTime). */}
             <Text style={styles.modalLabel}>알림 시간</Text>
             <View style={styles.timeRow}>
-              <WheelSelect
-                label="시"
-                value={planTimeParts(pickerTime).hour}
-                options={hourOptions}
-                formatValue={(value) => `${String(value).padStart(2, "0")}`}
-                onChange={(hour) => setPickerTime(toPlanTime(hour, planTimeParts(pickerTime).minute))}
-              />
-              <WheelSelect
-                label="분"
-                value={planTimeParts(pickerTime).minute}
-                options={minuteOptions}
-                formatValue={(value) => `${String(value).padStart(2, "0")}`}
-                onChange={(minute) => setPickerTime(toPlanTime(planTimeParts(pickerTime).hour, minute))}
+              <TimeField
+                value={pickerTime}
+                onChange={setPickerTime}
               />
             </View>
 

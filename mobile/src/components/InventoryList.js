@@ -4,18 +4,10 @@ import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
 import { statusFor, timelineFor, todayIso } from "../utils/date";
-import {
-  MEAL_SLOTS,
-  mealDefaultTime,
-  mealLabel,
-  planBadgeLabel,
-  planTimeParts,
-  toPlanTime
-} from "../utils/mealPlan";
-import { WheelSelect } from "./CommonControls";
+import { MEAL_SLOTS, mealDefaultTime, mealLabel, planBadgeLabel, planTimeFor } from "../utils/mealPlan";
+import { TimeField } from "./CommonControls";
 
-const planHourOptions = Array.from({ length: 24 }, (_, index) => index);
-const planMinuteOptions = Array.from({ length: 60 }, (_, index) => index);
+
 import { getFoodImageSource } from "../utils/foodImages";
 import BannerAdSlot from "./BannerAdSlot";
 
@@ -106,6 +98,8 @@ export default function InventoryList({
   const [query, setQuery] = useState("");
   const [controlsVisible, setControlsVisible] = useState(false);
   const [editorVisible, setEditorVisible] = useState(true);
+  // 편집 시트의 "세부 설정"(카테고리·보관·구매링크) 접힘 상태.
+  const [editMoreOpen, setEditMoreOpen] = useState(false);
   const isCompletedScope = inventoryScope === "completed";
   const normalizedQuery = query.trim().toLowerCase();
   const searchedItems = sortedItems.filter((item) => String(item.name || "").toLowerCase().includes(normalizedQuery));
@@ -168,13 +162,6 @@ export default function InventoryList({
                     </Pressable>
                   </View>
                 </View>
-                {editForm.purchaseUrl?.trim() ? (
-                  <View style={styles.affiliateDisclosureBanner}>
-                    <Text style={styles.affiliateDisclosureText}>
-                      {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
-                    </Text>
-                  </View>
-                ) : null}
                 <Field label={EDIT_COPY.productName}>
                   <TextInput
                     value={editForm.name}
@@ -188,47 +175,12 @@ export default function InventoryList({
                     style={styles.input}
                   />
                 </Field>
-                <Field label={EDIT_COPY.purchaseUrl}>
-                  <TextInput
-                    value={editForm.purchaseUrl || ""}
-                    onChangeText={(value) => setEditForm((current) => ({ ...current, purchaseUrl: value }))}
-                    placeholder={EDIT_COPY.purchasePlaceholder}
-                    placeholderTextColor="#a0a8a2"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="off"
-                    importantForAutofill="noExcludeDescendants"
-                    spellCheck={false}
-                    // keyboardType="url"(안드로이드 TYPE_TEXT_VARIATION_URI)이
-                    // 삼성패스 자동완성 제안을 부르는 실제 트리거로 보여서 뺐다.
-                    // 대부분 링크를 붙여넣기로 넣으니 기본 키보드로도 무리 없음.
-                    returnKeyType="done"
-                    disableFullscreenUI
-                    style={styles.input}
-                  />
-                </Field>
-                <ChoiceGroup
-                  label={EDIT_COPY.category}
-                  options={editCategoryOptions}
-                  value={editForm.category}
-                  onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
-                  formatLabel={formatCompactCategoryLabel}
-                  compact
-                />
-                <ChoiceGroup
-                  label={EDIT_COPY.storage}
-                  options={storageTypes}
-                  value={editForm.storage}
-                  onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
-                  compact
-                />
                 <Field label={EDIT_COPY.expiry}>
                   <DateButton
                     value={editForm.expiry}
                     onPress={() => openCalendar(editForm.expiry, (value) => setEditForm((current) => ({ ...current, expiry: value })))}
                   />
                 </Field>
-                {/* 먹는 일정. 날짜만 정하고 끼니는 비워둘 수 있다(빈 값이면 "종일"). */}
                 <Field label={EDIT_COPY.plannedDate}>
                   <DateButton
                     value={editForm.plannedDate || todayIso()}
@@ -257,32 +209,64 @@ export default function InventoryList({
                 {editForm.plannedDate ? (
                   <Field label={EDIT_COPY.plannedTime}>
                     <View style={styles.planTimeRow}>
-                      <WheelSelect
-                        label="시"
-                        value={planTimeParts(editForm.plannedTime).hour}
-                        options={planHourOptions}
-                        formatValue={(value) => `${String(value).padStart(2, "0")}`}
-                        onChange={(hour) =>
-                          setEditForm((current) => ({
-                            ...current,
-                            plannedTime: toPlanTime(hour, planTimeParts(current.plannedTime).minute)
-                          }))
-                        }
-                      />
-                      <WheelSelect
-                        label="분"
-                        value={planTimeParts(editForm.plannedTime).minute}
-                        options={planMinuteOptions}
-                        formatValue={(value) => `${String(value).padStart(2, "0")}`}
-                        onChange={(minute) =>
-                          setEditForm((current) => ({
-                            ...current,
-                            plannedTime: toPlanTime(planTimeParts(current.plannedTime).hour, minute)
-                          }))
-                        }
+                      <TimeField
+                        value={planTimeFor(editForm, "18:00")}
+                        onChange={(next) => setEditForm((current) => ({ ...current, plannedTime: next }))}
                       />
                     </View>
                   </Field>
+                ) : null}
+                {/* 카테고리(12개 칩)·보관·구매 링크는 거의 손대지 않는데 자리를 크게 차지한다.
+                    자주 고치는 날짜보다 아래로 내리고 접어둔다(2026-08-23). */}
+                <Pressable style={styles.moreToggle} onPress={() => setEditMoreOpen((open) => !open)}>
+                  <Text style={styles.moreToggleText}>
+                    {editMoreOpen ? "\u2303 \uC138\uBD80 \uC124\uC815 \uC811\uAE30" : "\u2304 \uC138\uBD80 \uC124\uC815 (\uCE74\uD14C\uACE0\uB9AC\u00B7\uBCF4\uAD00\u00B7\uB9C1\uD06C)"}
+                  </Text>
+                </Pressable>
+                {editMoreOpen ? (
+                  <View style={styles.moreSection}>
+                    <ChoiceGroup
+                    label={EDIT_COPY.category}
+                    options={editCategoryOptions}
+                    value={editForm.category}
+                    onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
+                    formatLabel={formatCompactCategoryLabel}
+                    compact
+                  />
+                  <ChoiceGroup
+                    label={EDIT_COPY.storage}
+                    options={storageTypes}
+                    value={editForm.storage}
+                    onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
+                    compact
+                  />
+                  <Field label={EDIT_COPY.purchaseUrl}>
+                    <TextInput
+                      value={editForm.purchaseUrl || ""}
+                      onChangeText={(value) => setEditForm((current) => ({ ...current, purchaseUrl: value }))}
+                      placeholder={EDIT_COPY.purchasePlaceholder}
+                      placeholderTextColor="#a0a8a2"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="off"
+                      importantForAutofill="noExcludeDescendants"
+                      spellCheck={false}
+                      // keyboardType="url"(안드로이드 TYPE_TEXT_VARIATION_URI)이
+                      // 삼성패스 자동완성 제안을 부르는 실제 트리거로 보여서 뺐다.
+                      // 대부분 링크를 붙여넣기로 넣으니 기본 키보드로도 무리 없음.
+                      returnKeyType="done"
+                      disableFullscreenUI
+                      style={styles.input}
+                    />
+                  </Field>
+                  {editForm.purchaseUrl?.trim() ? (
+                    <View style={styles.affiliateDisclosureBanner}>
+                      <Text style={styles.affiliateDisclosureText}>
+                        {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
+                      </Text>
+                    </View>
+                  ) : null}
+                  </View>
                 ) : null}
               </View>
             </ScrollView>
@@ -1272,6 +1256,24 @@ const styles = StyleSheet.create({
     ...typography.cardTitle,
     flex: 1,
     color: "#18201c",
+  },
+  moreToggle: {
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#d4e7df",
+    backgroundColor: "#f6fbf8",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14
+  },
+  moreToggleText: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+  },
+  moreSection: {
+    marginTop: 4
   },
   sheetBackdrop: {
     flex: 1,

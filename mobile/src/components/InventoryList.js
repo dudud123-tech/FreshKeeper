@@ -4,15 +4,7 @@ import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
 import { statusFor, timelineFor, todayIso } from "../utils/date";
-import {
-  MEAL_SLOTS,
-  mealDefaultTime,
-  mealLabel,
-  planBadgeLabel,
-  planTimeFor,
-  PLAN_REPEATS,
-  repeatLabel
-} from "../utils/mealPlan";
+import { planBadgeLabel, planTimeFor, PLAN_REPEATS, repeatLabel } from "../utils/mealPlan";
 import { TabButton, TimeField } from "./CommonControls";
 
 
@@ -38,11 +30,10 @@ const EDIT_COPY = {
   purchaseUrl: "\uAD6C\uB9E4 \uB9C1\uD06C",
   purchasePlaceholder: DEFAULT_PURCHASE_URL,
   plannedDate: "\uBA39\uC744 \uB0A0",
-  plannedMeal: "\uB07C\uB2C8 (\uC120\uD0DD)",
   plannedTime: "\uC54C\uB9BC \uC2DC\uAC04",
   planRepeat: "\uBC18\uBCF5",
-  tabBasic: "\uAE30\uBCF8",
-  tabDetail: "\uC0C1\uC138",
+  tabBasic: "\uAE30\uD55C\u00B7\uC77C\uC815",
+  tabDetail: "\uBD84\uB958\u00B7\uB9C1\uD06C",
   category: "\uCE74\uD14C\uACE0\uB9AC",
   storage: "\uBCF4\uAD00",
   expiry: "\uC18C\uBE44\uAE30\uD55C",
@@ -210,23 +201,17 @@ export default function InventoryList({
                           onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
                         />
                         {editForm.plannedDate ? (
-                          <Pressable onPress={() => setEditForm((current) => ({ ...current, plannedDate: "", plannedMeal: "" }))}>
+                          <Pressable onPress={() => setEditForm((current) => ({ ...current, plannedDate: "", plannedMeal: "", plannedTime: "", planRepeat: "" }))}>
                             <Text style={styles.planClearText}>일정 지우기</Text>
                           </Pressable>
                         ) : null}
                       </Field>
                     <ChoiceGroup
-                        label={EDIT_COPY.plannedMeal}
-                        options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
-                        value={editForm.plannedMeal || ""}
-                        onChange={(value) =>
-                          setEditForm((current) => ({
-                            ...current,
-                            plannedMeal: value,
-                            plannedTime: mealDefaultTime(value) || current.plannedTime || ""
-                          }))
-                        }
-                        formatLabel={(option) => (option ? mealLabel(option) : "종일")}
+                        label={EDIT_COPY.planRepeat}
+                        options={PLAN_REPEATS.map((option) => option.id)}
+                        value={editForm.planRepeat || ""}
+                        onChange={(value) => setEditForm((current) => ({ ...current, planRepeat: value }))}
+                        formatLabel={(option) => repeatLabel(option)}
                         compact
                       />
                     {editForm.plannedDate ? (
@@ -239,34 +224,19 @@ export default function InventoryList({
                           </View>
                         </Field>
                       ) : null}
-                      <ChoiceGroup
-                        label={EDIT_COPY.planRepeat}
-                        options={PLAN_REPEATS.map((option) => option.id)}
-                        value={editForm.planRepeat || ""}
-                        onChange={(value) => setEditForm((current) => ({ ...current, planRepeat: value }))}
-                        formatLabel={(option) => repeatLabel(option)}
-                        compact
-                      />
+                      
                     </View>
                   </View>
                 ) : (
                   <View>
-                <ChoiceGroup
-                        label={EDIT_COPY.category}
-                        options={editCategoryOptions}
-                        value={editForm.category}
-                        onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
-                        formatLabel={formatCompactCategoryLabel}
-                        compact
-                      />
-                      <ChoiceGroup
-                        label={EDIT_COPY.storage}
-                        options={storageTypes}
-                        value={editForm.storage}
-                        onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
-                        compact
-                      />
-                      <Field label={EDIT_COPY.purchaseUrl}>
+                {editForm.purchaseUrl?.trim() ? (
+                        <View style={styles.affiliateDisclosureBanner}>
+                          <Text style={styles.affiliateDisclosureText}>
+                            {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
+                          </Text>
+                        </View>
+                      ) : null}
+                    <Field label={EDIT_COPY.purchaseUrl}>
                         <TextInput
                           value={editForm.purchaseUrl || ""}
                           onChangeText={(value) => setEditForm((current) => ({ ...current, purchaseUrl: value }))}
@@ -285,13 +255,21 @@ export default function InventoryList({
                           style={styles.input}
                         />
                       </Field>
-                      {editForm.purchaseUrl?.trim() ? (
-                        <View style={styles.affiliateDisclosureBanner}>
-                          <Text style={styles.affiliateDisclosureText}>
-                            {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
-                          </Text>
-                        </View>
-                      ) : null}
+                    <ChoiceGroup
+                        label={EDIT_COPY.category}
+                        options={editCategoryOptions}
+                        value={editForm.category}
+                        onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
+                        formatLabel={formatCompactCategoryLabel}
+                        compact
+                      />
+                    <ChoiceGroup
+                        label={EDIT_COPY.storage}
+                        options={storageTypes}
+                        value={editForm.storage}
+                        onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
+                        compact
+                      />
                   </View>
                 )}
               </View>
@@ -956,7 +934,7 @@ const styles = StyleSheet.create({
     marginTop: 6
   },
   label: {
-    ...typography.captionStrong,
+    ...typography.label,
     color: "#68716b",
   },
   choices: {
@@ -989,7 +967,7 @@ const styles = StyleSheet.create({
     color: "#18201c",
   },
   choiceTextCompact: {
-    ...typography.captionStrong,
+    ...typography.label,
     textAlign: "center"
   },
   choiceTextActive: {
@@ -1123,7 +1101,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5
   },
   editBannerText: {
-    ...typography.captionStrong,
+    ...typography.label,
     color: "#d95f3d",
   },
   editBannerActions: {
@@ -1177,7 +1155,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8
   },
   affiliateDisclosureText: {
-    ...typography.bodyStrong,
+    ...typography.body,
     color: "#d95f3d"
   },
   dateButton: {
@@ -1301,11 +1279,11 @@ const styles = StyleSheet.create({
     padding: 12
   },
   planGroupTitle: {
-    ...typography.captionStrong,
+    ...typography.label,
     color: "#1f7a5a",
   },
   planGroupHint: {
-    ...typography.caption,
+    ...typography.body,
     color: "#68716b",
     marginTop: 2
   },
@@ -1318,7 +1296,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   sheetCard: {
-    maxHeight: "88%",
+    height: "82%",
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     backgroundColor: "#fbfcfb",
@@ -1335,19 +1313,13 @@ const styles = StyleSheet.create({
     marginBottom: 6
   },
   sheetScroll: {
-    flexGrow: 0
+    flex: 1
   },
   sheetScrollContent: {
-    paddingBottom: 8
+    paddingBottom: 32
   },
   planTimeRow: {
-    flexDirection: "row",
-    gap: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#e3e8e5",
-    backgroundColor: "#fff",
-    padding: 10
+    flexDirection: "row"
   },
   planBadge: {
     ...typography.captionStrong,
@@ -1355,7 +1327,7 @@ const styles = StyleSheet.create({
     marginTop: 3
   },
   planClearText: {
-    ...typography.caption,
+    ...typography.label,
     color: "#9f3929",
     marginTop: 6
   },

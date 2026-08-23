@@ -295,35 +295,37 @@ const styles = StyleSheet.create({
   choiceTextActive: {
     color: "#fff"
   },
+  // 상자 안에 상자가 겹쳐 보이지 않게, 바깥 테두리 하나만 두고
+  // 안쪽 입력칸은 배경 없이 밑줄만 준다(2026-08-23 피드백).
   timeField: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    minHeight: 50,
-    borderRadius: 12,
+    gap: 4,
+    minHeight: 48,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#e2ddd3",
     backgroundColor: "#fff",
     paddingHorizontal: 12
   },
   timeFieldInput: {
-    width: 52,
-    height: 42,
-    borderRadius: 10,
-    backgroundColor: "#f6f8f7",
+    width: 44,
+    height: 40,
     textAlign: "center",
     color: "#14583f",
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800",
-    paddingVertical: 0
+    paddingVertical: 0,
+    borderBottomWidth: 2,
+    borderBottomColor: "#d4e7df"
   },
   timeFieldColon: {
     color: "#14583f",
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800"
   },
   timeFieldHint: {
-    ...typography.caption,
+    ...typography.body,
     color: "#8a938d",
     marginLeft: "auto"
   },

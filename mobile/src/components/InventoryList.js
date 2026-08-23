@@ -3,7 +3,8 @@ import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInp
 import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
-import { statusFor, timelineFor } from "../utils/date";
+import { statusFor, timelineFor, todayIso } from "../utils/date";
+import { MEAL_SLOTS, mealLabel, planBadgeLabel } from "../utils/mealPlan";
 import { getFoodImageSource } from "../utils/foodImages";
 import BannerAdSlot from "./BannerAdSlot";
 
@@ -25,6 +26,8 @@ const EDIT_COPY = {
   productName: "\uC0C1\uD488\uBA85",
   purchaseUrl: "\uAD6C\uB9E4 \uB9C1\uD06C",
   purchasePlaceholder: DEFAULT_PURCHASE_URL,
+  plannedDate: "\uBA39\uC744 \uB0A0",
+  plannedMeal: "\uB07C\uB2C8 (\uC120\uD0DD)",
   category: "\uCE74\uD14C\uACE0\uB9AC",
   storage: "\uBCF4\uAD00",
   expiry: "\uC18C\uBE44\uAE30\uD55C",
@@ -345,6 +348,26 @@ export default function InventoryList({
                           onPress={() => openCalendar(editForm.expiry, (value) => setEditForm((current) => ({ ...current, expiry: value })))}
                         />
                       </Field>
+                      {/* 먹는 일정. 날짜만 정하고 끼니는 비워둘 수 있다(빈 값이면 "종일"). */}
+                      <Field label={EDIT_COPY.plannedDate}>
+                        <DateButton
+                          value={editForm.plannedDate || todayIso()}
+                          onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
+                        />
+                        {editForm.plannedDate ? (
+                          <Pressable onPress={() => setEditForm((current) => ({ ...current, plannedDate: "", plannedMeal: "" }))}>
+                            <Text style={styles.planClearText}>일정 지우기</Text>
+                          </Pressable>
+                        ) : null}
+                      </Field>
+                      <ChoiceGroup
+                        label={EDIT_COPY.plannedMeal}
+                        options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
+                        value={editForm.plannedMeal || ""}
+                        onChange={(value) => setEditForm((current) => ({ ...current, plannedMeal: value }))}
+                        formatLabel={(option) => (option ? mealLabel(option) : "종일")}
+                        compact
+                      />
                     </View>
                   ) : (
                     <View style={styles.itemContentRow}>
@@ -362,6 +385,9 @@ export default function InventoryList({
                           </Text>
                         </View>
                         <Text style={styles.meta}>{isCompletedScope ? completedMeta : dateMeta}</Text>
+                        {!isCompletedScope && planBadgeLabel(item) ? (
+                          <Text style={styles.planBadge}>{"\uD83C\uDF7D\uFE0F " + planBadgeLabel(item)}</Text>
+                        ) : null}
                         {isCompletedScope ? (
                           <>
                             <Text style={styles.completedMeta}>{completionTimingLabel(item)}</Text>
@@ -1174,6 +1200,16 @@ const styles = StyleSheet.create({
     ...typography.cardTitle,
     flex: 1,
     color: "#18201c",
+  },
+  planBadge: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+    marginTop: 3
+  },
+  planClearText: {
+    ...typography.caption,
+    color: "#9f3929",
+    marginTop: 6
   },
   storagePill: {
     ...typography.badge,

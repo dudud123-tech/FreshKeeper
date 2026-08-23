@@ -23,6 +23,8 @@ export default function SettingsPanel({
   setReminderDays,
   notificationSettings,
   setNotificationSettings,
+  planNotificationSettings,
+  setPlanNotificationSettings,
   shareFamilyDigest,
   shareFamilyCode,
   familyCodeInput,
@@ -171,6 +173,34 @@ export default function SettingsPanel({
               options={notificationMinuteOptions}
               formatValue={(value) => `${String(value).padStart(2, "0")}분`}
               onChange={(minute) => setNotificationSettings((current) => ({ ...current, minute }))}
+            />
+          </View>
+        </View>
+        {/* 먹는 일정 알림. 소비기한 알림과 성격이 달라 시간을 따로 정한다(기본 오후 5시). */}
+        <View style={[styles.dailyAlertBox, planNotificationSettings.enabled && styles.dailyAlertBoxActive]}>
+          <Pressable
+            style={styles.dailyAlertHeader}
+            onPress={() => setPlanNotificationSettings((current) => ({ ...current, enabled: !current.enabled }))}
+          >
+            <View style={styles.dailyAlertCopy}>
+              <Text style={styles.dailyAlertTitle}>그날 먹기로 한 상품을 알려드려요.</Text>
+            </View>
+            <View style={[styles.toggleSwitch, planNotificationSettings.enabled && styles.toggleSwitchActive]}>
+              <View style={[styles.toggleKnob, planNotificationSettings.enabled && styles.toggleKnobActive]} />
+            </View>
+          </Pressable>
+          <View style={styles.timePickerRow}>
+            <TimeSelect
+              value={planNotificationSettings.hour}
+              options={notificationHourOptions}
+              formatValue={(value) => `${String(value).padStart(2, "0")}시`}
+              onChange={(hour) => setPlanNotificationSettings((current) => ({ ...current, hour }))}
+            />
+            <TimeSelect
+              value={planNotificationSettings.minute}
+              options={notificationMinuteOptions}
+              formatValue={(value) => `${String(value).padStart(2, "0")}분`}
+              onChange={(minute) => setPlanNotificationSettings((current) => ({ ...current, minute }))}
             />
           </View>
         </View>

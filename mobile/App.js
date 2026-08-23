@@ -24,6 +24,7 @@ import InventoryList from "./src/components/InventoryList";
 import LaunchScreen from "./src/components/LaunchScreen";
 import OnboardingScreen from "./src/components/OnboardingScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
+import SchedulePage from "./src/components/SchedulePage";
 import SettingsPanel from "./src/components/SettingsPanel";
 import SoftUpdatePrompt from "./src/components/SoftUpdatePrompt";
 import WhatsNewModal from "./src/components/WhatsNewModal";
@@ -55,6 +56,7 @@ const APP_BUILD_LABEL = "dev 2026-06-07.1";
 const PAGE_HOME = 0;
 const PAGE_ADD = 1;
 const PAGE_INVENTORY = 2;
+const PAGE_SCHEDULE = 3;
 const SharedImage = NativeModules.SharedImage;
 let sessionPage = PAGE_HOME;
 let launchScreenShown = false;
@@ -122,6 +124,8 @@ export default function App() {
     completeItem,
     restoreItem,
     toggleFavorite,
+    setItemPlan,
+    clearItemPlan,
     startEdit,
     cancelEdit,
     saveEdit
@@ -764,6 +768,14 @@ export default function App() {
               expiryType={DEFAULT_EXPIRY_TYPE}
             />
 
+            <SchedulePage
+              items={items}
+              setItemPlan={setItemPlan}
+              clearItemPlan={clearItemPlan}
+              completeItem={completeItem}
+              openCalendar={openCalendar}
+            />
+
             <ScrollView style={appShellStyles.screen} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">
               <SettingsPanel
                 settingsTab={settingsTab}
@@ -772,6 +784,8 @@ export default function App() {
                 setReminderDays={setReminderDays}
                 notificationSettings={notificationSettings}
                 setNotificationSettings={setNotificationSettings}
+                planNotificationSettings={planNotificationSettings}
+                setPlanNotificationSettings={setPlanNotificationSettings}
                 shareFamilyDigest={shareFamilyDigest}
                 shareFamilyCode={shareFamilyCode}
                 familyCodeInput={familyCodeInput}

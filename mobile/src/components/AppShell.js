@@ -18,7 +18,8 @@ const bottomNavItems = [
   { page: 0, icon: require("../../assets/tabs/home_80dp.png"), label: "홈", title: "" },
   { page: 1, icon: require("../../assets/tabs/add_80dp.png"), label: "등록", title: "상품 등록" },
   { page: 2, icon: require("../../assets/tabs/kitchen.png"), label: "보관함", title: "보관함" },
-  { page: 3, icon: require("../../assets/tabs/settings_80d.png"), label: "설정", title: "설정" }
+  { page: 3, icon: require("../../assets/home/calendar_month.png"), label: "일정", title: "먹는 일정" },
+  { page: 4, icon: require("../../assets/tabs/settings_80d.png"), label: "설정", title: "설정" }
 ];
 
 // 앱 전체 화면 뼈대입니다. 상단 헤더, 좌우 페이지 전환 영역, 하단 탭을 담당합니다.

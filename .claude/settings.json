@@ -8,7 +8,8 @@
       "Edit(/.claude/skills/android-release-build/**)",
       "Bash(curl -s \"https://freshkeeper-ocr-feedback.dndud123.workers.dev/api/app-version\")",
       "Bash(curl -sD - \"https://freshkeeper-ocr-feedback.dndud123.workers.dev/api/app-version\" -o /dev/null)",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

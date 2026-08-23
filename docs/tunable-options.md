@@ -20,6 +20,15 @@
 | --- | --- | --- | --- |
 | 박스 모드 vs 색칠 모드 전환 임계값 | `COORDINATE_CONFIDENCE_THRESHOLD` in `mobile/src/hooks/useReceiptFlow.js` | `0.5` | 실물 영수증 OCR 좌표 신뢰도가 이 값 미만이면 자동으로 색칠(드래그) 모드로 전환 |
 
+## 먹는 일정 (스케줄링)
+
+| 옵션 | 위치 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| 일정 화면·알림 조회 기간 | `SCHEDULE_LOOKAHEAD_DAYS` in `mobile/src/utils/mealPlan.js` | `7` | 일정 탭이 보여주는 날짜 수이자 일정 알림을 미리 예약하는 일수. 늘리면 예약 알림 건수도 같이 늘어난다 |
+| 끼니 슬롯 목록 | `MEAL_SLOTS` in `mobile/src/utils/mealPlan.js` | 아침·점심·저녁 | 여기에 추가하면 일정 화면·보관함 편집·알림 문구에 자동 반영된다. 끼니를 안 고르면 빈 값으로 저장되고 "종일"로 표시 |
+| 일정 알림 기본 시간 | `DEFAULT_PLAN_NOTIFICATION_SETTINGS` in `mobile/src/hooks/useAppNotifications.js` | `17:00` | 소비기한 알림(기본 09:00)과 겹치지 않게 잡은 값. 사용자가 설정 > 알림에서 변경 가능 |
+| 일정 알림 안드로이드 채널 | `PLAN_NOTIFICATION_CHANNEL_ID` in `mobile/src/services/notificationScheduler.js` | `freshkeeper-plan-alerts-v1` | 소비기한 알림과 채널을 분리해 OS 설정에서 따로 끌 수 있게 한 것. 채널 속성을 바꾸려면 ID도 같이 올려야 반영된다 |
+
 ## 가족 공유 동기화 (Cloudflare Worker + 앱)
 
 | 옵션 | 위치 | 설명 |

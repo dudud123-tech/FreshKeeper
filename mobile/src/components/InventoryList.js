@@ -147,6 +147,28 @@ export default function InventoryList({
           <Pressable style={styles.sheetBackdropFill} onPress={cancelEdit} />
           <View style={styles.sheetCard}>
             <View style={styles.sheetHandle} />
+            {/* 헤더는 ScrollView 밖에 둔다 — 안에 있으면 메모까지 내려갔을 때 저장
+                버튼이 같이 사라져서, 다 고치고 나서 위로 되돌아와야 했다.
+                "수정 중" 배지는 카드 안에서 인라인으로 고치던 시절의 흔적이라
+                뺐다. 바텀시트에서는 화면 전체가 이미 수정 모드고, 그 자리에는
+                지금 무엇을 고치는 중인지가 더 쓸모 있다(2026-08-23). */}
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle} numberOfLines={1}>
+                {editForm.name?.trim() || EDIT_COPY.editing}
+              </Text>
+              <View style={styles.sheetHeaderActions}>
+                <Pressable style={styles.sheetCancelAction} onPress={cancelEdit} accessibilityRole="button">
+                  <Text style={styles.sheetCancelText}>{EDIT_COPY.cancel}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.sheetSaveAction, editSubmitting && styles.sheetSaveActionDisabled]}
+                  onPress={editSubmitting ? undefined : saveEdit}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.sheetSaveText}>{editSubmitting ? "저장 중..." : EDIT_COPY.save}</Text>
+                </Pressable>
+              </View>
+            </View>
             <ScrollView
               style={styles.sheetScroll}
               contentContainerStyle={styles.sheetScrollContent}
@@ -154,20 +176,6 @@ export default function InventoryList({
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.editPanel}>
-                <View style={styles.editBanner}>
-                  <Text style={styles.editBannerText}>{EDIT_COPY.editing}</Text>
-                  <View style={styles.editBannerActions}>
-                    <Pressable style={styles.editBannerCancelAction} onPress={cancelEdit}>
-                      <Text style={styles.editBannerCancelText}>{EDIT_COPY.cancel}</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.editBannerSaveAction, editSubmitting && styles.editBannerSaveActionDisabled]}
-                      onPress={editSubmitting ? undefined : saveEdit}
-                    >
-                      <Text style={styles.editBannerSaveText}>{editSubmitting ? "저장 중..." : EDIT_COPY.save}</Text>
-                    </Pressable>
-                  </View>
-                </View>
                 <View style={styles.sheetTabs}>
                   <TabButton active={editTab === "basic"} label={EDIT_COPY.tabBasic} onPress={() => setEditTab("basic")} />
                   <TabButton active={editTab === "detail"} label={EDIT_COPY.tabDetail} onPress={() => setEditTab("detail")} />
@@ -1122,50 +1130,46 @@ const styles = StyleSheet.create({
   editPanel: {
     gap: 10
   },
-  editBanner: {
+  sheetHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 8,
-    borderRadius: 999,
-    backgroundColor: "#fff0e7",
-    paddingHorizontal: 8,
-    paddingVertical: 5
+    gap: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ebeeec"
   },
-  editBannerText: {
-    ...typography.label,
-    color: "#d95f3d",
+  sheetTitle: {
+    ...typography.sectionTitle,
+    color: "#18201c",
+    flexShrink: 1
   },
-  editBannerActions: {
+  sheetHeaderActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5
+    gap: 2
   },
-  editBannerCancelAction: {
-    minHeight: 28,
-    borderRadius: 999,
-    backgroundColor: "#fff",
+  sheetCancelAction: {
+    minHeight: 36,
     justifyContent: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5
+    paddingHorizontal: 12
   },
-  editBannerSaveAction: {
-    minHeight: 28,
+  sheetCancelText: {
+    ...typography.label,
+    color: "#68716b",
+  },
+  sheetSaveAction: {
+    minHeight: 36,
     borderRadius: 999,
-    backgroundColor: "#d95f3d",
+    backgroundColor: "#1f7a5a",
     justifyContent: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5
+    paddingHorizontal: 18
   },
-  editBannerSaveActionDisabled: {
+  sheetSaveActionDisabled: {
     opacity: 0.6
   },
-  editBannerCancelText: {
-    ...typography.captionStrong,
-    color: "#d95f3d",
-  },
-  editBannerSaveText: {
-    ...typography.captionStrong,
+  sheetSaveText: {
+    ...typography.label,
     color: "#fff",
   },
   input: {
@@ -1299,7 +1303,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#f1f4f2",
     borderRadius: 10,
     padding: 4,
-    marginTop: 10,
     marginBottom: 4
   },
   planGroup: {

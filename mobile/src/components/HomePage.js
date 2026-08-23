@@ -267,11 +267,24 @@ export default function HomePage({
         ))}
       </View>
 
-      {/* 소비기한 축("이번 주 먼저 먹을 것") 위에 일정 축을 둔다. 두 축이 위아래로
-          나란히 있어야 홈이 "오늘 뭘 먹지"에 답하는 화면이 된다. 쿠팡 바로가기보다
-          앞에 두는 건 그쪽이 "새 상품 등록" 유도라 오늘 할 일보다 뒤여야 하기
-          때문이다. 잡아둔 일정이 없으면 섹션을 통째로 감춘다 — 빈 카드를 두면
-          일정을 안 쓰는 사람에게는 홈만 길어진다(2026-08-23). */}
+      {/* 대시보드 통계 카드 바로 아래. "다시 구매" 패널은 기본 접힘이라 여기 넣으면
+          탭을 한 번 더 해야 보이고 성격도 다르다(그건 이미 등록한 상품 재구매,
+          이건 새 상품 등록용 지름길). 카드 스타일은 AddItemPage.js의
+          orderHistoryShortcut과 동일하게 맞춰 두 화면에서 같은 모양으로 보이게
+          한다(2026-08-13 홈 노출 요청). */}
+      <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
+        <View style={styles.orderHistoryShortcutRow}>
+          <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
+          <Text style={styles.orderHistoryShortcutTitle}>주문내역 바로가기</Text>
+          <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
+        </View>
+        <Text style={styles.orderHistoryShortcutHint}>캡처해서 공유하면 자동 등록돼요.</Text>
+      </Pressable>
+
+      {/* 소비기한 축("이번 주 먼저 먹을 것") 바로 위에 일정 축을 둔다. 두 축이
+          위아래로 나란히 있어야 홈이 "오늘 뭘 먹지"에 답하는 화면이 된다.
+          잡아둔 일정이 없으면 섹션을 통째로 감춘다 — 빈 카드를 두면 일정을
+          안 쓰는 사람에게는 홈만 길어진다(2026-08-23). */}
       {todayPlans.length ? (
         <>
           <View style={styles.sectionHeader}>
@@ -344,19 +357,6 @@ export default function HomePage({
       </View>
 
       <BannerAdSlot />
-
-      {/* 배너 아래, 홈 맨 끝에 둔다. 새 상품을 등록하러 나가는 링크라 홈에서
-          할 일(오늘 먹을 것·임박 상품·최근 등록)을 다 훑은 뒤에 오는 게 맞다.
-          카드 스타일은 AddItemPage.js의 orderHistoryShortcut과 동일하게 맞춰 두
-          화면에서 같은 모양으로 인식되게 한다(2026-08-23 위치 조정). */}
-      <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
-        <View style={styles.orderHistoryShortcutRow}>
-          <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
-          <Text style={styles.orderHistoryShortcutTitle}>주문내역 바로가기</Text>
-          <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
-        </View>
-        <Text style={styles.orderHistoryShortcutHint}>캡처해서 공유하면 자동 등록돼요.</Text>
-      </Pressable>
     </ScrollView>
   );
 }

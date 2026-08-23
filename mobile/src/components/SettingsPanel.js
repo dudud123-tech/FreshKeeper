@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
-import { TimeSelect } from "./CommonControls";
+import { WheelSelect } from "./CommonControls";
 
 const settingsTabs = [
   { id: "alert", label: "알림", icon: require("../../assets/settings/setting-alert.png") },
@@ -163,16 +163,18 @@ export default function SettingsPanel({
             </View>
           </Pressable>
           <View style={styles.timePickerRow}>
-            <TimeSelect
+            <WheelSelect
+              label="시"
               value={notificationSettings.hour}
               options={notificationHourOptions}
-              formatValue={(value) => `${String(value).padStart(2, "0")}시`}
+              formatValue={(value) => `${String(value).padStart(2, "0")}`}
               onChange={(hour) => setNotificationSettings((current) => ({ ...current, hour }))}
             />
-            <TimeSelect
+            <WheelSelect
+              label="분"
               value={notificationSettings.minute}
               options={notificationMinuteOptions}
-              formatValue={(value) => `${String(value).padStart(2, "0")}분`}
+              formatValue={(value) => `${String(value).padStart(2, "0")}`}
               onChange={(minute) => setNotificationSettings((current) => ({ ...current, minute }))}
             />
           </View>
@@ -191,16 +193,18 @@ export default function SettingsPanel({
             </View>
           </Pressable>
           <View style={styles.timePickerRow}>
-            <TimeSelect
+            <WheelSelect
+              label="시"
               value={planNotificationSettings.hour}
               options={notificationHourOptions}
-              formatValue={(value) => `${String(value).padStart(2, "0")}시`}
+              formatValue={(value) => `${String(value).padStart(2, "0")}`}
               onChange={(hour) => setPlanNotificationSettings((current) => ({ ...current, hour }))}
             />
-            <TimeSelect
+            <WheelSelect
+              label="분"
               value={planNotificationSettings.minute}
               options={notificationMinuteOptions}
-              formatValue={(value) => `${String(value).padStart(2, "0")}분`}
+              formatValue={(value) => `${String(value).padStart(2, "0")}`}
               onChange={(minute) => setPlanNotificationSettings((current) => ({ ...current, minute }))}
             />
           </View>
@@ -1439,9 +1443,9 @@ const styles = StyleSheet.create({
   },
   timePickerRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 0,
-    marginTop: 18,
+    gap: 10,
+    marginTop: 14,
+    padding: 10,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: "#e3e8e5",

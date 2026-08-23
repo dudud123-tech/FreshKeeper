@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
-import { Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
@@ -12,7 +12,7 @@ import {
   planTimeParts,
   toPlanTime
 } from "../utils/mealPlan";
-import { TimeSelect } from "./CommonControls";
+import { WheelSelect } from "./CommonControls";
 
 const planHourOptions = Array.from({ length: 24 }, (_, index) => index);
 const planMinuteOptions = Array.from({ length: 60 }, (_, index) => index);
@@ -136,7 +136,164 @@ export default function InventoryList({
     }
   }
 
+  // 예전에는 이 편집 폼을 목록 카드 안에서 펼쳤다. 카테고리 12개 칩이 날짜 필드
+  // 위를 차지해서 소비기한·먹을 날을 고치려면 매번 아래까지 스크롤해야 했고,
+  // 카드가 길어져 목록도 밀렸다. 바텀시트로 띄워 넓은 화면에서 수정하게 바꿨다(2026-08-23).
+  function renderEditSheet() {
+    if (!editForm) return null;
+    return (
+      <Modal visible transparent animationType="slide" onRequestClose={cancelEdit}>
+        <View style={styles.sheetBackdrop}>
+          <Pressable style={styles.sheetBackdropFill} onPress={cancelEdit} />
+          <View style={styles.sheetCard}>
+            <View style={styles.sheetHandle} />
+            <ScrollView
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.editPanel}>
+                <View style={styles.editBanner}>
+                  <Text style={styles.editBannerText}>{EDIT_COPY.editing}</Text>
+                  <View style={styles.editBannerActions}>
+                    <Pressable style={styles.editBannerCancelAction} onPress={cancelEdit}>
+                      <Text style={styles.editBannerCancelText}>{EDIT_COPY.cancel}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.editBannerSaveAction, editSubmitting && styles.editBannerSaveActionDisabled]}
+                      onPress={editSubmitting ? undefined : saveEdit}
+                    >
+                      <Text style={styles.editBannerSaveText}>{editSubmitting ? "저장 중..." : EDIT_COPY.save}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                {editForm.purchaseUrl?.trim() ? (
+                  <View style={styles.affiliateDisclosureBanner}>
+                    <Text style={styles.affiliateDisclosureText}>
+                      {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
+                    </Text>
+                  </View>
+                ) : null}
+                <Field label={EDIT_COPY.productName}>
+                  <TextInput
+                    value={editForm.name}
+                    onChangeText={(value) =>
+                      setEditForm((current) => ({
+                        ...current,
+                        name: value,
+                        category: suggestCategory(value)
+                      }))
+                    }
+                    style={styles.input}
+                  />
+                </Field>
+                <Field label={EDIT_COPY.purchaseUrl}>
+                  <TextInput
+                    value={editForm.purchaseUrl || ""}
+                    onChangeText={(value) => setEditForm((current) => ({ ...current, purchaseUrl: value }))}
+                    placeholder={EDIT_COPY.purchasePlaceholder}
+                    placeholderTextColor="#a0a8a2"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    importantForAutofill="noExcludeDescendants"
+                    spellCheck={false}
+                    // keyboardType="url"(안드로이드 TYPE_TEXT_VARIATION_URI)이
+                    // 삼성패스 자동완성 제안을 부르는 실제 트리거로 보여서 뺐다.
+                    // 대부분 링크를 붙여넣기로 넣으니 기본 키보드로도 무리 없음.
+                    returnKeyType="done"
+                    disableFullscreenUI
+                    style={styles.input}
+                  />
+                </Field>
+                <ChoiceGroup
+                  label={EDIT_COPY.category}
+                  options={editCategoryOptions}
+                  value={editForm.category}
+                  onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
+                  formatLabel={formatCompactCategoryLabel}
+                  compact
+                />
+                <ChoiceGroup
+                  label={EDIT_COPY.storage}
+                  options={storageTypes}
+                  value={editForm.storage}
+                  onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
+                  compact
+                />
+                <Field label={EDIT_COPY.expiry}>
+                  <DateButton
+                    value={editForm.expiry}
+                    onPress={() => openCalendar(editForm.expiry, (value) => setEditForm((current) => ({ ...current, expiry: value })))}
+                  />
+                </Field>
+                {/* 먹는 일정. 날짜만 정하고 끼니는 비워둘 수 있다(빈 값이면 "종일"). */}
+                <Field label={EDIT_COPY.plannedDate}>
+                  <DateButton
+                    value={editForm.plannedDate || todayIso()}
+                    onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
+                  />
+                  {editForm.plannedDate ? (
+                    <Pressable onPress={() => setEditForm((current) => ({ ...current, plannedDate: "", plannedMeal: "" }))}>
+                      <Text style={styles.planClearText}>일정 지우기</Text>
+                    </Pressable>
+                  ) : null}
+                </Field>
+                <ChoiceGroup
+                  label={EDIT_COPY.plannedMeal}
+                  options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
+                  value={editForm.plannedMeal || ""}
+                  onChange={(value) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      plannedMeal: value,
+                      plannedTime: mealDefaultTime(value) || current.plannedTime || ""
+                    }))
+                  }
+                  formatLabel={(option) => (option ? mealLabel(option) : "종일")}
+                  compact
+                />
+                {editForm.plannedDate ? (
+                  <Field label={EDIT_COPY.plannedTime}>
+                    <View style={styles.planTimeRow}>
+                      <WheelSelect
+                        label="시"
+                        value={planTimeParts(editForm.plannedTime).hour}
+                        options={planHourOptions}
+                        formatValue={(value) => `${String(value).padStart(2, "0")}`}
+                        onChange={(hour) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            plannedTime: toPlanTime(hour, planTimeParts(current.plannedTime).minute)
+                          }))
+                        }
+                      />
+                      <WheelSelect
+                        label="분"
+                        value={planTimeParts(editForm.plannedTime).minute}
+                        options={planMinuteOptions}
+                        formatValue={(value) => `${String(value).padStart(2, "0")}`}
+                        onChange={(minute) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            plannedTime: toPlanTime(planTimeParts(current.plannedTime).hour, minute)
+                          }))
+                        }
+                      />
+                    </View>
+                  </Field>
+                ) : null}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
   return (
+    <>
     <ScrollView
       ref={scrollRef}
       style={styles.screen}
@@ -284,218 +441,85 @@ export default function InventoryList({
                   style={[styles.itemCard, isEditing && styles.itemCardEditing]}
                   onLayout={(event) => onItemLayout(itemKey, event, isEditing)}
                 >
-                  {isEditing ? (
-                    <View style={styles.editPanel}>
-                      <View style={styles.editBanner}>
-                        <Text style={styles.editBannerText}>{EDIT_COPY.editing}</Text>
-                        <View style={styles.editBannerActions}>
-                          <Pressable style={styles.editBannerCancelAction} onPress={cancelEdit}>
-                            <Text style={styles.editBannerCancelText}>{EDIT_COPY.cancel}</Text>
-                          </Pressable>
-                          <Pressable
-                            style={[styles.editBannerSaveAction, editSubmitting && styles.editBannerSaveActionDisabled]}
-                            onPress={editSubmitting ? undefined : saveEdit}
-                          >
-                            <Text style={styles.editBannerSaveText}>{editSubmitting ? "저장 중..." : EDIT_COPY.save}</Text>
-                          </Pressable>
+                  <View style={styles.itemContentRow}>
+                    <Pressable onPress={() => onChangeItemImage?.(item.id)}>
+                      <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
+                    </Pressable>
+                    <View style={styles.itemContent}>
+                      <View style={styles.itemHeader}>
+                        <View style={styles.itemTitleRow}>
+                          <Text style={styles.itemName} numberOfLines={1}>{displayName}</Text>
+                          <Text style={[styles.storagePill, getStoragePillStyle(storageLabel)]}>{storageLabel}</Text>
                         </View>
+                        <Text style={[styles.badge, isCompletedScope ? styles.completedBadge : styles[status.tone]]}>
+                          {isCompletedScope ? "완료" : status.label}
+                        </Text>
                       </View>
-                      {editForm.purchaseUrl?.trim() ? (
-                        <View style={styles.affiliateDisclosureBanner}>
-                          <Text style={styles.affiliateDisclosureText}>
-                            {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
-                          </Text>
-                        </View>
+                      <Text style={styles.meta}>{isCompletedScope ? completedMeta : dateMeta}</Text>
+                      {!isCompletedScope && planBadgeLabel(item) ? (
+                        <Text style={styles.planBadge}>{"\uD83C\uDF7D\uFE0F " + planBadgeLabel(item)}</Text>
                       ) : null}
-                      <Field label={EDIT_COPY.productName}>
-                        <TextInput
-                          value={editForm.name}
-                          onChangeText={(value) =>
-                            setEditForm((current) => ({
-                              ...current,
-                              name: value,
-                              category: suggestCategory(value)
-                            }))
-                          }
-                          style={styles.input}
-                        />
-                      </Field>
-                      <Field label={EDIT_COPY.purchaseUrl}>
-                        <TextInput
-                          value={editForm.purchaseUrl || ""}
-                          onChangeText={(value) => setEditForm((current) => ({ ...current, purchaseUrl: value }))}
-                          placeholder={EDIT_COPY.purchasePlaceholder}
-                          placeholderTextColor="#a0a8a2"
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          autoComplete="off"
-                          importantForAutofill="noExcludeDescendants"
-                          spellCheck={false}
-                          // keyboardType="url"(안드로이드 TYPE_TEXT_VARIATION_URI)이
-                          // 삼성패스 자동완성 제안을 부르는 실제 트리거로 보여서 뺐다.
-                          // 대부분 링크를 붙여넣기로 넣으니 기본 키보드로도 무리 없음.
-                          returnKeyType="done"
-                          disableFullscreenUI
-                          style={styles.input}
-                        />
-                      </Field>
-                      <ChoiceGroup
-                        label={EDIT_COPY.category}
-                        options={editCategoryOptions}
-                        value={editForm.category}
-                        onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
-                        formatLabel={formatCompactCategoryLabel}
-                        compact
-                      />
-                      <ChoiceGroup
-                        label={EDIT_COPY.storage}
-                        options={storageTypes}
-                        value={editForm.storage}
-                        onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
-                        compact
-                      />
-                      <Field label={EDIT_COPY.expiry}>
-                        <DateButton
-                          value={editForm.expiry}
-                          onPress={() => openCalendar(editForm.expiry, (value) => setEditForm((current) => ({ ...current, expiry: value })))}
-                        />
-                      </Field>
-                      {/* 먹는 일정. 날짜만 정하고 끼니는 비워둘 수 있다(빈 값이면 "종일"). */}
-                      <Field label={EDIT_COPY.plannedDate}>
-                        <DateButton
-                          value={editForm.plannedDate || todayIso()}
-                          onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
-                        />
-                        {editForm.plannedDate ? (
-                          <Pressable onPress={() => setEditForm((current) => ({ ...current, plannedDate: "", plannedMeal: "" }))}>
-                            <Text style={styles.planClearText}>일정 지우기</Text>
-                          </Pressable>
-                        ) : null}
-                      </Field>
-                      <ChoiceGroup
-                        label={EDIT_COPY.plannedMeal}
-                        options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
-                        value={editForm.plannedMeal || ""}
-                        onChange={(value) =>
-                          setEditForm((current) => ({
-                            ...current,
-                            plannedMeal: value,
-                            plannedTime: mealDefaultTime(value) || current.plannedTime || ""
-                          }))
-                        }
-                        formatLabel={(option) => (option ? mealLabel(option) : "종일")}
-                        compact
-                      />
-                      {editForm.plannedDate ? (
-                        <Field label={EDIT_COPY.plannedTime}>
-                          <View style={styles.planTimeRow}>
-                            <TimeSelect
-                              value={planTimeParts(editForm.plannedTime).hour}
-                              options={planHourOptions}
-                              formatValue={(value) => `${String(value).padStart(2, "0")}시`}
-                              onChange={(hour) =>
-                                setEditForm((current) => ({
-                                  ...current,
-                                  plannedTime: toPlanTime(hour, planTimeParts(current.plannedTime).minute)
-                                }))
-                              }
-                            />
-                            <TimeSelect
-                              value={planTimeParts(editForm.plannedTime).minute}
-                              options={planMinuteOptions}
-                              formatValue={(value) => `${String(value).padStart(2, "0")}분`}
-                              onChange={(minute) =>
-                                setEditForm((current) => ({
-                                  ...current,
-                                  plannedTime: toPlanTime(planTimeParts(current.plannedTime).hour, minute)
-                                }))
-                              }
-                            />
-                          </View>
-                        </Field>
-                      ) : null}
+                      {isCompletedScope ? (
+                        <>
+                          <Text style={styles.completedMeta}>{completionTimingLabel(item)}</Text>
+                          {editorVisible ? (
+                            <View style={styles.inlineActionRow}>
+                              <PurchaseIconButton purchaseUrl={item.purchaseUrl} onOpenPurchase={openPurchaseUrl} />
+                              <CardIconButton
+                                icon={undoIcon}
+                                onPress={() => restoreItem(item.id)}
+                                accessibilityLabel="보관함으로 되돌리기"
+                              />
+                              <FavoriteIconButton
+                                active={Boolean(item.favorite)}
+                                onPress={() => toggleFavorite(item.id)}
+                              />
+                              <CardIconButton
+                                icon={editNoteIcon}
+                                onPress={() => startEdit(item)}
+                                accessibilityLabel="상품 수정"
+                              />
+                              <CardIconButton
+                                icon={deleteIcon}
+                                onPress={() => removeItem(item.id)}
+                                danger
+                                accessibilityLabel="상품 삭제"
+                              />
+                            </View>
+                          ) : null}
+                        </>
+                      ) : (
+                        <ExpiryTimeline timeline={timeline}>
+                          {editorVisible ? (
+                            <>
+                              <PurchaseIconButton purchaseUrl={item.purchaseUrl} onOpenPurchase={openPurchaseUrl} />
+                              <CardIconButton
+                                icon={forkSpoonIcon}
+                                onPress={() => completeItem(item.id)}
+                                complete
+                                accessibilityLabel="다 먹어서 완료"
+                              />
+                              <FavoriteIconButton
+                                active={Boolean(item.favorite)}
+                                onPress={() => toggleFavorite(item.id)}
+                              />
+                              <CardIconButton
+                                icon={editNoteIcon}
+                                onPress={() => startEdit(item)}
+                                accessibilityLabel="상품 수정"
+                              />
+                              <CardIconButton
+                                icon={deleteIcon}
+                                onPress={() => removeItem(item.id)}
+                                danger
+                                accessibilityLabel="상품 삭제"
+                              />
+                            </>
+                          ) : null}
+                        </ExpiryTimeline>
+                      )}
                     </View>
-                  ) : (
-                    <View style={styles.itemContentRow}>
-                      <Pressable onPress={() => onChangeItemImage?.(item.id)}>
-                        <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
-                      </Pressable>
-                      <View style={styles.itemContent}>
-                        <View style={styles.itemHeader}>
-                          <View style={styles.itemTitleRow}>
-                            <Text style={styles.itemName} numberOfLines={1}>{displayName}</Text>
-                            <Text style={[styles.storagePill, getStoragePillStyle(storageLabel)]}>{storageLabel}</Text>
-                          </View>
-                          <Text style={[styles.badge, isCompletedScope ? styles.completedBadge : styles[status.tone]]}>
-                            {isCompletedScope ? "완료" : status.label}
-                          </Text>
-                        </View>
-                        <Text style={styles.meta}>{isCompletedScope ? completedMeta : dateMeta}</Text>
-                        {!isCompletedScope && planBadgeLabel(item) ? (
-                          <Text style={styles.planBadge}>{"\uD83C\uDF7D\uFE0F " + planBadgeLabel(item)}</Text>
-                        ) : null}
-                        {isCompletedScope ? (
-                          <>
-                            <Text style={styles.completedMeta}>{completionTimingLabel(item)}</Text>
-                            {editorVisible ? (
-                              <View style={styles.inlineActionRow}>
-                                <PurchaseIconButton purchaseUrl={item.purchaseUrl} onOpenPurchase={openPurchaseUrl} />
-                                <CardIconButton
-                                  icon={undoIcon}
-                                  onPress={() => restoreItem(item.id)}
-                                  accessibilityLabel="보관함으로 되돌리기"
-                                />
-                                <FavoriteIconButton
-                                  active={Boolean(item.favorite)}
-                                  onPress={() => toggleFavorite(item.id)}
-                                />
-                                <CardIconButton
-                                  icon={editNoteIcon}
-                                  onPress={() => startEdit(item)}
-                                  accessibilityLabel="상품 수정"
-                                />
-                                <CardIconButton
-                                  icon={deleteIcon}
-                                  onPress={() => removeItem(item.id)}
-                                  danger
-                                  accessibilityLabel="상품 삭제"
-                                />
-                              </View>
-                            ) : null}
-                          </>
-                        ) : (
-                          <ExpiryTimeline timeline={timeline}>
-                            {editorVisible ? (
-                              <>
-                                <PurchaseIconButton purchaseUrl={item.purchaseUrl} onOpenPurchase={openPurchaseUrl} />
-                                <CardIconButton
-                                  icon={forkSpoonIcon}
-                                  onPress={() => completeItem(item.id)}
-                                  complete
-                                  accessibilityLabel="다 먹어서 완료"
-                                />
-                                <FavoriteIconButton
-                                  active={Boolean(item.favorite)}
-                                  onPress={() => toggleFavorite(item.id)}
-                                />
-                                <CardIconButton
-                                  icon={editNoteIcon}
-                                  onPress={() => startEdit(item)}
-                                  accessibilityLabel="상품 수정"
-                                />
-                                <CardIconButton
-                                  icon={deleteIcon}
-                                  onPress={() => removeItem(item.id)}
-                                  danger
-                                  accessibilityLabel="상품 삭제"
-                                />
-                              </>
-                            ) : null}
-                          </ExpiryTimeline>
-                        )}
-                      </View>
-                    </View>
-                  )}
+                  </View>
                 </View>
                 </Fragment>
               );
@@ -506,6 +530,8 @@ export default function InventoryList({
         {visibleItems.length > 0 && visibleItems.length < 10 ? <BannerAdSlot /> : null}
       </View>
     </ScrollView>
+    {renderEditSheet()}
+    </>
   );
 }
 
@@ -1247,14 +1273,45 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#18201c",
   },
+  sheetBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(24, 32, 28, 0.45)"
+  },
+  sheetBackdropFill: {
+    flex: 1
+  },
+  sheetCard: {
+    maxHeight: "88%",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: "#fbfcfb",
+    paddingTop: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 18
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#d7dbd8",
+    marginBottom: 6
+  },
+  sheetScroll: {
+    flexGrow: 0
+  },
+  sheetScrollContent: {
+    paddingBottom: 8
+  },
   planTimeRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    gap: 10,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "#e3e8e5",
     backgroundColor: "#fff",
-    overflow: "hidden"
+    padding: 10
   },
   planBadge: {
     ...typography.captionStrong,

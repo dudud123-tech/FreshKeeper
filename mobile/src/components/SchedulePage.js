@@ -18,7 +18,7 @@ import {
   toPlanTime,
   upcomingScheduleDates
 } from "../utils/mealPlan";
-import { ChoiceGroup, DateButton, TimeSelect } from "./CommonControls";
+import { ChoiceGroup, DateButton, WheelSelect } from "./CommonControls";
 import BannerAdSlot from "./BannerAdSlot";
 
 const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
@@ -176,16 +176,18 @@ export default function SchedulePage({
             {/* 알림 시각은 상품마다 따로 저장된다(item.plannedTime). */}
             <Text style={styles.modalLabel}>알림 시간</Text>
             <View style={styles.timeRow}>
-              <TimeSelect
+              <WheelSelect
+                label="시"
                 value={planTimeParts(pickerTime).hour}
                 options={hourOptions}
-                formatValue={(value) => `${String(value).padStart(2, "0")}시`}
+                formatValue={(value) => `${String(value).padStart(2, "0")}`}
                 onChange={(hour) => setPickerTime(toPlanTime(hour, planTimeParts(pickerTime).minute))}
               />
-              <TimeSelect
+              <WheelSelect
+                label="분"
                 value={planTimeParts(pickerTime).minute}
                 options={minuteOptions}
-                formatValue={(value) => `${String(value).padStart(2, "0")}분`}
+                formatValue={(value) => `${String(value).padStart(2, "0")}`}
                 onChange={(minute) => setPickerTime(toPlanTime(planTimeParts(pickerTime).hour, minute))}
               />
             </View>
@@ -354,12 +356,12 @@ const styles = StyleSheet.create({
   },
   timeRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    gap: 10,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "#e3e8e5",
     backgroundColor: "#fff",
-    overflow: "hidden"
+    padding: 10
   },
   modalPrimary: {
     minHeight: 48,

@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { typography } from "../theme/typography";
 import { formatDateLabel } from "../utils/date";
 
@@ -60,23 +61,58 @@ export function ChoiceGroup({ label, options, value, onChange, formatLabel = (op
   );
 }
 
-// 시/분을 +- 버튼으로 고르는 컨트롤. 원래 SettingsPanel 안에만 있었는데
-// 먹는 일정의 개별 알림 시간에서도 같은 UI가 필요해 공용으로 옮겼다(2026-08-23).
-export function TimeSelect({ value, options, formatValue, onChange }) {
-  const currentIndex = options.indexOf(value);
-  const decreaseDisabled = currentIndex <= 0;
-  const increaseDisabled = currentIndex >= options.length - 1;
+// 값을 위아래로 굴려서 고르는 휠. 설정 화면의 임박 알림기준(ReminderWheel)에서
+// 쓰던 방식을 시/분 선택에도 쓰려고 일반화했다 — +- 버튼만으로 시간을 맞추는 게
+// 불편하다는 피드백 때문이다(2026-08-23). 네이티브 시계 피커를 쓰면 재빌드가
+// 필요해서, 이미 앱에 있는 이 방식을 재사용한다.
+export function WheelSelect({ options, value, onChange, formatValue = (option) => String(option), label }) {
+  const scrollRef = useRef(null);
+  const itemHeight = 44;
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(options.indexOf(value), 0) * itemHeight,
+        animated: false
+      });
+    });
+  }, [options, value]);
+
+  function selectFromOffset(offsetY) {
+    const index = Math.max(0, Math.min(options.length - 1, Math.round(offsetY / itemHeight)));
+    onChange(options[index]);
+  }
 
   return (
-    <View style={styles.timeSelect}>
-      <View style={styles.timeSelectControls}>
-        <Pressable style={[styles.timeStepButton, decreaseDisabled && styles.timeStepButtonDisabled]} disabled={decreaseDisabled} onPress={() => onChange(options[currentIndex - 1])}>
-          <Text style={[styles.timeStepText, decreaseDisabled && styles.timeStepTextDisabled]}>-</Text>
-        </Pressable>
-        <Text style={styles.timeSelectValue}>{formatValue(value)}</Text>
-        <Pressable style={[styles.timeStepButton, increaseDisabled && styles.timeStepButtonDisabled]} disabled={increaseDisabled} onPress={() => onChange(options[currentIndex + 1])}>
-          <Text style={[styles.timeStepText, increaseDisabled && styles.timeStepTextDisabled]}>+</Text>
-        </Pressable>
+    <View style={styles.wheelColumn}>
+      {label ? <Text style={styles.wheelLabel}>{label}</Text> : null}
+      <View style={styles.wheel}>
+        <View pointerEvents="none" style={styles.wheelSelection} />
+        <ScrollView
+          ref={scrollRef}
+          showsVerticalScrollIndicator={false}
+          snapToInterval={itemHeight}
+          decelerationRate="fast"
+          nestedScrollEnabled
+          contentContainerStyle={styles.wheelContent}
+          onMomentumScrollEnd={(event) => selectFromOffset(event.nativeEvent.contentOffset.y)}
+        >
+          {options.map((option) => {
+            const active = option === value;
+            return (
+              <Pressable
+                key={String(option)}
+                style={styles.wheelItem}
+                onPress={() => {
+                  onChange(option);
+                  scrollRef.current?.scrollTo({ y: options.indexOf(option) * itemHeight, animated: true });
+                }}
+              >
+                <Text style={[styles.wheelText, active && styles.wheelTextActive]}>{formatValue(option)}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
     </View>
   );
@@ -253,6 +289,48 @@ const styles = StyleSheet.create({
   choiceTextActive: {
     color: "#fff"
   },
+  wheelColumn: {
+    flex: 1,
+    minWidth: 110,
+    gap: 4
+  },
+  wheelLabel: {
+    ...typography.caption,
+    color: "#68716b",
+    textAlign: "center"
+  },
+  wheel: {
+    height: 132,
+    borderRadius: 16,
+    backgroundColor: "#f7faf8",
+    overflow: "hidden"
+  },
+  wheelContent: {
+    paddingVertical: 44
+  },
+  wheelSelection: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    top: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#e4f4ed"
+  },
+  wheelItem: {
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  wheelText: {
+    ...typography.label,
+    color: "#8a938d",
+  },
+  wheelTextActive: {
+    color: "#14583f",
+    fontSize: 16,
+    fontWeight: "800"
+  },
   timePickerRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -263,43 +341,6 @@ const styles = StyleSheet.create({
     borderColor: "#e3e8e5",
     backgroundColor: "#fff",
     overflow: "hidden"
-  },
-  timeSelect: {
-    flex: 1,
-    minWidth: 130,
-    padding: 10
-  },
-  timeSelectControls: {
-    minHeight: 50,
-    borderRadius: 15,
-    borderWidth: 0,
-    backgroundColor: "#f6f8f7",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    overflow: "hidden"
-  },
-  timeSelectValue: {
-    ...typography.label,
-    color: "#14583f",
-  },
-  timeStepButton: {
-    width: 42,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#edf7f2"
-  },
-  timeStepButtonDisabled: {
-    backgroundColor: "#f4f6f5"
-  },
-  timeStepText: {
-    color: "#14583f",
-    fontSize: 21,
-    fontWeight: "800"
-  },
-  timeStepTextDisabled: {
-    color: "#b8b1a7"
   },
   primaryButton: {
     minHeight: 44,

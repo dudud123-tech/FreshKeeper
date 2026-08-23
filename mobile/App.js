@@ -42,6 +42,7 @@ import {
   todayIso,
 } from "./src/utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "./src/utils/expiryPresets";
+import { toPlanTime } from "./src/utils/mealPlan";
 import { chooseItemImage } from "./src/utils/itemImagePicker";
 
 const STORAGE_KEY = "fresh-keeper-mobile-items-v1";
@@ -774,6 +775,7 @@ export default function App() {
               clearItemPlan={clearItemPlan}
               completeItem={completeItem}
               openCalendar={openCalendar}
+              planNotificationTime={toPlanTime(planNotificationSettings.hour, planNotificationSettings.minute)}
             />
 
             <ScrollView style={appShellStyles.screen} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">

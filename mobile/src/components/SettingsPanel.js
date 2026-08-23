@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
+import { TimeSelect } from "./CommonControls";
 
 const settingsTabs = [
   { id: "alert", label: "알림", icon: require("../../assets/settings/setting-alert.png") },
@@ -663,26 +664,6 @@ function ReminderWheel({ options, value, onChange }) {
           );
         })}
       </ScrollView>
-    </View>
-  );
-}
-
-function TimeSelect({ value, options, formatValue, onChange }) {
-  const currentIndex = options.indexOf(value);
-  const decreaseDisabled = currentIndex <= 0;
-  const increaseDisabled = currentIndex >= options.length - 1;
-
-  return (
-    <View style={styles.timeSelect}>
-      <View style={styles.timeSelectControls}>
-        <Pressable style={[styles.timeStepButton, decreaseDisabled && styles.timeStepButtonDisabled]} disabled={decreaseDisabled} onPress={() => onChange(options[currentIndex - 1])}>
-          <Text style={[styles.timeStepText, decreaseDisabled && styles.timeStepTextDisabled]}>-</Text>
-        </Pressable>
-        <Text style={styles.timeSelectValue}>{formatValue(value)}</Text>
-        <Pressable style={[styles.timeStepButton, increaseDisabled && styles.timeStepButtonDisabled]} disabled={increaseDisabled} onPress={() => onChange(options[currentIndex + 1])}>
-          <Text style={[styles.timeStepText, increaseDisabled && styles.timeStepTextDisabled]}>+</Text>
-        </Pressable>
-      </View>
     </View>
   );
 }

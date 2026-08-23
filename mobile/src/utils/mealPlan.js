@@ -4,10 +4,12 @@ import { parseIsoDate, todayIso, toIsoDate } from "./date";
 // item.plannedMeal(아래 id 중 하나, 빈 값이면 "종일") 두 필드뿐이다. 상품 하나당
 // 일정 하나라서 별도 엔티티를 만들지 않는다. 두 필드 모두 기기 로컬 전용 —
 // 가족 공유로 서버에 올리지 않는다(familyApi.js의 cleanItemForFamilySync 참고).
+// defaultTime은 끼니를 고를 때 알림 시간을 자동으로 채워주는 값이다. 사용자가
+// 그 뒤에 시간을 직접 바꾸면 그 값이 우선한다(item.plannedTime).
 export const MEAL_SLOTS = [
-  { id: "breakfast", label: "아침" },
-  { id: "lunch", label: "점심" },
-  { id: "dinner", label: "저녁" }
+  { id: "breakfast", label: "아침", defaultTime: "08:00" },
+  { id: "lunch", label: "점심", defaultTime: "12:00" },
+  { id: "dinner", label: "저녁", defaultTime: "18:00" }
 ];
 
 // 끼니를 안 고른 일정이 모이는 자리. 실제 저장값은 빈 문자열이고 화면·알림에서만 이 라벨을 쓴다.
@@ -18,6 +20,42 @@ export const SCHEDULE_LOOKAHEAD_DAYS = 7;
 
 export function mealLabel(mealId) {
   return MEAL_SLOTS.find((slot) => slot.id === mealId)?.label || ALL_DAY_LABEL;
+}
+
+export function mealDefaultTime(mealId) {
+  return MEAL_SLOTS.find((slot) => slot.id === mealId)?.defaultTime || "";
+}
+
+export function isValidPlanTime(value) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+}
+
+// 상품별 알림 시각. 우선순위는 ①상품에 직접 지정한 시간 ②끼니 기본 시간
+// ③설정의 일정 알림 시간(fallback). 상품마다 시간을 따로 두기 전에 만든
+// 일정에는 plannedTime이 없으므로 이 폴백 순서가 있어야 한다(2026-08-23).
+export function planTimeFor(item, fallbackTime) {
+  if (isValidPlanTime(item?.plannedTime)) return item.plannedTime;
+  const mealTime = mealDefaultTime(item?.plannedMeal);
+  if (mealTime) return mealTime;
+  return isValidPlanTime(fallbackTime) ? fallbackTime : "";
+}
+
+export function formatPlanTime(time) {
+  if (!isValidPlanTime(time)) return "";
+  const [hour, minute] = time.split(":").map(Number);
+  const isAfternoon = hour >= 12;
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${isAfternoon ? "오후" : "오전"} ${displayHour}:${String(minute).padStart(2, "0")}`;
+}
+
+export function toPlanTime(hour, minute) {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+export function planTimeParts(time, fallback = "18:00") {
+  const source = isValidPlanTime(time) ? time : fallback;
+  const [hour, minute] = source.split(":").map(Number);
+  return { hour, minute };
 }
 
 export function isPlannableItem(item) {
@@ -96,5 +134,25 @@ export function planBadgeLabel(item) {
   if (!hasPlan(item)) return "";
   const date = parseIsoDate(item.plannedDate);
   const meal = item.plannedMeal ? ` ${mealLabel(item.plannedMeal)}` : "";
-  return `${date.getMonth() + 1}/${date.getDate()}${meal}`;
+  const time = isValidPlanTime(item.plannedTime) ? ` ${formatPlanTime(item.plannedTime)}` : "";
+  return `${date.getMonth() + 1}/${date.getDate()}${meal}${time}`;
+}
+
+// 알림 예약용으로 "같은 날 같은 시각"인 상품을 한 건으로 묶는다. 상품마다 알림을
+// 따로 쏘면 같은 시각에 알림이 여러 개 쏟아지고 예약 건수도 불필요하게 늘어난다.
+export function groupPlannedItemsByTime(items, dateIso, fallbackTime) {
+  const buckets = new Map();
+
+  items.forEach((item) => {
+    if (!hasPlan(item) || !isPlannableItem(item)) return;
+    if (item.plannedDate !== dateIso) return;
+    const time = planTimeFor(item, fallbackTime);
+    if (!isValidPlanTime(time)) return;
+    if (!buckets.has(time)) buckets.set(time, []);
+    buckets.get(time).push(item);
+  });
+
+  return [...buckets.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([time, bucketItems]) => ({ time, items: bucketItems.sort(comparePlannedItems) }));
 }

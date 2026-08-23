@@ -144,7 +144,8 @@ export function useFamilySync({ items, setItems, settingsReady, reminderDays, de
       imageUri: item.imageUri || "",
       familyImageUri: item.imageUri || "",
       plannedDate: localPlan.plannedDate || "",
-      plannedMeal: localPlan.plannedMeal || ""
+      plannedMeal: localPlan.plannedMeal || "",
+      plannedTime: localPlan.plannedTime || ""
     };
   }
 
@@ -152,7 +153,7 @@ export function useFamilySync({ items, setItems, settingsReady, reminderDays, de
     return new Map(
       sourceItems
         .filter((item) => item?.plannedDate)
-        .map((item) => [String(item.id), { plannedDate: item.plannedDate, plannedMeal: item.plannedMeal || "" }])
+        .map((item) => [String(item.id), { plannedDate: item.plannedDate, plannedMeal: item.plannedMeal || "", plannedTime: item.plannedTime || "" }])
     );
   }
 

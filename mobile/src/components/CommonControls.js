@@ -60,6 +60,28 @@ export function ChoiceGroup({ label, options, value, onChange, formatLabel = (op
   );
 }
 
+// 시/분을 +- 버튼으로 고르는 컨트롤. 원래 SettingsPanel 안에만 있었는데
+// 먹는 일정의 개별 알림 시간에서도 같은 UI가 필요해 공용으로 옮겼다(2026-08-23).
+export function TimeSelect({ value, options, formatValue, onChange }) {
+  const currentIndex = options.indexOf(value);
+  const decreaseDisabled = currentIndex <= 0;
+  const increaseDisabled = currentIndex >= options.length - 1;
+
+  return (
+    <View style={styles.timeSelect}>
+      <View style={styles.timeSelectControls}>
+        <Pressable style={[styles.timeStepButton, decreaseDisabled && styles.timeStepButtonDisabled]} disabled={decreaseDisabled} onPress={() => onChange(options[currentIndex - 1])}>
+          <Text style={[styles.timeStepText, decreaseDisabled && styles.timeStepTextDisabled]}>-</Text>
+        </Pressable>
+        <Text style={styles.timeSelectValue}>{formatValue(value)}</Text>
+        <Pressable style={[styles.timeStepButton, increaseDisabled && styles.timeStepButtonDisabled]} disabled={increaseDisabled} onPress={() => onChange(options[currentIndex + 1])}>
+          <Text style={[styles.timeStepText, increaseDisabled && styles.timeStepTextDisabled]}>+</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function PrimaryButton({ label, onPress, disabled }) {
   return (
     <Pressable
@@ -230,6 +252,54 @@ const styles = StyleSheet.create({
   },
   choiceTextActive: {
     color: "#fff"
+  },
+  timePickerRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 0,
+    marginTop: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#e3e8e5",
+    backgroundColor: "#fff",
+    overflow: "hidden"
+  },
+  timeSelect: {
+    flex: 1,
+    minWidth: 130,
+    padding: 10
+  },
+  timeSelectControls: {
+    minHeight: 50,
+    borderRadius: 15,
+    borderWidth: 0,
+    backgroundColor: "#f6f8f7",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    overflow: "hidden"
+  },
+  timeSelectValue: {
+    ...typography.label,
+    color: "#14583f",
+  },
+  timeStepButton: {
+    width: 42,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#edf7f2"
+  },
+  timeStepButtonDisabled: {
+    backgroundColor: "#f4f6f5"
+  },
+  timeStepText: {
+    color: "#14583f",
+    fontSize: 21,
+    fontWeight: "800"
+  },
+  timeStepTextDisabled: {
+    color: "#b8b1a7"
   },
   primaryButton: {
     minHeight: 44,

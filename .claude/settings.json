@@ -9,7 +9,9 @@
       "Bash(curl -s \"https://freshkeeper-ocr-feedback.dndud123.workers.dev/api/app-version\")",
       "Bash(curl -sD - \"https://freshkeeper-ocr-feedback.dndud123.workers.dev/api/app-version\" -o /dev/null)",
       "Bash(git mv *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(adb shell *)",
+      "Bash(adb -s 192.168.0.76:36425 shell dumpsys package com.palchonajae.freshkeeper)"
     ]
   }
 }

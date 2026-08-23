@@ -1,14 +1,29 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { daysUntil, daysUntilFrom, parseIsoDate, toIsoDate } from "../utils/date";
-import { hasPlan, isPlannableItem, mealLabel, SCHEDULE_LOOKAHEAD_DAYS } from "../utils/mealPlan";
+import {
+  formatPlanTime,
+  groupPlannedItemsByTime,
+  mealLabel,
+  SCHEDULE_LOOKAHEAD_DAYS,
+  toPlanTime
+} from "../utils/mealPlan";
 
 const NOTIFICATION_CHANNEL_ID = "freshkeeper-expiry-alerts-v2";
 const NOTIFICATION_LOOKAHEAD_DAYS = 30;
 
 // 먹는 일정 알림은 안드로이드 채널을 분리한다 — 소비기한 알림과 성격이 달라서
 // 사용자가 OS 알림 설정에서 한쪽만 끌 수 있어야 한다(2026-08-19).
-const PLAN_NOTIFICATION_CHANNEL_ID = "freshkeeper-plan-alerts-v1";
+//
+// ⚠️ 안드로이드 채널은 한 번 만들어지면 앱이 중요도·소리·진동을 바꿀 수 없다
+// (그때부터는 사용자 소관). 그래서 알림 세기를 올릴 때는 반드시 채널 ID의 버전을
+// 같이 올려야 새 설정이 실제로 적용된다. v1 → v2: 알림이 잘 체감되지 않는다는
+// 피드백으로 중요도를 MAX로 올리고 진동을 길게 바꿨다(2026-08-23).
+const PLAN_NOTIFICATION_CHANNEL_ID = "freshkeeper-plan-alerts-v2";
+
+// 한 번에 예약할 수 있는 일정 알림 수 상한. 상품마다 시간을 따로 잡을 수 있게 되면서
+// 예약 건수가 상품 수만큼 늘어날 수 있어, 안드로이드 예약 한도를 넘지 않게 막아둔다.
+const MAX_PLAN_NOTIFICATIONS = 60;
 
 export function configureExpiryNotificationHandler() {
   Notifications.setNotificationHandler({
@@ -70,9 +85,16 @@ async function prepareNotifications() {
     });
     await Notifications.setNotificationChannelAsync(PLAN_NOTIFICATION_CHANNEL_ID, {
       name: "먹는 일정 알림",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#1f7a5a"
+      // MAX여야 화면 위로 튀어나오는 헤드업 알림이 뜬다. HIGH는 소리는 나도
+      // 상단바에만 조용히 쌓여서 놓치기 쉬웠다.
+      importance: Notifications.AndroidImportance.MAX,
+      // 짧게 세 번 떨던 기본 패턴 대신 길게-짧게-길게로 바꿔 다른 앱 알림과 구분되게 한다.
+      vibrationPattern: [0, 400, 200, 400, 200, 600],
+      enableVibrate: true,
+      enableLights: true,
+      lightColor: "#1f7a5a",
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      sound: "default"
     });
   }
 
@@ -107,7 +129,7 @@ export async function scheduleAllNotifications(items, reminderDays, settings, pl
 
   const parts = [];
   if (expiryEnabled) parts.push(`소비기한 ${expiryCount}일치`);
-  if (planEnabled) parts.push(`일정 ${planCount}일치`);
+  if (planEnabled) parts.push(`일정 ${planCount}건`);
   return parts.length > 0 ? `${parts.join(" · ")} 알림 예약됨` : "예약할 알림 없음";
 }
 
@@ -144,56 +166,64 @@ async function scheduleExpiryDigests(items, reminderDays, settings) {
   return scheduledCount;
 }
 
-// 그 날 먹기로 한 상품을 하루 한 건으로 묶어서 알린다. 날짜마다 1건이라 최대
-// SCHEDULE_LOOKAHEAD_DAYS건 — 소비기한 알림(최대 30건)과 합쳐도 안드로이드 예약 한도에 여유가 있다.
+// 상품마다 정한 시각에 알린다. 같은 날 같은 시각인 상품은 한 건으로 묶어서
+// 알림이 동시에 여러 개 쏟아지지 않게 한다. 시간을 따로 안 정한 상품은
+// 끼니 기본 시간 → 설정의 일정 알림 시간 순으로 폴백한다(mealPlan.planTimeFor).
 async function schedulePlanReminders(items, planSettings) {
   let scheduledCount = 0;
   const now = new Date();
+  const fallbackTime = toPlanTime(planSettings.hour, planSettings.minute);
 
   for (let offset = 0; offset < SCHEDULE_LOOKAHEAD_DAYS; offset += 1) {
-    const triggerDate = new Date();
-    triggerDate.setDate(triggerDate.getDate() + offset);
-    triggerDate.setHours(planSettings.hour, planSettings.minute, 0, 0);
-    if (triggerDate <= now) continue;
+    const dayDate = new Date();
+    dayDate.setDate(dayDate.getDate() + offset);
+    const targetDate = toIsoDate(dayDate);
 
-    const targetDate = toIsoDate(triggerDate);
-    const plannedItems = items.filter(
-      (item) => hasPlan(item) && isPlannableItem(item) && item.plannedDate === targetDate
-    );
-    if (plannedItems.length === 0) continue;
+    for (const group of groupPlannedItemsByTime(items, targetDate, fallbackTime)) {
+      if (scheduledCount >= MAX_PLAN_NOTIFICATIONS) return scheduledCount;
 
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: planNotificationTitle(plannedItems),
-        body: planNotificationBody(plannedItems),
-        priority: Notifications.AndroidNotificationPriority.HIGH,
-        sound: "default",
-        data: { screen: "schedule", type: "meal-plan" }
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: triggerDate,
-        channelId: PLAN_NOTIFICATION_CHANNEL_ID
-      }
-    });
-    scheduledCount += 1;
+      const [hour, minute] = group.time.split(":").map(Number);
+      const triggerDate = new Date(dayDate);
+      triggerDate.setHours(hour, minute, 0, 0);
+      if (triggerDate <= now) continue;
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: planNotificationTitle(group.items, group.time),
+          body: planNotificationBody(group.items),
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          sound: "default",
+          vibrate: [0, 400, 200, 400, 200, 600],
+          data: { screen: "schedule", type: "meal-plan" }
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: triggerDate,
+          channelId: PLAN_NOTIFICATION_CHANNEL_ID
+        }
+      });
+      scheduledCount += 1;
+    }
   }
 
   return scheduledCount;
 }
 
-function planNotificationTitle(plannedItems) {
+function planNotificationTitle(plannedItems, time) {
   const primary = plannedItems[0];
   const primaryName = primary?.name?.trim() || "먹기로 한 상품";
   const slot = primary?.plannedMeal ? `${mealLabel(primary.plannedMeal)} ` : "";
   const extraCount = Math.max(plannedItems.length - 1, 0);
-  return `오늘 ${slot}${primaryName}${extraCount > 0 ? ` 외 ${extraCount}건` : ""}`;
+  const timeLabel = formatPlanTime(time);
+  const prefix = timeLabel ? `${timeLabel} ` : "";
+  return `${prefix}${slot}${primaryName}${extraCount > 0 ? ` 외 ${extraCount}건` : ""} 드세요`;
 }
 
 function planNotificationBody(plannedItems) {
   // 소비기한이 임박한 게 섞여 있으면 같이 알려준다 — 두 축이 만나는 지점이라
   // "오늘 먹기로 했는데 마침 기한도 오늘"인 상품을 놓치지 않게 한다.
   const urgentCount = plannedItems.filter((item) => daysUntil(item.expiry) <= 0).length;
-  const base = `오늘 먹기로 한 상품 ${plannedItems.length}개가 있어요.`;
+  const names = plannedItems.map((item) => item.name?.trim()).filter(Boolean).join(", ");
+  const base = names ? `${names} 먹기로 한 시간이에요.` : "먹기로 한 상품이 있어요.";
   return urgentCount > 0 ? `${base} 그중 ${urgentCount}개는 오늘까지입니다.` : base;
 }

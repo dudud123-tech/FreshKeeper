@@ -4,19 +4,28 @@ import { typography } from "../theme/typography";
 import { statusFor, todayIso } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
 import {
+  formatPlanTime,
   groupPlannedItemsByDate,
   hasPlan,
   isPlannableItem,
   MEAL_SLOTS,
+  mealDefaultTime,
   mealLabel,
   overduePlannedItems,
+  planTimeFor,
+  planTimeParts,
   scheduleDateLabel,
+  toPlanTime,
   upcomingScheduleDates
 } from "../utils/mealPlan";
-import { ChoiceGroup, DateButton } from "./CommonControls";
+import { ChoiceGroup, DateButton, TimeSelect } from "./CommonControls";
 import BannerAdSlot from "./BannerAdSlot";
 
 const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
+// 설정 화면의 알림 시간 선택과 같은 범위를 쓴다 — 범위가 다르면 설정에서 온
+// 폴백 시간(예: 17:07)이 목록에 없어서 +- 버튼이 먹히지 않는다.
+const hourOptions = Array.from({ length: 24 }, (_, index) => index);
+const minuteOptions = Array.from({ length: 60 }, (_, index) => index);
 
 // 먹는 일정 화면. 오늘부터 7일을 날짜별 세로 목록으로 보여주고, 각 날짜 안에서
 // 끼니(아침·점심·저녁·종일)로 묶는다. 완료 체크는 보관함과 같은 completeItem을
@@ -26,11 +35,15 @@ export default function SchedulePage({
   setItemPlan,
   clearItemPlan,
   completeItem,
-  openCalendar
+  openCalendar,
+  planNotificationTime = "18:00"
 }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerDate, setPickerDate] = useState(() => todayIso());
   const [pickerMeal, setPickerMeal] = useState("");
+  const [pickerTime, setPickerTime] = useState("18:00");
+  // 값이 있으면 "새 상품 추가"가 아니라 "이 상품의 일정 수정" 모드다.
+  const [editingItem, setEditingItem] = useState(null);
 
   const dates = useMemo(() => upcomingScheduleDates(), []);
   const days = useMemo(() => groupPlannedItemsByDate(items, dates), [items, dates]);
@@ -45,14 +58,33 @@ export default function SchedulePage({
   );
 
   function openPicker() {
+    setEditingItem(null);
     setPickerDate(todayIso());
     setPickerMeal("");
+    setPickerTime(planNotificationTime);
     setPickerVisible(true);
   }
 
+  function openPickerForItem(item) {
+    setEditingItem(item);
+    setPickerDate(item.plannedDate || todayIso());
+    setPickerMeal(item.plannedMeal || "");
+    setPickerTime(planTimeFor(item, planNotificationTime));
+    setPickerVisible(true);
+  }
+
+  // 끼니를 고르면 알림 시간을 그 끼니의 기본 시간으로 맞춰준다. 매번 시간을
+  // 손으로 맞추는 부담을 줄이려는 것이고, 이후 시간을 직접 바꾸면 그 값이 남는다.
+  function selectMeal(nextMeal) {
+    setPickerMeal(nextMeal);
+    const defaultTime = mealDefaultTime(nextMeal);
+    if (defaultTime) setPickerTime(defaultTime);
+  }
+
   function assignItem(itemId) {
-    setItemPlan(itemId, { plannedDate: pickerDate, plannedMeal: pickerMeal });
+    setItemPlan(itemId, { plannedDate: pickerDate, plannedMeal: pickerMeal, plannedTime: pickerTime });
     setPickerVisible(false);
+    setEditingItem(null);
   }
 
   return (
@@ -75,8 +107,10 @@ export default function SchedulePage({
               <ScheduleRow
                 key={item.id}
                 item={item}
+                planNotificationTime={planNotificationTime}
                 onComplete={() => completeItem(item.id)}
                 onClear={() => clearItemPlan(item.id)}
+                onEdit={() => openPickerForItem(item)}
                 showPlannedDate
               />
             ))}
@@ -100,8 +134,10 @@ export default function SchedulePage({
                     <ScheduleRow
                       key={item.id}
                       item={item}
+                      planNotificationTime={planNotificationTime}
                       onComplete={() => completeItem(item.id)}
                       onClear={() => clearItemPlan(item.id)}
+                      onEdit={() => openPickerForItem(item)}
                     />
                   ))}
                 </View>
@@ -120,7 +156,9 @@ export default function SchedulePage({
       <Modal visible={pickerVisible} transparent animationType="fade" onRequestClose={() => setPickerVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>언제 먹을까요?</Text>
+            <Text style={styles.modalTitle}>
+              {editingItem ? `${editingItem.name} 일정 바꾸기` : "언제 먹을까요?"}
+            </Text>
 
             {/* 날짜 선택은 기존 CalendarModal(App.js의 openCalendar 콜백)을 그대로 재사용한다. */}
             <Text style={styles.modalLabel}>날짜</Text>
@@ -130,12 +168,34 @@ export default function SchedulePage({
               label="끼니 (선택)"
               options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
               value={pickerMeal}
-              onChange={setPickerMeal}
+              onChange={selectMeal}
               formatLabel={(option) => (option ? mealLabel(option) : "종일")}
               compact
             />
 
-            <Text style={styles.modalLabel}>상품 고르기</Text>
+            {/* 알림 시각은 상품마다 따로 저장된다(item.plannedTime). */}
+            <Text style={styles.modalLabel}>알림 시간</Text>
+            <View style={styles.timeRow}>
+              <TimeSelect
+                value={planTimeParts(pickerTime).hour}
+                options={hourOptions}
+                formatValue={(value) => `${String(value).padStart(2, "0")}시`}
+                onChange={(hour) => setPickerTime(toPlanTime(hour, planTimeParts(pickerTime).minute))}
+              />
+              <TimeSelect
+                value={planTimeParts(pickerTime).minute}
+                options={minuteOptions}
+                formatValue={(value) => `${String(value).padStart(2, "0")}분`}
+                onChange={(minute) => setPickerTime(toPlanTime(planTimeParts(pickerTime).hour, minute))}
+              />
+            </View>
+
+            {editingItem ? null : <Text style={styles.modalLabel}>상품 고르기</Text>}
+            {editingItem ? (
+              <Pressable style={styles.modalPrimary} onPress={() => assignItem(editingItem.id)}>
+                <Text style={styles.modalPrimaryText}>이 시간으로 저장</Text>
+              </Pressable>
+            ) : (
             <ScrollView style={styles.pickerList}>
               {unplannedItems.length === 0 ? (
                 <Text style={styles.pickerEmpty}>일정을 정할 상품이 없습니다. 보관함에 상품을 먼저 등록해 주세요.</Text>
@@ -152,6 +212,7 @@ export default function SchedulePage({
                 })
               )}
             </ScrollView>
+            )}
 
             <Pressable style={styles.modalClose} onPress={() => setPickerVisible(false)}>
               <Text style={styles.modalCloseText}>닫기</Text>
@@ -165,18 +226,20 @@ export default function SchedulePage({
 
 // 일정 한 줄. 소비기한 D-day를 같이 보여줘서 "언제 먹을지"와 "언제까지 먹어야 하는지"
 // 두 축을 한눈에 비교할 수 있게 한다.
-function ScheduleRow({ item, onComplete, onClear, showPlannedDate = false }) {
+function ScheduleRow({ item, planNotificationTime, onComplete, onClear, onEdit, showPlannedDate = false }) {
   const status = statusFor(item);
+  const timeLabel = formatPlanTime(planTimeFor(item, planNotificationTime));
   return (
     <View style={styles.row}>
       <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.rowImage} />
-      <View style={styles.rowBody}>
+      <Pressable style={styles.rowBody} onPress={onEdit}>
         <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.rowMeta}>
           {showPlannedDate ? `${item.plannedDate} · ` : ""}
           소비기한 {item.expiry}
         </Text>
-      </View>
+        {timeLabel ? <Text style={styles.rowTime}>{`⏰ ${timeLabel} 알림`}</Text> : null}
+      </Pressable>
       <Text style={[styles.rowDday, styles[`tone_${status.tone}`]]}>{status.label}</Text>
       <Pressable style={styles.rowAction} onPress={onClear} accessibilityRole="button" accessibilityLabel="일정 해제">
         <Text style={styles.rowClearText}>✕</Text>
@@ -283,6 +346,32 @@ const styles = StyleSheet.create({
   rowMeta: {
     ...typography.caption,
     color: "#68716b",
+  },
+  rowTime: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+    marginTop: 2
+  },
+  timeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e3e8e5",
+    backgroundColor: "#fff",
+    overflow: "hidden"
+  },
+  modalPrimary: {
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: "#1f7a5a",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14
+  },
+  modalPrimaryText: {
+    ...typography.label,
+    color: "#fff",
   },
   rowDday: {
     ...typography.captionStrong,

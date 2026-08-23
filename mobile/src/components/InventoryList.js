@@ -4,7 +4,18 @@ import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
 import { statusFor, timelineFor, todayIso } from "../utils/date";
-import { MEAL_SLOTS, mealLabel, planBadgeLabel } from "../utils/mealPlan";
+import {
+  MEAL_SLOTS,
+  mealDefaultTime,
+  mealLabel,
+  planBadgeLabel,
+  planTimeParts,
+  toPlanTime
+} from "../utils/mealPlan";
+import { TimeSelect } from "./CommonControls";
+
+const planHourOptions = Array.from({ length: 24 }, (_, index) => index);
+const planMinuteOptions = Array.from({ length: 60 }, (_, index) => index);
 import { getFoodImageSource } from "../utils/foodImages";
 import BannerAdSlot from "./BannerAdSlot";
 
@@ -28,6 +39,7 @@ const EDIT_COPY = {
   purchasePlaceholder: DEFAULT_PURCHASE_URL,
   plannedDate: "\uBA39\uC744 \uB0A0",
   plannedMeal: "\uB07C\uB2C8 (\uC120\uD0DD)",
+  plannedTime: "\uC54C\uB9BC \uC2DC\uAC04",
   category: "\uCE74\uD14C\uACE0\uB9AC",
   storage: "\uBCF4\uAD00",
   expiry: "\uC18C\uBE44\uAE30\uD55C",
@@ -364,10 +376,44 @@ export default function InventoryList({
                         label={EDIT_COPY.plannedMeal}
                         options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
                         value={editForm.plannedMeal || ""}
-                        onChange={(value) => setEditForm((current) => ({ ...current, plannedMeal: value }))}
+                        onChange={(value) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            plannedMeal: value,
+                            plannedTime: mealDefaultTime(value) || current.plannedTime || ""
+                          }))
+                        }
                         formatLabel={(option) => (option ? mealLabel(option) : "종일")}
                         compact
                       />
+                      {editForm.plannedDate ? (
+                        <Field label={EDIT_COPY.plannedTime}>
+                          <View style={styles.planTimeRow}>
+                            <TimeSelect
+                              value={planTimeParts(editForm.plannedTime).hour}
+                              options={planHourOptions}
+                              formatValue={(value) => `${String(value).padStart(2, "0")}시`}
+                              onChange={(hour) =>
+                                setEditForm((current) => ({
+                                  ...current,
+                                  plannedTime: toPlanTime(hour, planTimeParts(current.plannedTime).minute)
+                                }))
+                              }
+                            />
+                            <TimeSelect
+                              value={planTimeParts(editForm.plannedTime).minute}
+                              options={planMinuteOptions}
+                              formatValue={(value) => `${String(value).padStart(2, "0")}분`}
+                              onChange={(minute) =>
+                                setEditForm((current) => ({
+                                  ...current,
+                                  plannedTime: toPlanTime(planTimeParts(current.plannedTime).hour, minute)
+                                }))
+                              }
+                            />
+                          </View>
+                        </Field>
+                      ) : null}
                     </View>
                   ) : (
                     <View style={styles.itemContentRow}>
@@ -1200,6 +1246,15 @@ const styles = StyleSheet.create({
     ...typography.cardTitle,
     flex: 1,
     color: "#18201c",
+  },
+  planTimeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e3e8e5",
+    backgroundColor: "#fff",
+    overflow: "hidden"
   },
   planBadge: {
     ...typography.captionStrong,

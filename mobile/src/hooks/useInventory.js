@@ -350,16 +350,16 @@ export function useInventory({
 
   // 먹는 일정 지정/해제. plannedDate/plannedMeal은 기기 로컬 전용 필드라
   // 가족 공유로 올라가지 않는다(utils/mealPlan.js 주석 참고).
-  function setItemPlan(id, { plannedDate, plannedMeal = "" }) {
+  function setItemPlan(id, { plannedDate, plannedMeal = "", plannedTime = "" }) {
     if (!plannedDate) return;
     setItems((current) =>
-      current.map((item) => (item.id === id ? { ...item, plannedDate, plannedMeal } : item))
+      current.map((item) => (item.id === id ? { ...item, plannedDate, plannedMeal, plannedTime } : item))
     );
   }
 
   function clearItemPlan(id) {
     setItems((current) =>
-      current.map((item) => (item.id === id ? { ...item, plannedDate: "", plannedMeal: "" } : item))
+      current.map((item) => (item.id === id ? { ...item, plannedDate: "", plannedMeal: "", plannedTime: "" } : item))
     );
   }
 
@@ -373,7 +373,8 @@ export function useInventory({
       expiry: item.expiry,
       purchaseUrl: item.purchaseUrl || "",
       plannedDate: item.plannedDate || "",
-      plannedMeal: item.plannedMeal || ""
+      plannedMeal: item.plannedMeal || "",
+      plannedTime: item.plannedTime || ""
     });
     onStartEditScroll?.(item.id);
   }

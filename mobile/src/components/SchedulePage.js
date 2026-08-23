@@ -10,9 +10,6 @@ import {
   hasPlan,
   isPlannableItem,
   isRepeating,
-  MEAL_SLOTS,
-  mealDefaultTime,
-  mealLabel,
   PLAN_REPEATS,
   repeatLabel,
   overduePlannedItems,
@@ -28,9 +25,12 @@ const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
 
 // 먹는 일정 화면. 오늘부터 30일(SCHEDULE_LOOKAHEAD_DAYS)을 날짜별 세로 목록으로
 // 보여주되 일정이 있는 날만 그린다 — 빈 날까지 전부 그리면 30줄이 대부분 "일정 없음"이
-// 되어 정작 잡아둔 일정이 묻힌다(2026-08-23). 각 날짜 안에서
-// 끼니(아침·점심·저녁·종일)로 묶는다. 완료 체크는 보관함과 같은 completeItem을
-// 그대로 쓰므로 두 화면이 하나의 상품 상태를 공유한다(2026-08-19).
+// 되어 정작 잡아둔 일정이 묻힌다(2026-08-23). 완료 체크는 보관함과 같은
+// completeItem을 그대로 쓰므로 두 화면이 하나의 상품 상태를 공유한다(2026-08-19).
+//
+// 끼니(아침·점심·저녁) 그룹은 남아 있지만 고를 수는 없다 — 상품마다 알림 시각을
+// 직접 정하는 방식으로 갈음했다. 끼니를 고를 수 있던 시절 데이터가 여전히 그
+// 그룹으로 묶이도록 표시 로직만 남겨 둔다(2026-08-23).
 export default function SchedulePage({
   items,
   setItemPlan,
@@ -40,7 +40,6 @@ export default function SchedulePage({
 }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerDate, setPickerDate] = useState(() => todayIso());
-  const [pickerMeal, setPickerMeal] = useState("");
   const [pickerTime, setPickerTime] = useState(DEFAULT_PLAN_TIME);
   const [pickerRepeat, setPickerRepeat] = useState("");
   // 값이 있으면 "새 상품 추가"가 아니라 "이 상품의 일정 수정" 모드다.
@@ -62,7 +61,6 @@ export default function SchedulePage({
   function openPicker() {
     setEditingItem(null);
     setPickerDate(todayIso());
-    setPickerMeal("");
     setPickerTime(DEFAULT_PLAN_TIME);
     setPickerRepeat("");
     setPickerVisible(true);
@@ -71,24 +69,18 @@ export default function SchedulePage({
   function openPickerForItem(item) {
     setEditingItem(item);
     setPickerDate(item.plannedDate || todayIso());
-    setPickerMeal(item.plannedMeal || "");
     setPickerTime(planTimeFor(item, DEFAULT_PLAN_TIME));
     setPickerRepeat(item.planRepeat || "");
     setPickerVisible(true);
   }
 
-  // 끼니를 고르면 알림 시간을 그 끼니의 기본 시간으로 맞춰준다. 매번 시간을
-  // 손으로 맞추는 부담을 줄이려는 것이고, 이후 시간을 직접 바꾸면 그 값이 남는다.
-  function selectMeal(nextMeal) {
-    setPickerMeal(nextMeal);
-    const defaultTime = mealDefaultTime(nextMeal);
-    if (defaultTime) setPickerTime(defaultTime);
-  }
-
   function assignItem(itemId) {
     setItemPlan(itemId, {
       plannedDate: pickerDate,
-      plannedMeal: pickerMeal,
+      // 끼니는 더 이상 고르게 하지 않는다(상품마다 알림 시각을 직접 정하는 걸로
+      // 갈음). 다만 setItemPlan이 빠진 필드를 ""로 덮어쓰기 때문에, 끼니를
+      // 고를 수 있던 시절에 잡아둔 상품의 값은 그대로 넘겨 보존한다(2026-08-23).
+      plannedMeal: editingItem?.plannedMeal || "",
       plannedTime: pickerTime,
       planRepeat: pickerRepeat
     });
@@ -125,7 +117,9 @@ export default function SchedulePage({
 
             {day.groups.map((group) => (
               <View key={`${day.date}-${group.mealId || "allday"}`} style={styles.mealGroup}>
-                <Text style={styles.mealLabel}>{group.label}</Text>
+                {day.groups.length > 1 || group.mealId ? (
+                  <Text style={styles.mealLabel}>{group.label}</Text>
+                ) : null}
                 {group.items.map((item) => (
                   <ScheduleRow
                     key={item.id}
@@ -179,15 +173,6 @@ export default function SchedulePage({
                 ) : null}
               </>
             ) : null}
-
-            <ChoiceGroup
-              label="끼니 (선택)"
-              options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
-              value={pickerMeal}
-              onChange={selectMeal}
-              formatLabel={(option) => (option ? mealLabel(option) : "종일")}
-              compact
-            />
 
             {/* 알림 시각은 상품마다 따로 저장된다(item.plannedTime). */}
             <Text style={styles.modalLabel}>알림 시간</Text>

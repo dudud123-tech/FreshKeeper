@@ -124,7 +124,8 @@ export function useFamilySync({ items, setItems, settingsReady, reminderDays, de
 
   function mergeFamilyItems(localItems, remoteItems) {
     const merged = new Map();
-    remoteItems.forEach((item) => merged.set(item.id, normalizeRemoteItem(item)));
+    const localPlansById = localPlanMap(localItems);
+    remoteItems.forEach((item) => merged.set(item.id, normalizeRemoteItem(item, localPlansById)));
     localItems.forEach((item) => {
       // 서버에 보내지 않는 로컬 사진 URI와 기기 전용 필드는 동기화 후에도 보존한다.
       merged.set(item.id, { ...item, ...cleanItem(item) });
@@ -132,12 +133,27 @@ export function useFamilySync({ items, setItems, settingsReady, reminderDays, de
     return [...merged.values()].sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry));
   }
 
-  function normalizeRemoteItem(item) {
+  // ⚠️ 먹는 일정(plannedDate/plannedMeal)은 기기 로컬 전용이라 서버에 없다. 그런데
+  // pullFamilyItems가 addLocal 없이 호출되면(30초 주기 새로고침이 그렇다) 이 함수
+  // 결과로 items를 통째로 갈아끼우므로, 여기서 기존 로컬 값을 이어붙이지 않으면
+  // 가족 공유를 켠 사용자는 일정이 30초마다 사라진다(2026-08-19).
+  function normalizeRemoteItem(item, localPlansById) {
+    const localPlan = localPlansById?.get(String(item.id)) || {};
     return {
       ...cleanItem(item),
       imageUri: item.imageUri || "",
-      familyImageUri: item.imageUri || ""
+      familyImageUri: item.imageUri || "",
+      plannedDate: localPlan.plannedDate || "",
+      plannedMeal: localPlan.plannedMeal || ""
     };
+  }
+
+  function localPlanMap(sourceItems) {
+    return new Map(
+      sourceItems
+        .filter((item) => item?.plannedDate)
+        .map((item) => [String(item.id), { plannedDate: item.plannedDate, plannedMeal: item.plannedMeal || "" }])
+    );
   }
 
   async function shareFamilyDigest() {
@@ -193,7 +209,8 @@ export function useFamilySync({ items, setItems, settingsReady, reminderDays, de
         ? await fetchFamilyJoinRequests(familyCode).catch(() => ({ requests: [] }))
         : { requests: [] };
       const remoteItems = Array.isArray(result.items) ? result.items : [];
-      const normalizedRemoteItems = remoteItems.map(normalizeRemoteItem);
+      const localPlansById = localPlanMap(items);
+      const normalizedRemoteItems = remoteItems.map((item) => normalizeRemoteItem(item, localPlansById));
       const nextItems = options.addLocal
         ? mergeFamilyItems(items, normalizedRemoteItems)
         : normalizedRemoteItems;

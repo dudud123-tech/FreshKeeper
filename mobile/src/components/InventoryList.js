@@ -1350,8 +1350,8 @@ const styles = StyleSheet.create({
   // 흰 체크가 전부 한 색으로 덮여 체크 모양이 안 보인다 — 2026-08-16 실기기로 확인).
   // 컨테이너(32px 원, 테두리 1px)에 꽉 차도록 키운다.
   cardIconComplete: {
-    width: 34,
-    height: 34
+    width: 35,
+    height: 35
   },
   normalFill: {
     backgroundColor: "#1f7a5a"

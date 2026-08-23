@@ -28,7 +28,7 @@ import SettingsPanel from "./src/components/SettingsPanel";
 import SoftUpdatePrompt from "./src/components/SoftUpdatePrompt";
 import WhatsNewModal from "./src/components/WhatsNewModal";
 import { useAuth } from "./src/hooks/useAuth";
-import { useExpiryNotifications } from "./src/hooks/useExpiryNotifications";
+import { useAppNotifications } from "./src/hooks/useAppNotifications";
 import { useFamilySync } from "./src/hooks/useFamilySync";
 import { useGrowthSync } from "./src/hooks/useGrowthSync";
 import { useInventory } from "./src/hooks/useInventory";
@@ -220,8 +220,11 @@ export default function App() {
   const {
     notificationSettings,
     setNotificationSettings,
-    normalizeNotificationSettings
-  } = useExpiryNotifications({ items, reminderDays, settingsReady });
+    planNotificationSettings,
+    setPlanNotificationSettings,
+    normalizeNotificationSettings,
+    normalizePlanNotificationSettings
+  } = useAppNotifications({ items, reminderDays, settingsReady });
   const {
     familySettings,
     setFamilySettings,
@@ -374,6 +377,7 @@ export default function App() {
         const settings = JSON.parse(value);
         if (typeof settings.reminderDays === "number") setReminderDays(settings.reminderDays);
         if (settings.notifications) setNotificationSettings(normalizeNotificationSettings(settings.notifications));
+        if (settings.planNotifications) setPlanNotificationSettings(normalizePlanNotificationSettings(settings.planNotifications));
         if (settings.feedback) setFeedbackSettings(normalizeFeedbackSettings(settings.feedback));
         if (settings.family) {
           const nextFamily = normalizeFamilySettings(settings.family);
@@ -393,9 +397,15 @@ export default function App() {
     if (!settingsReady) return;
     AsyncStorage.setItem(
       SETTINGS_KEY,
-      JSON.stringify({ reminderDays, notifications: notificationSettings, feedback: feedbackSettings, family: familySettings })
+      JSON.stringify({
+        reminderDays,
+        notifications: notificationSettings,
+        planNotifications: planNotificationSettings,
+        feedback: feedbackSettings,
+        family: familySettings
+      })
     ).catch(() => undefined);
-  }, [reminderDays, notificationSettings, feedbackSettings, familySettings, settingsReady]);
+  }, [reminderDays, notificationSettings, planNotificationSettings, feedbackSettings, familySettings, settingsReady]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -589,6 +599,7 @@ export default function App() {
       page={page}
       onPageChange={goToPage}
       hideBottomNav={launchVisible || onboardingVisible}
+      onReplayTutorial={replayOnboarding}
       overlays={
         <>
           <CalendarModal

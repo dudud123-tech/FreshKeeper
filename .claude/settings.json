@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew bundleRelease --console=plain)",
+      "Bash(node -e ' *)",
+      "WebFetch(domain:freshkeeper-ocr-feedback.dndud123.workers.dev)",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('app.json','utf8'\\)\\); JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json','utf8'\\)\\); console.log\\('JSON OK'\\)\")",
+      "Edit(/.claude/skills/android-release-build/**)",
+      "Bash(curl -s \"https://freshkeeper-ocr-feedback.dndud123.workers.dev/api/app-version\")",
+      "Bash(curl -sD - \"https://freshkeeper-ocr-feedback.dndud123.workers.dev/api/app-version\" -o /dev/null)",
+      "Bash(git mv *)"
+    ]
+  }
+}

@@ -1,9 +1,14 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { daysUntilFrom, parseIsoDate, toIsoDate } from "../utils/date";
+import { daysUntil, daysUntilFrom, parseIsoDate, toIsoDate } from "../utils/date";
+import { hasPlan, isPlannableItem, mealLabel, SCHEDULE_LOOKAHEAD_DAYS } from "../utils/mealPlan";
 
 const NOTIFICATION_CHANNEL_ID = "freshkeeper-expiry-alerts-v2";
 const NOTIFICATION_LOOKAHEAD_DAYS = 30;
+
+// 먹는 일정 알림은 안드로이드 채널을 분리한다 — 소비기한 알림과 성격이 달라서
+// 사용자가 OS 알림 설정에서 한쪽만 끌 수 있어야 한다(2026-08-19).
+const PLAN_NOTIFICATION_CHANNEL_ID = "freshkeeper-plan-alerts-v1";
 
 export function configureExpiryNotificationHandler() {
   Notifications.setNotificationHandler({
@@ -58,8 +63,14 @@ async function prepareNotifications() {
 
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
-      name: "오늘까지야 알림",
+      name: "소비기한 알림",
       importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#1f7a5a"
+    });
+    await Notifications.setNotificationChannelAsync(PLAN_NOTIFICATION_CHANNEL_ID, {
+      name: "먹는 일정 알림",
+      importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#1f7a5a"
     });
@@ -75,15 +86,32 @@ async function prepareNotifications() {
   return finalStatus === "granted" ? null : "알림 권한이 꺼져 있습니다.";
 }
 
-export async function scheduleExpiryNotifications(items, reminderDays, settings) {
+// ⚠️ 소비기한 알림과 먹는 일정 알림을 반드시 이 한 함수에서 같이 예약한다.
+// 맨 앞의 cancelAllScheduledNotificationsAsync()가 예약된 알림을 전부 지우기
+// 때문에, 두 종류를 각각 다른 함수에서 예약하면 나중에 부른 쪽이 앞쪽 예약을
+// 통째로 날려버린다(2026-08-19).
+export async function scheduleAllNotifications(items, reminderDays, settings, planSettings) {
   if (Platform.OS === "web") return "웹에서는 알림을 예약하지 않습니다.";
 
   await Notifications.cancelAllScheduledNotificationsAsync();
-  if (!settings.enabled) return "알림 꺼짐";
+
+  const expiryEnabled = Boolean(settings?.enabled);
+  const planEnabled = Boolean(planSettings?.enabled);
+  if (!expiryEnabled && !planEnabled) return "알림 꺼짐";
 
   const unavailableReason = await prepareNotifications();
   if (unavailableReason) return unavailableReason;
 
+  const expiryCount = expiryEnabled ? await scheduleExpiryDigests(items, reminderDays, settings) : 0;
+  const planCount = planEnabled ? await schedulePlanReminders(items, planSettings) : 0;
+
+  const parts = [];
+  if (expiryEnabled) parts.push(`소비기한 ${expiryCount}일치`);
+  if (planEnabled) parts.push(`일정 ${planCount}일치`);
+  return parts.length > 0 ? `${parts.join(" · ")} 알림 예약됨` : "예약할 알림 없음";
+}
+
+async function scheduleExpiryDigests(items, reminderDays, settings) {
   let scheduledCount = 0;
   const now = new Date();
   for (let offset = 0; offset < NOTIFICATION_LOOKAHEAD_DAYS; offset += 1) {
@@ -113,6 +141,59 @@ export async function scheduleExpiryNotifications(items, reminderDays, settings)
     scheduledCount += 1;
   }
 
-  const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-  return scheduledCount > 0 ? `${scheduledCount}일치 알림 예약됨` : `예약할 임박/만료 상품 없음 (${scheduledNotifications.length}개 예약)`;
+  return scheduledCount;
+}
+
+// 그 날 먹기로 한 상품을 하루 한 건으로 묶어서 알린다. 날짜마다 1건이라 최대
+// SCHEDULE_LOOKAHEAD_DAYS건 — 소비기한 알림(최대 30건)과 합쳐도 안드로이드 예약 한도에 여유가 있다.
+async function schedulePlanReminders(items, planSettings) {
+  let scheduledCount = 0;
+  const now = new Date();
+
+  for (let offset = 0; offset < SCHEDULE_LOOKAHEAD_DAYS; offset += 1) {
+    const triggerDate = new Date();
+    triggerDate.setDate(triggerDate.getDate() + offset);
+    triggerDate.setHours(planSettings.hour, planSettings.minute, 0, 0);
+    if (triggerDate <= now) continue;
+
+    const targetDate = toIsoDate(triggerDate);
+    const plannedItems = items.filter(
+      (item) => hasPlan(item) && isPlannableItem(item) && item.plannedDate === targetDate
+    );
+    if (plannedItems.length === 0) continue;
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: planNotificationTitle(plannedItems),
+        body: planNotificationBody(plannedItems),
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+        sound: "default",
+        data: { screen: "schedule", type: "meal-plan" }
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: triggerDate,
+        channelId: PLAN_NOTIFICATION_CHANNEL_ID
+      }
+    });
+    scheduledCount += 1;
+  }
+
+  return scheduledCount;
+}
+
+function planNotificationTitle(plannedItems) {
+  const primary = plannedItems[0];
+  const primaryName = primary?.name?.trim() || "먹기로 한 상품";
+  const slot = primary?.plannedMeal ? `${mealLabel(primary.plannedMeal)} ` : "";
+  const extraCount = Math.max(plannedItems.length - 1, 0);
+  return `오늘 ${slot}${primaryName}${extraCount > 0 ? ` 외 ${extraCount}건` : ""}`;
+}
+
+function planNotificationBody(plannedItems) {
+  // 소비기한이 임박한 게 섞여 있으면 같이 알려준다 — 두 축이 만나는 지점이라
+  // "오늘 먹기로 했는데 마침 기한도 오늘"인 상품을 놓치지 않게 한다.
+  const urgentCount = plannedItems.filter((item) => daysUntil(item.expiry) <= 0).length;
+  const base = `오늘 먹기로 한 상품 ${plannedItems.length}개가 있어요.`;
+  return urgentCount > 0 ? `${base} 그중 ${urgentCount}개는 오늘까지입니다.` : base;
 }

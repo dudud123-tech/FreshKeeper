@@ -52,3 +52,6 @@ mobile/tools/food-safety-api-data/food-safety-i1250-20*.json
 
 # Local Play Console tester lists
 비공개테스터.csv
+
+# Claude Code runtime artifacts (PID/session lock)
+.claude/scheduled_tasks.lock

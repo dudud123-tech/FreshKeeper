@@ -26,6 +26,7 @@ export default function AppShell({
   page,
   onPageChange,
   hideBottomNav = false,
+  onReplayTutorial,
   children,
   overlays
 }) {
@@ -35,6 +36,7 @@ export default function AppShell({
         page={page}
         onPageChange={onPageChange}
         hideBottomNav={hideBottomNav}
+        onReplayTutorial={onReplayTutorial}
         overlays={overlays}
       >
         {children}
@@ -47,6 +49,7 @@ function AppShellLayout({
   page,
   onPageChange,
   hideBottomNav,
+  onReplayTutorial,
   children,
   overlays
 }) {
@@ -60,10 +63,23 @@ function AppShellLayout({
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
           <View style={[styles.container, { paddingTop: insets.top }]}>
             {page === 0 ? (
-            // 홈 화면 전용 헤더입니다. 홈에서는 뒤로가기 없이 앱 이름만 중앙에 보여줍니다.
+            // 홈 화면 전용 헤더입니다. 뒤로가기는 없고, 왼쪽엔 제목을 가운데로 맞추기 위한
+            // 빈 자리, 오른쪽엔 튜토리얼을 다시 볼 수 있는 "?" 버튼을 둔다(2026-08-17,
+            // 자주 안 쓰는 기능이라 하단 탭 대신 상시 노출되는 작은 아이콘으로 처리).
             <View style={styles.header}>
               <View style={styles.brandRow}>
+                <View style={styles.headerSideSlot} />
                 <Text style={styles.title}>오늘까지야, 놓치기 전에</Text>
+                <Pressable
+                  style={styles.headerSideSlot}
+                  onPress={onReplayTutorial}
+                  accessibilityRole="button"
+                  accessibilityLabel="튜토리얼 다시 보기"
+                >
+                  <View style={styles.tutorialHelpBadge}>
+                    <Text style={styles.tutorialHelpBadgeText}>?</Text>
+                  </View>
+                </Pressable>
               </View>
             </View>
             ) : (
@@ -196,13 +212,37 @@ const styles = StyleSheet.create({
     ...typography.screenTitle,
     color: "#18201c",
   },
-  // 홈 헤더 안에서 앱 이름을 중앙에 배치하는 줄입니다.
+  // 홈 헤더 안에서 앱 이름을 중앙에 배치하는 줄입니다. 좌우에 같은 크기의
+  // headerSideSlot을 둬서 제목이 항상 정가운데 오도록 한다(pageHeader의
+  // backButton과 같은 방식) — 하나는 빈 자리, 하나는 튜토리얼 버튼.
   brandRow: {
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
     gap: 8
+  },
+  headerSideSlot: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  // 튜토리얼 다시 보기 버튼. 자주 안 쓰는 기능이라 눈에 덜 띄는 작은 물음표 배지로 둔다.
+  tutorialHelpBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "#d4e7df",
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  tutorialHelpBadgeText: {
+    color: "#1f7a5a",
+    fontSize: 15,
+    fontWeight: "800"
   },
   // 예전에 사용하던 보조 문구 스타일입니다. 다시 문구를 붙일 때 재사용할 수 있습니다.
   eyebrow: {

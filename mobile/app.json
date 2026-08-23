@@ -2,7 +2,7 @@
   "expo": {
     "name": "오늘까지야",
     "slug": "fresh-keeper-mobile",
-    "version": "1.3.0",
+    "version": "1.4.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.palchonajae.freshkeeper",
-      "versionCode": 20,
+      "versionCode": 22,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#fbfcfb"

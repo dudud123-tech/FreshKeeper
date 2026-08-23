@@ -245,13 +245,15 @@ export default function AddItemPage({
                     {!receiptImage ? (
                       <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
                         <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
-                        <View style={styles.orderHistoryShortcutCopy}>
-                          <Text style={styles.orderHistoryShortcutTitle}>{"쿠팡 주문내역 캡처하러 가기"}</Text>
-                          <Text style={styles.orderHistoryShortcutHint}>
-                            {"캡처 후 오늘까지야 앱으로 공유하세요"}
-                          </Text>
+                        <View style={styles.orderHistoryShortcutRow}>
+                          <View style={styles.orderHistoryShortcutCopy}>
+                            <Text style={styles.orderHistoryShortcutTitle}>{"주문내역 바로가기"}</Text>
+                            <Text style={styles.orderHistoryShortcutHint}>
+                              {"캡처해서 공유하면 자동 등록돼요"}
+                            </Text>
+                          </View>
+                          <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
                         </View>
-                        <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
                       </Pressable>
                     ) : null}
 
@@ -1085,17 +1087,20 @@ const styles = StyleSheet.create({
     padding: 14
   },
   orderHistoryShortcut: {
-    // 쿠팡 주문내역 캡처하러 가기 카드. "사진등록" 모드에서 아직 이미지를 고르기 전에만 보인다.
-    minHeight: 66,
+    // 쿠팡 주문내역 바로가기 카드. "사진등록" 모드에서 아직 이미지를 고르기 전에만 보인다.
+    // 로고 줄 / 설명 줄 2단이라 세로 배치다(HomePage.js의 같은 이름 스타일과 맞춰 둔다).
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "#e6e4df",
     backgroundColor: "#fff",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12
+  },
+  orderHistoryShortcutRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10
+    gap: 12
   },
   orderHistoryShortcutIcon: {
     // 바로가기 카드 왼쪽 쿠팡 로고. coupang2.png는 정사각형이 아니라 가로로 긴

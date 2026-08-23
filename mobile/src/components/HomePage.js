@@ -3,11 +3,22 @@ import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleShe
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from "react-native-reanimated";
 import BannerAdSlot from "./BannerAdSlot";
 import { typography } from "../theme/typography";
-import { daysUntil, itemCreatedDate } from "../utils/date";
+import { daysUntil, itemCreatedDate, todayIso } from "../utils/date";
+import {
+  DEFAULT_PLAN_TIME,
+  formatPlanTime,
+  isRepeating,
+  overduePlannedItems,
+  planOccursOn,
+  planTimeFor,
+  repeatLabel
+} from "../utils/mealPlan";
 import { getFoodImageSource } from "../utils/foodImages";
 import { fetchBestCategoryProducts, isCoupangUrl } from "../services/coupangApi";
 import { openCoupangOrderHistory } from "../utils/coupangLinks";
 import { computePersonalRankings } from "../utils/personalRankings";
+
+const planCompleteIcon = require("../../assets/actions/fork_spoon_80dp.png");
 
 async function openExternalUrl(url) {
   const trimmed = String(url || "").trim();
@@ -88,6 +99,8 @@ export default function HomePage({
   growthDashboardReport,
   onOpenInventory,
   onOpenAdd,
+  onOpenSchedule,
+  completePlanItem,
   onChangeItemImage
 }) {
   const [repurchasePanelVisible, setRepurchasePanelVisible] = useState(false);
@@ -108,6 +121,17 @@ export default function HomePage({
   }, [repurchasePanelVisible, bestCategoryProducts.length]);
   const activeItems = items.filter((item) => item.status !== "completed");
   const completedItems = items.filter((item) => item.status === "completed");
+  // 오늘 먹기로 한 것 + 아직 안 챙긴 지난 일정. 지난 일정을 빼면 그냥 조용히
+  // 사라져서 놓치기 쉬워, 일정 화면과 같은 기준으로 위에 같이 얹는다.
+  const todayPlans = useMemo(() => {
+    // activeItems는 렌더마다 새로 만들어지는 배열이라 의존성으로 쓰면 메모가 안 된다.
+    const today = todayIso();
+    const planned = items.filter((item) => item.status !== "completed");
+    return [
+      ...overduePlannedItems(planned).map((item) => ({ item, overdue: true })),
+      ...planned.filter((item) => planOccursOn(item, today)).map((item) => ({ item, overdue: false }))
+    ];
+  }, [items]);
   const urgentItems = [...activeItems]
     .filter((item) => {
       const days = daysUntil(item.expiry);
@@ -234,6 +258,32 @@ export default function HomePage({
         ))}
       </View>
 
+      {/* 소비기한 축("이번 주 먼저 먹을 것") 위에 일정 축을 둔다. 두 축이 위아래로
+          나란히 있어야 홈이 "오늘 뭘 먹지"에 답하는 화면이 된다. 쿠팡 바로가기보다
+          앞에 두는 건 그쪽이 "새 상품 등록" 유도라 오늘 할 일보다 뒤여야 하기
+          때문이다. 잡아둔 일정이 없으면 섹션을 통째로 감춘다 — 빈 카드를 두면
+          일정을 안 쓰는 사람에게는 홈만 길어진다(2026-08-23). */}
+      {todayPlans.length ? (
+        <>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>오늘 먹기로 한 것</Text>
+            <Pressable onPress={onOpenSchedule}>
+              <Text style={styles.moreText}>일정 &gt;</Text>
+            </Pressable>
+          </View>
+          <View style={styles.recentList}>
+            {todayPlans.map(({ item, overdue }) => (
+              <PlanItem
+                key={item.id}
+                item={item}
+                overdue={overdue}
+                onComplete={() => completePlanItem?.(item.id)}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
+
       {/* 대시보드 통계 카드 바로 아래, 항상 보이는 자리에 둔다 — "다시 구매 바로가기"
           패널은 기본 접힘 상태라 여기 넣으면 탭을 한 번 더 해야 보이고, 성격도
           다르다(그건 이미 등록한 상품 재구매, 이건 새 상품 등록용 지름길). 카드
@@ -241,13 +291,13 @@ export default function HomePage({
           같은 모양으로 인식되게 한다(2026-08-13, 홈 노출 요청 대응). */}
       <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
         <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
-        <View style={styles.orderHistoryShortcutCopy}>
-          <Text style={styles.orderHistoryShortcutTitle}>쿠팡 주문내역 캡처하러 가기</Text>
-          <Text style={styles.orderHistoryShortcutHint}>
-            캡처 후 오늘까지야 앱으로 공유하세요
-          </Text>
+        <View style={styles.orderHistoryShortcutRow}>
+          <View style={styles.orderHistoryShortcutCopy}>
+            <Text style={styles.orderHistoryShortcutTitle}>주문내역 바로가기</Text>
+            <Text style={styles.orderHistoryShortcutHint}>캡처해서 공유하면 자동 등록돼요</Text>
+          </View>
+          <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
         </View>
-        <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
       </Pressable>
 
       <View style={styles.sectionHeader}>
@@ -537,6 +587,33 @@ function RecentItem({ item, onChangeItemImage }) {
         <Text style={styles.recentMeta}>{item.storage} · 등록 {itemCreatedDate(item)}</Text>
       </View>
       <Text style={[styles.recentDay, days <= 1 && styles.dDayDanger]}>{labelForDays(days)}</Text>
+    </View>
+  );
+}
+
+// 오늘 먹기로 한 상품 한 줄. 최근 목록(RecentItem)과 같은 행 모양을 써서 홈
+// 안에서 두 목록이 따로 노는 느낌이 안 나게 한다.
+function PlanItem({ item, overdue, onComplete }) {
+  const timeLabel = formatPlanTime(planTimeFor(item, DEFAULT_PLAN_TIME));
+  const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)}` : "";
+  return (
+    <View style={styles.recentItem}>
+      <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.recentImage} />
+      <View style={styles.recentBody}>
+        <Text style={styles.recentName} numberOfLines={1}>{item.name}</Text>
+        <Text style={[styles.recentMeta, overdue && styles.planMetaOverdue]}>
+          {overdue ? `지난 일정 · ${item.plannedDate}` : timeLabel ? `${timeLabel} 알림` : "오늘"}
+          {repeatSuffix}
+        </Text>
+      </View>
+      <Pressable
+        style={styles.planCompleteButton}
+        onPress={onComplete}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.name} 먹었어요`}
+      >
+        <Image source={planCompleteIcon} resizeMode="contain" style={styles.planCompleteIcon} />
+      </Pressable>
     </View>
   );
 }
@@ -1307,6 +1384,23 @@ const styles = StyleSheet.create({
     color: "#68716b",
     marginTop: 4
   },
+  // 지난 일정 줄의 강조색. 소비기한 임박과 같은 계열로 맞춘다.
+  planMetaOverdue: {
+    color: "#c2553c",
+  },
+  // 오늘 일정 줄 오른쪽 "먹었어요" 버튼입니다.
+  planCompleteButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#eef5f1",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  planCompleteIcon: {
+    width: 30,
+    height: 30
+  },
   // 최근 목록 오른쪽 D-day 텍스트입니다.
   recentDay: {
     ...typography.label,
@@ -1316,14 +1410,11 @@ const styles = StyleSheet.create({
   // 대시보드 통계 카드 아래 항상 보이는 쿠팡 주문내역 캡처하러 가기 카드. AddItemPage.js의
   // orderHistoryShortcut과 같은 모양으로 맞춰 두 화면에서 일관되게 보이도록 한다.
   orderHistoryShortcut: {
-    minHeight: 66,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "#e6e4df",
     backgroundColor: "#fff",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    gap: 10,
     marginTop: 14,
     paddingHorizontal: 14,
     paddingVertical: 10
@@ -1334,6 +1425,11 @@ const styles = StyleSheet.create({
   orderHistoryShortcutIcon: {
     width: 58,
     height: 14
+  },
+  orderHistoryShortcutRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
   },
   orderHistoryShortcutCopy: {
     flex: 1,

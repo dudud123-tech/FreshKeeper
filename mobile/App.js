@@ -655,6 +655,8 @@ export default function App() {
               growthDashboardReport={growthDashboardReport}
               onOpenInventory={goToInventory}
               onOpenAdd={() => goToPage(PAGE_ADD)}
+              onOpenSchedule={() => goToPage(PAGE_SCHEDULE)}
+              completePlanItem={completePlanOccurrence}
               onChangeItemImage={changeItemImage}
             />
 

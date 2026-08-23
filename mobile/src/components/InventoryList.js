@@ -193,18 +193,12 @@ export default function InventoryList({
                 {/* 먹는 일정 묶음. 소비기한과 달리 "언제 먹을지" 축에 속하는 값들이라
                         한 상자로 묶어 무엇에 딸린 설정인지 눈에 보이게 한다(2026-08-23). */}
                     <View style={styles.planGroup}>
-                      <Text style={styles.planGroupTitle}>{"\uBA39\uB294 \uC77C\uC815"}</Text>
-                      <Text style={styles.planGroupHint}>{"\uC815\uD574\uB454 \uB0A0\uC9DC\u00B7\uC2DC\uAC01\uC5D0 \uC54C\uB824\uB4DC\uB824\uC694."}</Text>
+                      <Text style={styles.planGroupTitle}>{"\uCC59\uACA8 \uBA39\uAE30"}</Text>
                     <Field label={EDIT_COPY.plannedDate}>
                         <DateButton
                           value={editForm.plannedDate || todayIso()}
                           onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
                         />
-                        {editForm.plannedDate ? (
-                          <Pressable onPress={() => setEditForm((current) => ({ ...current, plannedDate: "", plannedMeal: "", plannedTime: "", planRepeat: "" }))}>
-                            <Text style={styles.planClearText}>일정 지우기</Text>
-                          </Pressable>
-                        ) : null}
                       </Field>
                     <ChoiceGroup
                         label={EDIT_COPY.planRepeat}
@@ -1282,11 +1276,6 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: "#1f7a5a",
   },
-  planGroupHint: {
-    ...typography.body,
-    color: "#68716b",
-    marginTop: 2
-  },
   sheetBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
@@ -1325,11 +1314,6 @@ const styles = StyleSheet.create({
     ...typography.captionStrong,
     color: "#1f7a5a",
     marginTop: 3
-  },
-  planClearText: {
-    ...typography.label,
-    color: "#9f3929",
-    marginTop: 6
   },
   storagePill: {
     ...typography.badge,

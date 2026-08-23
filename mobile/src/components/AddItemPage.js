@@ -244,16 +244,14 @@ export default function AddItemPage({
                         알려준다(2026-08-13 피드백 대응). */}
                     {!receiptImage ? (
                       <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
-                        <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
                         <View style={styles.orderHistoryShortcutRow}>
-                          <View style={styles.orderHistoryShortcutCopy}>
-                            <Text style={styles.orderHistoryShortcutTitle}>{"주문내역 바로가기"}</Text>
-                            <Text style={styles.orderHistoryShortcutHint}>
-                              {"캡처해서 공유하면 자동 등록돼요"}
-                            </Text>
-                          </View>
+                          <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
+                          <Text style={styles.orderHistoryShortcutTitle}>{"주문내역 바로가기"}</Text>
                           <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
                         </View>
+                        <Text style={styles.orderHistoryShortcutHint}>
+                          {"캡처해서 공유하면 자동 등록돼요."}
+                        </Text>
                       </Pressable>
                     ) : null}
 
@@ -1093,14 +1091,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e6e4df",
     backgroundColor: "#fff",
-    gap: 10,
+    gap: 5,
     paddingHorizontal: 14,
     paddingVertical: 12
   },
   orderHistoryShortcutRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12
+    gap: 8
   },
   orderHistoryShortcutIcon: {
     // 바로가기 카드 왼쪽 쿠팡 로고. coupang2.png는 정사각형이 아니라 가로로 긴
@@ -1110,14 +1108,11 @@ const styles = StyleSheet.create({
     width: 58,
     height: 14
   },
-  orderHistoryShortcutCopy: {
-    // 바로가기 카드 제목/설명 묶음.
-    flex: 1,
-    gap: 3
-  },
   orderHistoryShortcutTitle: {
+    // 제목이 남는 가로 공간을 먹어야 화살표가 오른쪽 끝으로 밀린다.
     ...typography.cardTitle,
     color: "#18201c",
+    flex: 1
   },
   orderHistoryShortcutHint: {
     ...typography.caption,

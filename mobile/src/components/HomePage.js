@@ -293,20 +293,6 @@ export default function HomePage({
         </>
       ) : null}
 
-      {/* 대시보드 통계 카드 바로 아래, 항상 보이는 자리에 둔다 — "다시 구매 바로가기"
-          패널은 기본 접힘 상태라 여기 넣으면 탭을 한 번 더 해야 보이고, 성격도
-          다르다(그건 이미 등록한 상품 재구매, 이건 새 상품 등록용 지름길). 카드
-          스타일은 AddItemPage.js의 orderHistoryShortcut과 동일하게 맞춰 두 화면에서
-          같은 모양으로 인식되게 한다(2026-08-13, 홈 노출 요청 대응). */}
-      <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
-        <View style={styles.orderHistoryShortcutRow}>
-          <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
-          <Text style={styles.orderHistoryShortcutTitle}>주문내역 바로가기</Text>
-          <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
-        </View>
-        <Text style={styles.orderHistoryShortcutHint}>캡처해서 공유하면 자동 등록돼요.</Text>
-      </Pressable>
-
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>이번 주 먼저 먹을 것</Text>
         <Pressable onPress={() => setRepurchasePanelVisible((current) => !current)}>
@@ -358,6 +344,19 @@ export default function HomePage({
       </View>
 
       <BannerAdSlot />
+
+      {/* 배너 아래, 홈 맨 끝에 둔다. 새 상품을 등록하러 나가는 링크라 홈에서
+          할 일(오늘 먹을 것·임박 상품·최근 등록)을 다 훑은 뒤에 오는 게 맞다.
+          카드 스타일은 AddItemPage.js의 orderHistoryShortcut과 동일하게 맞춰 두
+          화면에서 같은 모양으로 인식되게 한다(2026-08-23 위치 조정). */}
+      <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
+        <View style={styles.orderHistoryShortcutRow}>
+          <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
+          <Text style={styles.orderHistoryShortcutTitle}>주문내역 바로가기</Text>
+          <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
+        </View>
+        <Text style={styles.orderHistoryShortcutHint}>캡처해서 공유하면 자동 등록돼요.</Text>
+      </Pressable>
     </ScrollView>
   );
 }

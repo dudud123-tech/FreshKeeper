@@ -70,7 +70,9 @@ function notificationBody(summary) {
   if (summary.today > 0) parts.push(`오늘까지 ${summary.today}개`);
   const upcoming = Math.max(summary.urgent - summary.today, 0);
   if (upcoming > 0) parts.push(`임박 ${upcoming}개`);
-  return parts.length > 0 ? `${parts.join(", ")}가 있어요.` : "오늘 확인할 임박/만료 상품이 없습니다.";
+  const base = parts.length > 0 ? `${parts.join(", ")}가 있어요.` : "오늘 확인할 임박/만료 상품이 없습니다.";
+  const memos = memoLines(summary.items);
+  return memos ? `${base}\n${memos}` : base;
 }
 
 async function prepareNotifications() {
@@ -225,5 +227,24 @@ function planNotificationBody(plannedItems) {
   const urgentCount = plannedItems.filter((item) => daysUntil(item.expiry) <= 0).length;
   const names = plannedItems.map((item) => item.name?.trim()).filter(Boolean).join(", ");
   const base = names ? `${names} 먹기로 한 시간이에요.` : "먹기로 한 상품이 있어요.";
-  return urgentCount > 0 ? `${base} 그중 ${urgentCount}개는 오늘까지입니다.` : base;
+  const withUrgent = urgentCount > 0 ? `${base} 그중 ${urgentCount}개는 오늘까지입니다.` : base;
+  const memos = memoLines(plannedItems);
+  return memos ? `${withUrgent}\n${memos}` : withUrgent;
+}
+
+// 상품에 적어둔 메모를 알림에 함께 보여준다("해동 필요" 같은 건 그 시각에
+// 알아야 쓸모가 있다). 알림 본문이 길어지지 않게 최대 3건까지만 싣는다.
+const MAX_MEMO_LINES = 3;
+const MEMO_LINE_MAX_LENGTH = 40;
+
+function memoLines(items) {
+  return items
+    .filter((item) => item?.memo?.trim())
+    .slice(0, MAX_MEMO_LINES)
+    .map((item) => {
+      const memo = item.memo.trim().replace(/\s+/g, " ");
+      const clipped = memo.length > MEMO_LINE_MAX_LENGTH ? `${memo.slice(0, MEMO_LINE_MAX_LENGTH)}…` : memo;
+      return `📝 ${item.name?.trim() || "메모"}: ${clipped}`;
+    })
+    .join("\n");
 }

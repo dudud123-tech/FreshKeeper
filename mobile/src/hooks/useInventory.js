@@ -395,7 +395,8 @@ export function useInventory({
       plannedDate: item.plannedDate || "",
       plannedMeal: item.plannedMeal || "",
       plannedTime: item.plannedTime || "",
-      planRepeat: item.planRepeat || ""
+      planRepeat: item.planRepeat || "",
+      memo: item.memo || ""
     });
     onStartEditScroll?.(item.id);
   }

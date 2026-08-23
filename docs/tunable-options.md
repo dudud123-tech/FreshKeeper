@@ -31,6 +31,8 @@
 | 일정 알림 기본(폴백) 시간 | `DEFAULT_PLAN_NOTIFICATION_SETTINGS` in `mobile/src/hooks/useAppNotifications.js` | `17:00` | 상품에도 끼니에도 시간이 없을 때만 쓰이는 폴백. 사용자가 설정 > 알림에서 변경 가능 |
 | 일정 알림 예약 상한 | `MAX_PLAN_NOTIFICATIONS` in `mobile/src/services/notificationScheduler.js` | `60` | 상품마다 시각이 다르면 예약 건수가 상품 수만큼 늘어나므로 안드로이드 예약 한도를 넘지 않게 막는 상한. 같은 날 같은 시각인 상품은 한 건으로 묶인다 |
 | 일정 알림 안드로이드 채널 | `PLAN_NOTIFICATION_CHANNEL_ID` in `mobile/src/services/notificationScheduler.js` | `freshkeeper-plan-alerts-v2` | ⚠️ 안드로이드 채널은 한 번 만들어지면 앱이 중요도·소리·진동을 못 바꾼다. 알림 세기를 조정하려면 **반드시 ID 버전을 같이 올려야** 새 설정이 적용된다 |
+| 알림에 싣는 메모 최대 건수 | `MAX_MEMO_LINES` in `mobile/src/services/notificationScheduler.js` | `3` | 한 알림에 여러 상품이 묶일 때 메모 줄이 무한정 늘어나지 않게 하는 상한. 소비기한 알림·일정 알림 양쪽에 같이 적용된다 |
+| 알림 메모 한 줄 길이 | `MEMO_LINE_MAX_LENGTH` in `mobile/src/services/notificationScheduler.js` | `40` | 이 길이를 넘는 메모는 뒤를 잘라내고 `…`을 붙인다. 안드로이드 알림이 접힌 상태에서 읽히는 길이에 맞춘 값 |
 
 ## 가족 공유 동기화 (Cloudflare Worker + 앱)
 

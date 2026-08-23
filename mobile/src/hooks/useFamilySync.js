@@ -133,7 +133,8 @@ export function useFamilySync({ items, setItems, settingsReady, reminderDays, de
     return [...merged.values()].sort((a, b) => daysUntil(a.expiry) - daysUntil(b.expiry));
   }
 
-  // ⚠️ 먹는 일정(plannedDate/plannedMeal)은 기기 로컬 전용이라 서버에 없다. 그런데
+  // ⚠️ 먹는 일정(plannedDate/plannedMeal/plannedTime/planRepeat)과 메모는 기기
+  // 로컬 전용이라 서버에 없다. 그런데
   // pullFamilyItems가 addLocal 없이 호출되면(30초 주기 새로고침이 그렇다) 이 함수
   // 결과로 items를 통째로 갈아끼우므로, 여기서 기존 로컬 값을 이어붙이지 않으면
   // 가족 공유를 켠 사용자는 일정이 30초마다 사라진다(2026-08-19).
@@ -146,21 +147,23 @@ export function useFamilySync({ items, setItems, settingsReady, reminderDays, de
       plannedDate: localPlan.plannedDate || "",
       plannedMeal: localPlan.plannedMeal || "",
       plannedTime: localPlan.plannedTime || "",
-      planRepeat: localPlan.planRepeat || ""
+      planRepeat: localPlan.planRepeat || "",
+      memo: localPlan.memo || ""
     };
   }
 
   function localPlanMap(sourceItems) {
     return new Map(
       sourceItems
-        .filter((item) => item?.plannedDate)
+        .filter((item) => item?.plannedDate || item?.memo)
         .map((item) => [
           String(item.id),
           {
-            plannedDate: item.plannedDate,
+            plannedDate: item.plannedDate || "",
             plannedMeal: item.plannedMeal || "",
             plannedTime: item.plannedTime || "",
-            planRepeat: item.planRepeat || ""
+            planRepeat: item.planRepeat || "",
+            memo: item.memo || ""
           }
         ])
     );

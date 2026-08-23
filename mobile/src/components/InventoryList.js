@@ -32,6 +32,8 @@ const EDIT_COPY = {
   plannedDate: "\uBA39\uC744 \uB0A0",
   plannedTime: "\uC54C\uB9BC \uC2DC\uAC04",
   planRepeat: "\uBC18\uBCF5",
+  memo: "\uBA54\uBAA8",
+  memoPlaceholder: "\uC608: \uD574\uB3D9 \uD544\uC694, \uC5C4\uB9C8 \uB4DC\uB9B4 \uAC83",
   tabBasic: "\uAE30\uD55C\u00B7\uC77C\uC815",
   tabDetail: "\uBD84\uB958\u00B7\uB9C1\uD06C",
   category: "\uCE74\uD14C\uACE0\uB9AC",
@@ -220,6 +222,18 @@ export default function InventoryList({
                       ) : null}
                       
                     </View>
+                    {/* 구조화된 필드로는 못 담는 것들(해동 필요, 보관 위치, 줄 사람 등)을
+                        적어두는 자유 입력 칸. 알림이 뜰 때 본문에 같이 실린다(2026-08-23). */}
+                    <Field label={EDIT_COPY.memo}>
+                      <TextInput
+                        value={editForm.memo || ""}
+                        onChangeText={(value) => setEditForm((current) => ({ ...current, memo: value }))}
+                        placeholder={EDIT_COPY.memoPlaceholder}
+                        placeholderTextColor="#a0a8a2"
+                        multiline
+                        style={[styles.input, styles.memoInput]}
+                      />
+                    </Field>
                   </View>
                 ) : (
                   <View>
@@ -438,6 +452,9 @@ export default function InventoryList({
                         </Text>
                       </View>
                       <Text style={styles.meta}>{isCompletedScope ? completedMeta : dateMeta}</Text>
+                      {item.memo?.trim() ? (
+                        <Text style={styles.memoLine} numberOfLines={2}>{item.memo.trim()}</Text>
+                      ) : null}
                       {!isCompletedScope && planBadgeLabel(item) ? (
                         <Text style={styles.planBadge}>{"\uD83C\uDF7D\uFE0F " + planBadgeLabel(item)}</Text>
                       ) : null}
@@ -1309,6 +1326,16 @@ const styles = StyleSheet.create({
   },
   planTimeRow: {
     flexDirection: "row"
+  },
+  memoInput: {
+    minHeight: 62,
+    textAlignVertical: "top",
+    paddingTop: 10
+  },
+  memoLine: {
+    ...typography.caption,
+    color: "#68716b",
+    marginTop: 3
   },
   planBadge: {
     ...typography.captionStrong,

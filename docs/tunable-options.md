@@ -26,6 +26,7 @@
 | --- | --- | --- | --- |
 | 일정 화면·알림 조회 기간 | `SCHEDULE_LOOKAHEAD_DAYS` in `mobile/src/utils/mealPlan.js` | `7` | 일정 탭이 보여주는 날짜 수이자 일정 알림을 미리 예약하는 일수. 늘리면 예약 알림 건수도 같이 늘어난다 |
 | 끼니 슬롯 목록·기본 시간 | `MEAL_SLOTS` in `mobile/src/utils/mealPlan.js` | 아침 08:00 · 점심 12:00 · 저녁 18:00 | 여기에 추가하면 일정 화면·보관함 편집·알림 문구에 자동 반영된다. `defaultTime`은 끼니를 고를 때 알림 시각을 자동으로 채워주는 값 |
+| 반복 주기 목록 | `PLAN_REPEATS` in `mobile/src/utils/mealPlan.js` | 안 함 · 매일 · 매주 | 비타민·약처럼 계속 챙겨 먹는 상품용. 반복이 걸린 상품은 "완료"가 아니라 다음 회차로 넘어간다(`completePlanOccurrence`) — 완료 처리하면 보관함에서 사라지기 때문 |
 | 상품별 알림 시각 우선순위 | `planTimeFor()` in `mobile/src/utils/mealPlan.js` | 상품 지정 → 끼니 기본값 → 설정값 | 상품마다 `plannedTime`을 따로 저장한다. 값이 없으면 끼니 기본 시간, 그것도 없으면 설정의 일정 알림 시간을 쓴다 |
 | 일정 알림 기본(폴백) 시간 | `DEFAULT_PLAN_NOTIFICATION_SETTINGS` in `mobile/src/hooks/useAppNotifications.js` | `17:00` | 상품에도 끼니에도 시간이 없을 때만 쓰이는 폴백. 사용자가 설정 > 알림에서 변경 가능 |
 | 일정 알림 예약 상한 | `MAX_PLAN_NOTIFICATIONS` in `mobile/src/services/notificationScheduler.js` | `60` | 상품마다 시각이 다르면 예약 건수가 상품 수만큼 늘어나므로 안드로이드 예약 한도를 넘지 않게 막는 상한. 같은 날 같은 시각인 상품은 한 건으로 묶인다 |

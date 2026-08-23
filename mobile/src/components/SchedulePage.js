@@ -8,9 +8,12 @@ import {
   groupPlannedItemsByDate,
   hasPlan,
   isPlannableItem,
+  isRepeating,
   MEAL_SLOTS,
   mealDefaultTime,
   mealLabel,
+  PLAN_REPEATS,
+  repeatLabel,
   overduePlannedItems,
   planTimeFor,
   scheduleDateLabel,
@@ -37,6 +40,7 @@ export default function SchedulePage({
   const [pickerDate, setPickerDate] = useState(() => todayIso());
   const [pickerMeal, setPickerMeal] = useState("");
   const [pickerTime, setPickerTime] = useState("18:00");
+  const [pickerRepeat, setPickerRepeat] = useState("");
   // 값이 있으면 "새 상품 추가"가 아니라 "이 상품의 일정 수정" 모드다.
   const [editingItem, setEditingItem] = useState(null);
 
@@ -57,6 +61,7 @@ export default function SchedulePage({
     setPickerDate(todayIso());
     setPickerMeal("");
     setPickerTime(planNotificationTime);
+    setPickerRepeat("");
     setPickerVisible(true);
   }
 
@@ -65,6 +70,7 @@ export default function SchedulePage({
     setPickerDate(item.plannedDate || todayIso());
     setPickerMeal(item.plannedMeal || "");
     setPickerTime(planTimeFor(item, planNotificationTime));
+    setPickerRepeat(item.planRepeat || "");
     setPickerVisible(true);
   }
 
@@ -77,7 +83,12 @@ export default function SchedulePage({
   }
 
   function assignItem(itemId) {
-    setItemPlan(itemId, { plannedDate: pickerDate, plannedMeal: pickerMeal, plannedTime: pickerTime });
+    setItemPlan(itemId, {
+      plannedDate: pickerDate,
+      plannedMeal: pickerMeal,
+      plannedTime: pickerTime,
+      planRepeat: pickerRepeat
+    });
     setPickerVisible(false);
     setEditingItem(null);
   }
@@ -177,6 +188,16 @@ export default function SchedulePage({
               />
             </View>
 
+            {/* 비타민·약처럼 계속 챙겨 먹는 상품을 위한 반복. */}
+            <ChoiceGroup
+              label="반복"
+              options={PLAN_REPEATS.map((option) => option.id)}
+              value={pickerRepeat}
+              onChange={setPickerRepeat}
+              formatLabel={(option) => repeatLabel(option)}
+              compact
+            />
+
             {editingItem ? null : <Text style={styles.modalLabel}>상품 고르기</Text>}
             {editingItem ? (
               <Pressable style={styles.modalPrimary} onPress={() => assignItem(editingItem.id)}>
@@ -216,6 +237,7 @@ export default function SchedulePage({
 function ScheduleRow({ item, planNotificationTime, onComplete, onClear, onEdit, showPlannedDate = false }) {
   const status = statusFor(item);
   const timeLabel = formatPlanTime(planTimeFor(item, planNotificationTime));
+  const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)} 반복` : "";
   return (
     <View style={styles.row}>
       <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.rowImage} />
@@ -225,7 +247,7 @@ function ScheduleRow({ item, planNotificationTime, onComplete, onClear, onEdit, 
           {showPlannedDate ? `${item.plannedDate} · ` : ""}
           소비기한 {item.expiry}
         </Text>
-        {timeLabel ? <Text style={styles.rowTime}>{`⏰ ${timeLabel} 알림`}</Text> : null}
+        {timeLabel ? <Text style={styles.rowTime}>{`⏰ ${timeLabel} 알림${repeatSuffix}`}</Text> : null}
       </Pressable>
       <Text style={[styles.rowDday, styles[`tone_${status.tone}`]]}>{status.label}</Text>
       <Pressable style={styles.rowAction} onPress={onClear} accessibilityRole="button" accessibilityLabel="일정 해제">

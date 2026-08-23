@@ -15,6 +15,22 @@ export const MEAL_SLOTS = [
 // 끼니를 안 고른 일정이 모이는 자리. 실제 저장값은 빈 문자열이고 화면·알림에서만 이 라벨을 쓴다.
 export const ALL_DAY_LABEL = "종일";
 
+// 비타민·약처럼 계속 챙겨 먹는 상품을 위한 반복. item.planRepeat에 id가 저장되고
+// 빈 값이면 그 날 하루짜리 일정이다(2026-08-23).
+export const PLAN_REPEATS = [
+  { id: "", label: "안 함" },
+  { id: "daily", label: "매일" },
+  { id: "weekly", label: "매주" }
+];
+
+export function repeatLabel(repeatId) {
+  return PLAN_REPEATS.find((option) => option.id === repeatId)?.label || "안 함";
+}
+
+export function isRepeating(item) {
+  return Boolean(item?.planRepeat) && PLAN_REPEATS.some((option) => option.id === item.planRepeat && option.id);
+}
+
 // 일정 화면이 보여주는 날짜 수. 알림 예약 범위(notificationScheduler.js)도 같은 값을 쓴다.
 export const SCHEDULE_LOOKAHEAD_DAYS = 7;
 
@@ -85,17 +101,39 @@ export function upcomingScheduleDates(days = SCHEDULE_LOOKAHEAD_DAYS) {
   return Array.from({ length: days }, (_, offset) => todayIso(offset));
 }
 
+// 이 상품이 그 날짜에 해당하는가. 반복이 없으면 지정한 날 하루뿐이고,
+// 반복이 있으면 시작일(plannedDate) 이후로 매일/매주 같은 요일에 걸린다.
+export function planOccursOn(item, dateIso) {
+  if (!hasPlan(item)) return false;
+  if (dateIso < item.plannedDate) return false;
+  if (!isRepeating(item)) return dateIso === item.plannedDate;
+  if (item.planRepeat === "daily") return true;
+  if (item.planRepeat === "weekly") {
+    return parseIsoDate(dateIso).getDay() === parseIsoDate(item.plannedDate).getDay();
+  }
+  return dateIso === item.plannedDate;
+}
+
+// 반복 상품을 "오늘 먹었다"고 체크했을 때 옮겨갈 다음 날짜.
+export function nextOccurrenceDate(item, fromDate = todayIso()) {
+  if (!isRepeating(item)) return "";
+  const step = item.planRepeat === "weekly" ? 7 : 1;
+  const base = parseIsoDate(fromDate > item.plannedDate ? fromDate : item.plannedDate);
+  base.setDate(base.getDate() + step);
+  return toIsoDate(base);
+}
+
 // 일정이 잡힌 상품을 날짜 → 끼니 순서로 묶는다. 완료된 상품은 일정에서 빠진다 —
 // 일정 화면의 체크가 곧 기존 "완료" 처리라서(useInventory.completeItem) 완료되면
 // 그 날 목록에서 자연히 사라져야 한다.
 export function groupPlannedItemsByDate(items, dates) {
-  const allowedDates = new Set(dates);
   const buckets = new Map(dates.map((date) => [date, []]));
 
   items.forEach((item) => {
     if (!hasPlan(item) || !isPlannableItem(item)) return;
-    if (!allowedDates.has(item.plannedDate)) return;
-    buckets.get(item.plannedDate).push(item);
+    dates.forEach((date) => {
+      if (planOccursOn(item, date)) buckets.get(date).push(item);
+    });
   });
 
   return dates.map((date) => {
@@ -112,10 +150,14 @@ export function groupPlannedItemsByDate(items, dates) {
 }
 
 // 지난 날짜에 잡혀 있는데 아직 완료 안 된 일정. 조용히 사라지면 사용자가 놓치므로
-// 일정 화면 맨 위에서 따로 보여준다.
+// 일정 화면 맨 위에서 따로 보여준다. 반복 상품은 오늘 몫이 항상 다시 잡히므로
+// "밀린 일정"으로 쌓지 않는다.
 export function overduePlannedItems(items, fromDate = todayIso()) {
   return items
-    .filter((item) => hasPlan(item) && isPlannableItem(item) && item.plannedDate < fromDate)
+    .filter(
+      (item) =>
+        hasPlan(item) && isPlannableItem(item) && !isRepeating(item) && item.plannedDate < fromDate
+    )
     .sort(comparePlannedItems);
 }
 
@@ -133,9 +175,11 @@ export function scheduleDateLabel(dateIso) {
 export function planBadgeLabel(item) {
   if (!hasPlan(item)) return "";
   const date = parseIsoDate(item.plannedDate);
+  // 반복 상품은 특정 날짜보다 "매일/매주"라는 주기가 더 중요한 정보다.
+  const when = isRepeating(item) ? repeatLabel(item.planRepeat) : `${date.getMonth() + 1}/${date.getDate()}`;
   const meal = item.plannedMeal ? ` ${mealLabel(item.plannedMeal)}` : "";
   const time = isValidPlanTime(item.plannedTime) ? ` ${formatPlanTime(item.plannedTime)}` : "";
-  return `${date.getMonth() + 1}/${date.getDate()}${meal}${time}`;
+  return `${when}${meal}${time}`;
 }
 
 // 알림 예약용으로 "같은 날 같은 시각"인 상품을 한 건으로 묶는다. 상품마다 알림을
@@ -145,7 +189,7 @@ export function groupPlannedItemsByTime(items, dateIso, fallbackTime) {
 
   items.forEach((item) => {
     if (!hasPlan(item) || !isPlannableItem(item)) return;
-    if (item.plannedDate !== dateIso) return;
+    if (!planOccursOn(item, dateIso)) return;
     const time = planTimeFor(item, fallbackTime);
     if (!isValidPlanTime(time)) return;
     if (!buckets.has(time)) buckets.set(time, []);

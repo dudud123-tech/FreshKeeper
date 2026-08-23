@@ -14,6 +14,7 @@ import { registerBarcodeProduct } from "../services/barcodeApi";
 import { setCachedBarcodeImage } from "../services/barcodeImageCache";
 import { sendProductClassificationFeedback } from "../services/productClassificationApi";
 import { normalizeFeedbackSettings } from "./useReceiptFlow";
+import { isRepeating, nextOccurrenceDate } from "../utils/mealPlan";
 
 // App.js가 설정을 저장하는 키와 반드시 같아야 한다(App.js의 SETTINGS_KEY). 보관함
 // 수정 시 분류 피드백을 보낼지 말지 확인하는 용도로만 여기서 직접 읽는다 — 이 훅과
@@ -350,16 +351,35 @@ export function useInventory({
 
   // 먹는 일정 지정/해제. plannedDate/plannedMeal은 기기 로컬 전용 필드라
   // 가족 공유로 올라가지 않는다(utils/mealPlan.js 주석 참고).
-  function setItemPlan(id, { plannedDate, plannedMeal = "", plannedTime = "" }) {
+  function setItemPlan(id, { plannedDate, plannedMeal = "", plannedTime = "", planRepeat = "" }) {
     if (!plannedDate) return;
     setItems((current) =>
-      current.map((item) => (item.id === id ? { ...item, plannedDate, plannedMeal, plannedTime } : item))
+      current.map((item) =>
+        item.id === id ? { ...item, plannedDate, plannedMeal, plannedTime, planRepeat } : item
+      )
+    );
+  }
+
+  // 일정 화면의 체크. 반복 상품(비타민 등)은 오늘 몫을 먹었다고 보관함에서 없애면
+  // 안 되므로 완료 처리 대신 다음 회차로 넘긴다. 반복이 아니면 기존 완료와 동일하다.
+  function completePlanOccurrence(id) {
+    const item = normalizedItems.find((target) => target.id === id);
+    if (!isRepeating(item)) {
+      completeItem(id);
+      return;
+    }
+
+    const nextDate = nextOccurrenceDate(item);
+    setItems((current) =>
+      current.map((target) => (target.id === id ? { ...target, plannedDate: nextDate } : target))
     );
   }
 
   function clearItemPlan(id) {
     setItems((current) =>
-      current.map((item) => (item.id === id ? { ...item, plannedDate: "", plannedMeal: "", plannedTime: "" } : item))
+      current.map((item) =>
+        item.id === id ? { ...item, plannedDate: "", plannedMeal: "", plannedTime: "", planRepeat: "" } : item
+      )
     );
   }
 
@@ -374,7 +394,8 @@ export function useInventory({
       purchaseUrl: item.purchaseUrl || "",
       plannedDate: item.plannedDate || "",
       plannedMeal: item.plannedMeal || "",
-      plannedTime: item.plannedTime || ""
+      plannedTime: item.plannedTime || "",
+      planRepeat: item.planRepeat || ""
     });
     onStartEditScroll?.(item.id);
   }
@@ -480,6 +501,7 @@ export function useInventory({
     toggleFavorite,
     setItemPlan,
     clearItemPlan,
+    completePlanOccurrence,
     startEdit,
     cancelEdit,
     saveEdit

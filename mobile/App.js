@@ -127,6 +127,7 @@ export default function App() {
     toggleFavorite,
     setItemPlan,
     clearItemPlan,
+    completePlanOccurrence,
     startEdit,
     cancelEdit,
     saveEdit
@@ -773,7 +774,7 @@ export default function App() {
               items={items}
               setItemPlan={setItemPlan}
               clearItemPlan={clearItemPlan}
-              completeItem={completeItem}
+              completeItem={completePlanOccurrence}
               openCalendar={openCalendar}
               planNotificationTime={toPlanTime(planNotificationSettings.hour, planNotificationSettings.minute)}
             />

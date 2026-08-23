@@ -4,8 +4,16 @@ import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
 import { statusFor, timelineFor, todayIso } from "../utils/date";
-import { MEAL_SLOTS, mealDefaultTime, mealLabel, planBadgeLabel, planTimeFor } from "../utils/mealPlan";
-import { TimeField } from "./CommonControls";
+import {
+  MEAL_SLOTS,
+  mealDefaultTime,
+  mealLabel,
+  planBadgeLabel,
+  planTimeFor,
+  PLAN_REPEATS,
+  repeatLabel
+} from "../utils/mealPlan";
+import { TabButton, TimeField } from "./CommonControls";
 
 
 import { getFoodImageSource } from "../utils/foodImages";
@@ -32,6 +40,9 @@ const EDIT_COPY = {
   plannedDate: "\uBA39\uC744 \uB0A0",
   plannedMeal: "\uB07C\uB2C8 (\uC120\uD0DD)",
   plannedTime: "\uC54C\uB9BC \uC2DC\uAC04",
+  planRepeat: "\uBC18\uBCF5",
+  tabBasic: "\uAE30\uBCF8",
+  tabDetail: "\uC0C1\uC138",
   category: "\uCE74\uD14C\uACE0\uB9AC",
   storage: "\uBCF4\uAD00",
   expiry: "\uC18C\uBE44\uAE30\uD55C",
@@ -98,8 +109,9 @@ export default function InventoryList({
   const [query, setQuery] = useState("");
   const [controlsVisible, setControlsVisible] = useState(false);
   const [editorVisible, setEditorVisible] = useState(true);
-  // 편집 시트의 "세부 설정"(카테고리·보관·구매링크) 접힘 상태.
-  const [editMoreOpen, setEditMoreOpen] = useState(false);
+  // 편집 시트 탭. 기본(상품명·소비기한·일정) / 상세(카테고리·보관·구매링크).
+  // 접기 방식은 한 번 더 눌러야 해서 접근이 불편하다는 피드백으로 탭으로 바꿨다(2026-08-23).
+  const [editTab, setEditTab] = useState("basic");
   const isCompletedScope = inventoryScope === "completed";
   const normalizedQuery = query.trim().toLowerCase();
   const searchedItems = sortedItems.filter((item) => String(item.name || "").toLowerCase().includes(normalizedQuery));
@@ -162,112 +174,126 @@ export default function InventoryList({
                     </Pressable>
                   </View>
                 </View>
+                <View style={styles.sheetTabs}>
+                  <TabButton active={editTab === "basic"} label={EDIT_COPY.tabBasic} onPress={() => setEditTab("basic")} />
+                  <TabButton active={editTab === "detail"} label={EDIT_COPY.tabDetail} onPress={() => setEditTab("detail")} />
+                </View>
+                {editTab === "basic" ? (
+                  <View>
                 <Field label={EDIT_COPY.productName}>
-                  <TextInput
-                    value={editForm.name}
-                    onChangeText={(value) =>
-                      setEditForm((current) => ({
-                        ...current,
-                        name: value,
-                        category: suggestCategory(value)
-                      }))
-                    }
-                    style={styles.input}
-                  />
-                </Field>
+                      <TextInput
+                        value={editForm.name}
+                        onChangeText={(value) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            name: value,
+                            category: suggestCategory(value)
+                          }))
+                        }
+                        style={styles.input}
+                      />
+                    </Field>
                 <Field label={EDIT_COPY.expiry}>
-                  <DateButton
-                    value={editForm.expiry}
-                    onPress={() => openCalendar(editForm.expiry, (value) => setEditForm((current) => ({ ...current, expiry: value })))}
-                  />
-                </Field>
-                <Field label={EDIT_COPY.plannedDate}>
-                  <DateButton
-                    value={editForm.plannedDate || todayIso()}
-                    onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
-                  />
-                  {editForm.plannedDate ? (
-                    <Pressable onPress={() => setEditForm((current) => ({ ...current, plannedDate: "", plannedMeal: "" }))}>
-                      <Text style={styles.planClearText}>일정 지우기</Text>
-                    </Pressable>
-                  ) : null}
-                </Field>
-                <ChoiceGroup
-                  label={EDIT_COPY.plannedMeal}
-                  options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
-                  value={editForm.plannedMeal || ""}
-                  onChange={(value) =>
-                    setEditForm((current) => ({
-                      ...current,
-                      plannedMeal: value,
-                      plannedTime: mealDefaultTime(value) || current.plannedTime || ""
-                    }))
-                  }
-                  formatLabel={(option) => (option ? mealLabel(option) : "종일")}
-                  compact
-                />
-                {editForm.plannedDate ? (
-                  <Field label={EDIT_COPY.plannedTime}>
-                    <View style={styles.planTimeRow}>
-                      <TimeField
-                        value={planTimeFor(editForm, "18:00")}
-                        onChange={(next) => setEditForm((current) => ({ ...current, plannedTime: next }))}
+                      <DateButton
+                        value={editForm.expiry}
+                        onPress={() => openCalendar(editForm.expiry, (value) => setEditForm((current) => ({ ...current, expiry: value })))}
+                      />
+                    </Field>
+                {/* 먹는 일정 묶음. 소비기한과 달리 "언제 먹을지" 축에 속하는 값들이라
+                        한 상자로 묶어 무엇에 딸린 설정인지 눈에 보이게 한다(2026-08-23). */}
+                    <View style={styles.planGroup}>
+                      <Text style={styles.planGroupTitle}>{"\uBA39\uB294 \uC77C\uC815"}</Text>
+                      <Text style={styles.planGroupHint}>{"\uC815\uD574\uB454 \uB0A0\uC9DC\u00B7\uC2DC\uAC01\uC5D0 \uC54C\uB824\uB4DC\uB824\uC694."}</Text>
+                    <Field label={EDIT_COPY.plannedDate}>
+                        <DateButton
+                          value={editForm.plannedDate || todayIso()}
+                          onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
+                        />
+                        {editForm.plannedDate ? (
+                          <Pressable onPress={() => setEditForm((current) => ({ ...current, plannedDate: "", plannedMeal: "" }))}>
+                            <Text style={styles.planClearText}>일정 지우기</Text>
+                          </Pressable>
+                        ) : null}
+                      </Field>
+                    <ChoiceGroup
+                        label={EDIT_COPY.plannedMeal}
+                        options={["", ...MEAL_SLOTS.map((slot) => slot.id)]}
+                        value={editForm.plannedMeal || ""}
+                        onChange={(value) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            plannedMeal: value,
+                            plannedTime: mealDefaultTime(value) || current.plannedTime || ""
+                          }))
+                        }
+                        formatLabel={(option) => (option ? mealLabel(option) : "종일")}
+                        compact
+                      />
+                    {editForm.plannedDate ? (
+                        <Field label={EDIT_COPY.plannedTime}>
+                          <View style={styles.planTimeRow}>
+                            <TimeField
+                              value={planTimeFor(editForm, "18:00")}
+                              onChange={(next) => setEditForm((current) => ({ ...current, plannedTime: next }))}
+                            />
+                          </View>
+                        </Field>
+                      ) : null}
+                      <ChoiceGroup
+                        label={EDIT_COPY.planRepeat}
+                        options={PLAN_REPEATS.map((option) => option.id)}
+                        value={editForm.planRepeat || ""}
+                        onChange={(value) => setEditForm((current) => ({ ...current, planRepeat: value }))}
+                        formatLabel={(option) => repeatLabel(option)}
+                        compact
                       />
                     </View>
-                  </Field>
-                ) : null}
-                {/* 카테고리(12개 칩)·보관·구매 링크는 거의 손대지 않는데 자리를 크게 차지한다.
-                    자주 고치는 날짜보다 아래로 내리고 접어둔다(2026-08-23). */}
-                <Pressable style={styles.moreToggle} onPress={() => setEditMoreOpen((open) => !open)}>
-                  <Text style={styles.moreToggleText}>
-                    {editMoreOpen ? "\u2303 \uC138\uBD80 \uC124\uC815 \uC811\uAE30" : "\u2304 \uC138\uBD80 \uC124\uC815 (\uCE74\uD14C\uACE0\uB9AC\u00B7\uBCF4\uAD00\u00B7\uB9C1\uD06C)"}
-                  </Text>
-                </Pressable>
-                {editMoreOpen ? (
-                  <View style={styles.moreSection}>
-                    <ChoiceGroup
-                    label={EDIT_COPY.category}
-                    options={editCategoryOptions}
-                    value={editForm.category}
-                    onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
-                    formatLabel={formatCompactCategoryLabel}
-                    compact
-                  />
-                  <ChoiceGroup
-                    label={EDIT_COPY.storage}
-                    options={storageTypes}
-                    value={editForm.storage}
-                    onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
-                    compact
-                  />
-                  <Field label={EDIT_COPY.purchaseUrl}>
-                    <TextInput
-                      value={editForm.purchaseUrl || ""}
-                      onChangeText={(value) => setEditForm((current) => ({ ...current, purchaseUrl: value }))}
-                      placeholder={EDIT_COPY.purchasePlaceholder}
-                      placeholderTextColor="#a0a8a2"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      autoComplete="off"
-                      importantForAutofill="noExcludeDescendants"
-                      spellCheck={false}
-                      // keyboardType="url"(안드로이드 TYPE_TEXT_VARIATION_URI)이
-                      // 삼성패스 자동완성 제안을 부르는 실제 트리거로 보여서 뺐다.
-                      // 대부분 링크를 붙여넣기로 넣으니 기본 키보드로도 무리 없음.
-                      returnKeyType="done"
-                      disableFullscreenUI
-                      style={styles.input}
-                    />
-                  </Field>
-                  {editForm.purchaseUrl?.trim() ? (
-                    <View style={styles.affiliateDisclosureBanner}>
-                      <Text style={styles.affiliateDisclosureText}>
-                        {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
-                      </Text>
-                    </View>
-                  ) : null}
                   </View>
-                ) : null}
+                ) : (
+                  <View>
+                <ChoiceGroup
+                        label={EDIT_COPY.category}
+                        options={editCategoryOptions}
+                        value={editForm.category}
+                        onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
+                        formatLabel={formatCompactCategoryLabel}
+                        compact
+                      />
+                      <ChoiceGroup
+                        label={EDIT_COPY.storage}
+                        options={storageTypes}
+                        value={editForm.storage}
+                        onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
+                        compact
+                      />
+                      <Field label={EDIT_COPY.purchaseUrl}>
+                        <TextInput
+                          value={editForm.purchaseUrl || ""}
+                          onChangeText={(value) => setEditForm((current) => ({ ...current, purchaseUrl: value }))}
+                          placeholder={EDIT_COPY.purchasePlaceholder}
+                          placeholderTextColor="#a0a8a2"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          autoComplete="off"
+                          importantForAutofill="noExcludeDescendants"
+                          spellCheck={false}
+                          // keyboardType="url"(안드로이드 TYPE_TEXT_VARIATION_URI)이
+                          // 삼성패스 자동완성 제안을 부르는 실제 트리거로 보여서 뺐다.
+                          // 대부분 링크를 붙여넣기로 넣으니 기본 키보드로도 무리 없음.
+                          returnKeyType="done"
+                          disableFullscreenUI
+                          style={styles.input}
+                        />
+                      </Field>
+                      {editForm.purchaseUrl?.trim() ? (
+                        <View style={styles.affiliateDisclosureBanner}>
+                          <Text style={styles.affiliateDisclosureText}>
+                            {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
+                          </Text>
+                        </View>
+                      ) : null}
+                  </View>
+                )}
               </View>
             </ScrollView>
           </View>
@@ -1257,23 +1283,31 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#18201c",
   },
-  moreToggle: {
-    minHeight: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: "#d4e7df",
-    backgroundColor: "#f6fbf8",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 14
+  sheetTabs: {
+    flexDirection: "row",
+    gap: 6,
+    backgroundColor: "#f1f4f2",
+    borderRadius: 10,
+    padding: 4,
+    marginTop: 10,
+    marginBottom: 4
   },
-  moreToggleText: {
+  planGroup: {
+    marginTop: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#d4e7df",
+    backgroundColor: "#f8fbf9",
+    padding: 12
+  },
+  planGroupTitle: {
     ...typography.captionStrong,
     color: "#1f7a5a",
   },
-  moreSection: {
-    marginTop: 4
+  planGroupHint: {
+    ...typography.caption,
+    color: "#68716b",
+    marginTop: 2
   },
   sheetBackdrop: {
     flex: 1,

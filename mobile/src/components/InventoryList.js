@@ -3,7 +3,7 @@ import { Alert, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, 
 import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
-import { statusFor, timelineFor, todayIso } from "../utils/date";
+import { statusFor, timelineFor, todayIso, weekdayLabel } from "../utils/date";
 import { planBadgeLabel, planTimeFor, PLAN_REPEATS, repeatLabel } from "../utils/mealPlan";
 import { TabButton, TimeField } from "./CommonControls";
 
@@ -30,6 +30,7 @@ const EDIT_COPY = {
   purchaseUrl: "\uAD6C\uB9E4 \uB9C1\uD06C",
   purchasePlaceholder: DEFAULT_PURCHASE_URL,
   plannedDate: "\uBA39\uC744 \uB0A0",
+  plannedWeekday: "\uBA39\uC744 \uC694\uC77C",
   plannedTime: "\uC54C\uB9BC \uC2DC\uAC04",
   planRepeat: "\uBC18\uBCF5",
   memo: "\uBA54\uBAA8",
@@ -196,20 +197,39 @@ export default function InventoryList({
                         한 상자로 묶어 무엇에 딸린 설정인지 눈에 보이게 한다(2026-08-23). */}
                     <View style={styles.planGroup}>
                       <Text style={styles.planGroupTitle}>{"\uCC59\uACA8 \uBA39\uAE30"}</Text>
-                    <Field label={EDIT_COPY.plannedDate}>
-                        <DateButton
-                          value={editForm.plannedDate || todayIso()}
-                          onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
-                        />
-                      </Field>
-                    <ChoiceGroup
+                      {/* 반복을 맨 위에 둔다. 매일 반복이면 특정 날짜를 고르는 게 의미가
+                          없고, 매주면 날짜보다 요일이 중요하다 — 무엇을 물어볼지가 반복
+                          선택에 따라 달라지기 때문이다(2026-08-23). */}
+                      <ChoiceGroup
                         label={EDIT_COPY.planRepeat}
                         options={PLAN_REPEATS.map((option) => option.id)}
                         value={editForm.planRepeat || ""}
-                        onChange={(value) => setEditForm((current) => ({ ...current, planRepeat: value }))}
+                        onChange={(value) =>
+                          setEditForm((current) => ({
+                            ...current,
+                            planRepeat: value,
+                            // 매일 반복은 날짜를 안 물어보므로 시작일이 비어 있으면 오늘로 채운다.
+                            // plannedDate가 없으면 일정이 없는 것으로 취급된다(mealPlan.hasPlan).
+                            plannedDate: value === "daily" && !current.plannedDate ? todayIso() : current.plannedDate
+                          }))
+                        }
                         formatLabel={(option) => repeatLabel(option)}
                         compact
                       />
+                      {editForm.planRepeat !== "daily" ? (
+                        <Field label={editForm.planRepeat === "weekly" ? EDIT_COPY.plannedWeekday : EDIT_COPY.plannedDate}>
+                          <DateButton
+                            value={editForm.plannedDate || todayIso()}
+                            onPress={() => openCalendar(editForm.plannedDate || todayIso(), (value) => setEditForm((current) => ({ ...current, plannedDate: value })))}
+                            showWeekday
+                          />
+                          {editForm.planRepeat === "weekly" ? (
+                            <Text style={styles.planHint}>
+                              {`매주 ${weekdayLabel(editForm.plannedDate || todayIso())}요일에 알려드려요.`}
+                            </Text>
+                          ) : null}
+                        </Field>
+                      ) : null}
                     {editForm.plannedDate ? (
                         <Field label={EDIT_COPY.plannedTime}>
                           <View style={styles.planTimeRow}>
@@ -581,10 +601,11 @@ function formatCompactCategoryLabel(option) {
   return COMPACT_CATEGORY_LABELS[option] || option;
 }
 
-function DateButton({ value, onPress }) {
+function DateButton({ value, onPress, showWeekday = false }) {
+  const weekday = showWeekday ? weekdayLabel(value) : "";
   return (
     <Pressable style={styles.dateButton} onPress={onPress}>
-      <Text style={styles.dateText}>{formatDateLabel(value)}</Text>
+      <Text style={styles.dateText}>{weekday ? `${formatDateLabel(value)} (${weekday})` : formatDateLabel(value)}</Text>
     </Pressable>
   );
 }
@@ -1288,6 +1309,11 @@ const styles = StyleSheet.create({
     borderColor: "#d4e7df",
     backgroundColor: "#f8fbf9",
     padding: 12
+  },
+  planHint: {
+    ...typography.caption,
+    color: "#3f8f6d",
+    marginTop: 6
   },
   planGroupTitle: {
     ...typography.label,

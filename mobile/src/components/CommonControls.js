@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
-import { formatDateLabel } from "../utils/date";
+import { formatDateLabel, weekdayLabel } from "../utils/date";
 
 export function SummaryTile({ label, value, urgent, expired, active, highlighted, onPress }) {
   return (
@@ -37,10 +37,13 @@ export function Field({ label, children }) {
   );
 }
 
-export function DateButton({ value, onPress, compact = false }) {
+export function DateButton({ value, onPress, compact = false, showWeekday = false }) {
+  const weekday = showWeekday ? weekdayLabel(value) : "";
   return (
     <Pressable style={[styles.dateButton, compact && styles.dateButtonCompact]} onPress={onPress}>
-      <Text style={[styles.dateText, compact && styles.dateTextCompact]}>{formatDateLabel(value)}</Text>
+      <Text style={[styles.dateText, compact && styles.dateTextCompact]}>
+        {weekday ? `${formatDateLabel(value)} (${weekday})` : formatDateLabel(value)}
+      </Text>
       {!compact ? <Text style={styles.dateSubText}>{value}</Text> : null}
     </Pressable>
   );

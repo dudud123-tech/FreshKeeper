@@ -76,6 +76,12 @@ export function formatDateLabel(value) {
   return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
 }
 
+const WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+
+export function weekdayLabel(value) {
+  return WEEKDAY_NAMES[parseIsoDate(value).getDay()] || "";
+}
+
 export function itemCreatedDate(item) {
   const date = safeDate(item?.createdAt);
   if (date) return toIsoDate(date);

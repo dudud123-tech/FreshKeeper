@@ -1,4 +1,4 @@
-import { parseIsoDate, todayIso, toIsoDate } from "./date";
+import { parseIsoDate, todayIso, toIsoDate, weekdayLabel } from "./date";
 
 // 상품에 붙는 "언제 먹을지" 정보는 item.plannedDate("YYYY-MM-DD")와
 // item.plannedMeal(아래 id 중 하나, 빈 값이면 "종일") 두 필드뿐이다. 상품 하나당
@@ -31,8 +31,14 @@ export function isRepeating(item) {
   return Boolean(item?.planRepeat) && PLAN_REPEATS.some((option) => option.id === item.planRepeat && option.id);
 }
 
-// 일정 화면이 보여주는 날짜 수. 알림 예약 범위(notificationScheduler.js)도 같은 값을 쓴다.
-export const SCHEDULE_LOOKAHEAD_DAYS = 7;
+// 일정 화면이 보여주는 날짜 수. 한 달 앞까지 훑어볼 수 있게 30일을 보여준다.
+export const SCHEDULE_LOOKAHEAD_DAYS = 30;
+
+// 알림을 미리 예약해 두는 범위. 화면 조회 기간과 일부러 분리했다 — 매일 반복
+// 상품이 있으면 예약 건수가 날짜 수만큼 불어나 MAX_PLAN_NOTIFICATIONS 상한을
+// 금방 채우고, 그러면 뒤쪽 상품이 알림을 못 받는다. 앱을 열 때마다 다시
+// 예약하므로 화면만 30일로 늘리고 예약은 7일로 둔다(2026-08-23).
+export const PLAN_NOTIFICATION_LOOKAHEAD_DAYS = 7;
 
 export function mealLabel(mealId) {
   return MEAL_SLOTS.find((slot) => slot.id === mealId)?.label || ALL_DAY_LABEL;
@@ -163,8 +169,7 @@ export function overduePlannedItems(items, fromDate = todayIso()) {
 
 export function scheduleDateLabel(dateIso) {
   const date = parseIsoDate(dateIso);
-  const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
-  const base = `${date.getMonth() + 1}/${date.getDate()}(${weekday})`;
+  const base = `${date.getMonth() + 1}/${date.getDate()}(${weekdayLabel(dateIso)})`;
   const today = todayIso();
   if (dateIso === today) return `오늘 ${base}`;
   if (dateIso === toIsoDate(new Date(parseIsoDate(today).getTime() + 86400000))) return `내일 ${base}`;

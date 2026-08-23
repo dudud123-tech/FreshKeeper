@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { typography } from "../theme/typography";
-import { statusFor, todayIso } from "../utils/date";
+import { statusFor, todayIso, weekdayLabel } from "../utils/date";
 import { getFoodImageSource } from "../utils/foodImages";
 import {
   formatPlanTime,
@@ -25,7 +25,9 @@ import BannerAdSlot from "./BannerAdSlot";
 const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
 
 
-// 먹는 일정 화면. 오늘부터 7일을 날짜별 세로 목록으로 보여주고, 각 날짜 안에서
+// 먹는 일정 화면. 오늘부터 30일(SCHEDULE_LOOKAHEAD_DAYS)을 날짜별 세로 목록으로
+// 보여주되 일정이 있는 날만 그린다 — 빈 날까지 전부 그리면 30줄이 대부분 "일정 없음"이
+// 되어 정작 잡아둔 일정이 묻힌다(2026-08-23). 각 날짜 안에서
 // 끼니(아침·점심·저녁·종일)로 묶는다. 완료 체크는 보관함과 같은 completeItem을
 // 그대로 쓰므로 두 화면이 하나의 상품 상태를 공유한다(2026-08-19).
 export default function SchedulePage({
@@ -51,6 +53,7 @@ export default function SchedulePage({
     () => items.filter((item) => isPlannableItem(item) && !hasPlan(item)),
     [items]
   );
+  const plannedDays = useMemo(() => days.filter((day) => day.items.length > 0), [days]);
   const plannedCount = useMemo(
     () => days.reduce((total, day) => total + day.items.length, 0),
     [days]
@@ -96,15 +99,6 @@ export default function SchedulePage({
   return (
     <>
       <ScrollView style={styles.screen} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-        <View style={styles.introCard}>
-          <Text style={styles.introTitle}>먹는 일정</Text>
-          <Text style={styles.introText}>
-            {plannedCount > 0
-              ? `앞으로 7일 동안 ${plannedCount}개를 먹기로 했어요.`
-              : "상품을 골라 언제 먹을지 정해두면 그날 알려드릴게요."}
-          </Text>
-        </View>
-
         {/* 지난 날짜에 잡힌 채 완료 안 된 일정. 그냥 사라지면 놓치기 쉬워 맨 위에 따로 모은다. */}
         {overdue.length > 0 ? (
           <View style={styles.overdueCard}>
@@ -123,34 +117,34 @@ export default function SchedulePage({
           </View>
         ) : null}
 
-        {days.map((day) => (
+        {plannedDays.map((day) => (
           <View key={day.date} style={styles.dayBlock}>
             <View style={styles.dayHeader}>
               <Text style={styles.dayTitle}>{scheduleDateLabel(day.date)}</Text>
-              <Text style={styles.dayCount}>{day.items.length > 0 ? `${day.items.length}개` : ""}</Text>
+              <Text style={styles.dayCount}>{`${day.items.length}개`}</Text>
             </View>
 
-            {day.groups.length === 0 ? (
-              <Text style={styles.dayEmpty}>일정 없음</Text>
-            ) : (
-              day.groups.map((group) => (
-                <View key={`${day.date}-${group.mealId || "allday"}`} style={styles.mealGroup}>
-                  <Text style={styles.mealLabel}>{group.label}</Text>
-                  {group.items.map((item) => (
-                    <ScheduleRow
-                      key={item.id}
-                      item={item}
-                      planNotificationTime={planNotificationTime}
-                      onComplete={() => completeItem(item.id)}
-                      onClear={() => clearItemPlan(item.id)}
-                      onEdit={() => openPickerForItem(item)}
-                    />
-                  ))}
-                </View>
-              ))
-            )}
+            {day.groups.map((group) => (
+              <View key={`${day.date}-${group.mealId || "allday"}`} style={styles.mealGroup}>
+                <Text style={styles.mealLabel}>{group.label}</Text>
+                {group.items.map((item) => (
+                  <ScheduleRow
+                    key={item.id}
+                    item={item}
+                    planNotificationTime={planNotificationTime}
+                    onComplete={() => completeItem(item.id)}
+                    onClear={() => clearItemPlan(item.id)}
+                    onEdit={() => openPickerForItem(item)}
+                  />
+                ))}
+              </View>
+            ))}
           </View>
         ))}
+
+        {plannedCount === 0 && overdue.length === 0 ? (
+          <Text style={styles.emptyText}>상품을 골라 언제 먹을지 정해두면 그날 알려드릴게요.</Text>
+        ) : null}
 
         <Pressable style={styles.addButton} onPress={openPicker}>
           <Text style={styles.addButtonText}>+ 먹을 상품 추가하기</Text>
@@ -166,9 +160,27 @@ export default function SchedulePage({
               {editingItem ? `${editingItem.name} 일정 바꾸기` : "언제 먹을까요?"}
             </Text>
 
+            {/* 비타민·약처럼 계속 챙겨 먹는 상품을 위한 반복. 보관함 편집과 같은 이유로
+                맨 위에 둔다 — 매일 반복이면 날짜를 물어볼 필요가 없다. */}
+            <ChoiceGroup
+              label="반복"
+              options={PLAN_REPEATS.map((option) => option.id)}
+              value={pickerRepeat}
+              onChange={setPickerRepeat}
+              formatLabel={(option) => repeatLabel(option)}
+              compact
+            />
+
             {/* 날짜 선택은 기존 CalendarModal(App.js의 openCalendar 콜백)을 그대로 재사용한다. */}
-            <Text style={styles.modalLabel}>날짜</Text>
-            <DateButton value={pickerDate} onPress={() => openCalendar(pickerDate, setPickerDate)} compact />
+            {pickerRepeat !== "daily" ? (
+              <>
+                <Text style={styles.modalLabel}>{pickerRepeat === "weekly" ? "먹을 요일" : "날짜"}</Text>
+                <DateButton value={pickerDate} onPress={() => openCalendar(pickerDate, setPickerDate)} compact showWeekday />
+                {pickerRepeat === "weekly" ? (
+                  <Text style={styles.modalHint}>{`매주 ${weekdayLabel(pickerDate)}요일에 알려드려요.`}</Text>
+                ) : null}
+              </>
+            ) : null}
 
             <ChoiceGroup
               label="끼니 (선택)"
@@ -187,16 +199,6 @@ export default function SchedulePage({
                 onChange={setPickerTime}
               />
             </View>
-
-            {/* 비타민·약처럼 계속 챙겨 먹는 상품을 위한 반복. */}
-            <ChoiceGroup
-              label="반복"
-              options={PLAN_REPEATS.map((option) => option.id)}
-              value={pickerRepeat}
-              onChange={setPickerRepeat}
-              formatLabel={(option) => repeatLabel(option)}
-              compact
-            />
 
             {editingItem ? null : <Text style={styles.modalLabel}>상품 고르기</Text>}
             {editingItem ? (
@@ -268,22 +270,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 126
   },
-  introCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#e6e4df",
-    backgroundColor: "#fff",
-    padding: 14,
-    marginTop: 14,
-    gap: 4
-  },
-  introTitle: {
-    ...typography.sectionTitle,
-    color: "#18201c",
-  },
-  introText: {
+  emptyText: {
     ...typography.caption,
     color: "#68716b",
+    textAlign: "center",
+    marginTop: 28
+  },
+  modalHint: {
+    ...typography.caption,
+    color: "#3f8f6d",
+    marginTop: 6
   },
   overdueCard: {
     borderRadius: 16,
@@ -314,11 +310,6 @@ const styles = StyleSheet.create({
   dayCount: {
     ...typography.caption,
     color: "#68716b",
-  },
-  dayEmpty: {
-    ...typography.caption,
-    color: "#a2aaa5",
-    paddingVertical: 6
   },
   mealGroup: {
     marginBottom: 10,

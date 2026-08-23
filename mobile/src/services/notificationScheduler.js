@@ -5,12 +5,12 @@ import {
   formatPlanTime,
   groupPlannedItemsByTime,
   mealLabel,
-  SCHEDULE_LOOKAHEAD_DAYS,
+  PLAN_NOTIFICATION_LOOKAHEAD_DAYS,
   toPlanTime
 } from "../utils/mealPlan";
 
 const NOTIFICATION_CHANNEL_ID = "freshkeeper-expiry-alerts-v2";
-const NOTIFICATION_LOOKAHEAD_DAYS = 30;
+const EXPIRY_LOOKAHEAD_DAYS = 30;
 
 // 먹는 일정 알림은 안드로이드 채널을 분리한다 — 소비기한 알림과 성격이 달라서
 // 사용자가 OS 알림 설정에서 한쪽만 끌 수 있어야 한다(2026-08-19).
@@ -138,7 +138,7 @@ export async function scheduleAllNotifications(items, reminderDays, settings, pl
 async function scheduleExpiryDigests(items, reminderDays, settings) {
   let scheduledCount = 0;
   const now = new Date();
-  for (let offset = 0; offset < NOTIFICATION_LOOKAHEAD_DAYS; offset += 1) {
+  for (let offset = 0; offset < EXPIRY_LOOKAHEAD_DAYS; offset += 1) {
     const triggerDate = new Date();
     triggerDate.setDate(triggerDate.getDate() + offset);
     triggerDate.setHours(settings.hour, settings.minute, 0, 0);
@@ -176,7 +176,7 @@ async function schedulePlanReminders(items, planSettings) {
   const now = new Date();
   const fallbackTime = toPlanTime(planSettings.hour, planSettings.minute);
 
-  for (let offset = 0; offset < SCHEDULE_LOOKAHEAD_DAYS; offset += 1) {
+  for (let offset = 0; offset < PLAN_NOTIFICATION_LOOKAHEAD_DAYS; offset += 1) {
     const dayDate = new Date();
     dayDate.setDate(dayDate.getDate() + offset);
     const targetDate = toIsoDate(dayDate);

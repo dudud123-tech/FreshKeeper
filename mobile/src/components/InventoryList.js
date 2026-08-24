@@ -75,6 +75,9 @@ export default function InventoryList({
   setSortMode,
   categoryFilters,
   categoryFilter,
+  storageFilters,
+  storageFilter,
+  setStorageFilter,
   setCategoryFilter,
   favoriteFilter,
   setFavoriteFilter,
@@ -119,7 +122,7 @@ export default function InventoryList({
     return buildCompletedMonthEntries(visibleItems);
   }, [isCompletedScope, visibleItems]);
   const editCategoryOptions = useMemo(() => orderedCategoryOptions(categories), [categories]);
-  const listRenderKey = `inventory-list-${inventoryScope}-${sortMode}-${categoryFilter}-${favoriteFilter}-${focusItemId || "all"}`;
+  const listRenderKey = `inventory-list-${inventoryScope}-${sortMode}-${categoryFilter}-${storageFilter}-${favoriteFilter}-${focusItemId || "all"}`;
   const itemKeyPrefix = sortMode === "등록일순" ? "created" : "expiry";
 
   async function openPurchaseUrl(url) {
@@ -402,6 +405,17 @@ export default function InventoryList({
               {categoryFilters.map((option) => (
                 <Pressable key={String(option)} style={[styles.categoryChip, categoryFilter === option && styles.categoryChipActive]} onPress={() => setCategoryFilter(option)}>
                   <Text style={[styles.categoryChipText, categoryFilter === option && styles.categoryChipTextActive]}>{option}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {/* 홈의 전체/냉장/냉동/실온 타일로 들어오면 이 값이 미리 정해진 채로
+                열린다. 왜 목록이 걸러져 있는지 여기서 보이고 되돌릴 수 있어야
+                한다(2026-08-24). */}
+            <Text style={styles.controlLabel}>보관</Text>
+            <View style={styles.categoryWrap}>
+              {(storageFilters || []).map((option) => (
+                <Pressable key={String(option)} style={[styles.categoryChip, storageFilter === option && styles.categoryChipActive]} onPress={() => setStorageFilter?.(option)}>
+                  <Text style={[styles.categoryChipText, storageFilter === option && styles.categoryChipTextActive]}>{option}</Text>
                 </Pressable>
               ))}
             </View>

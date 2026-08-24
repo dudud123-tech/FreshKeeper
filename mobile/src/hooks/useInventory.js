@@ -113,6 +113,8 @@ export function useInventory({
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editForm, setEditForm] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("전체");
+  // 보관 위치 필터. 홈의 전체/냉장/냉동/실온 타일에서 넘어올 때도 이 값을 쓴다.
+  const [storageFilter, setStorageFilter] = useState("전체");
   const [sortMode, setSortMode] = useState(sortOptions[0]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [inventoryScope, setInventoryScope] = useState(ITEM_STATUS_ACTIVE);
@@ -143,6 +145,7 @@ export function useInventory({
           : item.status !== ITEM_STATUS_COMPLETED;
       })
       .filter((item) => categoryFilter === "전체" || item.category === categoryFilter)
+      .filter((item) => storageFilter === "전체" || item.storage === storageFilter)
       .filter((item) => favoriteFilter !== "favorite" || item.favorite)
       .filter((item) => {
         if (focusItemId) return item.id === focusItemId;
@@ -164,7 +167,7 @@ export function useInventory({
       });
 
     return nextItems;
-  }, [normalizedItems, inventoryScope, categoryFilter, favoriteFilter, statusFilter, reminderDays, focusItemId, sortMode]);
+  }, [normalizedItems, inventoryScope, categoryFilter, storageFilter, favoriteFilter, statusFilter, reminderDays, focusItemId, sortMode]);
 
   const summary = useMemo(() => {
     const weekAgo = Date.now() - 7 * 86400000;
@@ -479,6 +482,8 @@ export function useInventory({
     setEditForm,
     categoryFilter,
     setCategoryFilter,
+    storageFilter,
+    setStorageFilter,
     sortMode,
     setSortMode,
     statusFilter,

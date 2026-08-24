@@ -50,6 +50,7 @@ const ONBOARDING_KEY = "fresh-keeper-onboarding-seen-v1";
 const LAST_SEEN_VERSION_KEY = "fresh-keeper-last-seen-version-code-v1";
 const storageTypes = ["냉장", "냉동", "실온"];
 const categoryFilters = ["전체", ...categories];
+const storageFilters = ["전체", ...storageTypes];
 const sortOptions = ["소비기한순", "등록일순"];
 const DEFAULT_EXPIRY_TYPE = "소비기한";
 const APP_BUILD_LABEL = "dev 2026-06-07.1";
@@ -103,6 +104,8 @@ export default function App() {
     setEditForm,
     categoryFilter,
     setCategoryFilter,
+    storageFilter,
+    setStorageFilter,
     sortMode,
     setSortMode,
     statusFilter,
@@ -444,6 +447,9 @@ export default function App() {
 
   function goToInventory(nextStatusFilter = "all", options = {}) {
     setStatusFilter(nextStatusFilter);
+    // 보관 위치는 넘어올 때마다 새로 정한다 — 홈의 냉장 타일로 들어왔다가
+    // 다음에 임박 타일로 들어오면 냉장만 남아 있으면 안 된다.
+    setStorageFilter(options.storage || "전체");
     setInventoryScope(nextStatusFilter === "completed" ? "completed" : "active");
     if (nextStatusFilter === "all") setCategoryFilter("전체");
     if (!options.scrollToLatest) setFocusItemId("");
@@ -727,6 +733,9 @@ export default function App() {
               sortMode={sortMode}
               setSortMode={setSortMode}
               categoryFilters={categoryFilters}
+              storageFilters={storageFilters}
+              storageFilter={storageFilter}
+              setStorageFilter={setStorageFilter}
               categoryFilter={categoryFilter}
               setCategoryFilter={setCategoryFilter}
               favoriteFilter={favoriteFilter}

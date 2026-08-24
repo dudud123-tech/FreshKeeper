@@ -113,6 +113,23 @@ export default function HomePage({
       .sort((a, b) => new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime())
   ].slice(0, 5);
   const priorityCardWidth = Math.max((layoutWidth - 32 - 20) / 3, 104);
+  // 보관 위치별 개수. summary(useInventory)는 소비기한 축만 세므로 여기서 만든다.
+  // 완료된 상품은 빼고 지금 보관 중인 것만 센다.
+  const storageStats = useMemo(() => {
+    const counts = { 냉장: 0, 냉동: 0, 실온: 0 };
+    let total = 0;
+    for (const item of items) {
+      if (item.status === "completed") continue;
+      total += 1;
+      if (counts[item.storage] !== undefined) counts[item.storage] += 1;
+    }
+    return [
+      { label: "전체", value: total, storage: "" },
+      { label: "냉장", value: counts["냉장"], storage: "냉장" },
+      { label: "냉동", value: counts["냉동"], storage: "냉동" },
+      { label: "실온", value: counts["실온"], storage: "실온" }
+    ];
+  }, [items]);
   const dashboardStats = [
     {
       label: "만료",
@@ -187,6 +204,26 @@ export default function HomePage({
               <Text style={[styles.dashboardStatValue, styles[`dashboardStatValue_${stat.tone}`]]}>{stat.value}</Text>
               <Text style={styles.dashboardStatUnit}>개</Text>
             </View>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* 위 카드가 "언제까지"라면 이건 "어디에" 축이라 바로 아래 붙인다.
+          일부러 다르게 생기게 했다 — 아이콘 없이 숫자와 라벨만 있는 낮은 카드다.
+          두 줄이 똑같이 생기면 무엇이 급한 정보인지 구분이 안 되고, 만료(빨강)·
+          임박(주황) 같은 의미색을 보관 구분에 재사용하면 오해를 부른다(2026-08-24). */}
+      <View style={styles.storageStatsCard}>
+        {storageStats.map((stat, index) => (
+          <Pressable
+            key={stat.label}
+            style={[styles.storageStat, index < storageStats.length - 1 && styles.storageStatDivider]}
+            onPress={() => onOpenInventory("all", stat.storage ? { storage: stat.storage } : {})}
+          >
+            <View style={styles.storageStatValueRow}>
+              <Text style={styles.storageStatValue}>{stat.value}</Text>
+              <Text style={styles.storageStatUnit}>개</Text>
+            </View>
+            <Text style={styles.storageStatLabel}>{stat.label}</Text>
           </Pressable>
         ))}
       </View>
@@ -601,6 +638,49 @@ const styles = StyleSheet.create({
     color: "#68716b",
     marginLeft: 2,
     marginBottom: 2
+  },
+  // 보관 위치 카드입니다. 위 소비기한 카드보다 낮고 아이콘이 없습니다 — 급한
+  // 정보(만료/임박)가 계속 주인공이어야 해서 일부러 눌러 둡니다.
+  storageStatsCard: {
+    flexDirection: "row",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e9ece9",
+    backgroundColor: "#fff",
+    marginTop: 10,
+    paddingVertical: 10
+  },
+  storageStat: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4
+  },
+  storageStatDivider: {
+    borderRightWidth: 1,
+    borderRightColor: "#eef1ee"
+  },
+  storageStatValueRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "center"
+  },
+  storageStatValue: {
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: "800",
+    color: "#18201c"
+  },
+  storageStatUnit: {
+    ...typography.caption,
+    color: "#8b948d",
+    marginLeft: 2,
+    marginBottom: 2
+  },
+  storageStatLabel: {
+    ...typography.caption,
+    color: "#68716b",
+    marginTop: 3
   },
   // 통계 카드 위 "나의 랭킹" 배지입니다. overflow: hidden이라야 위를 지나가는
   // 흰 줄(rankingBadgeShine)이 알약 밖으로 삐져나오지 않습니다.

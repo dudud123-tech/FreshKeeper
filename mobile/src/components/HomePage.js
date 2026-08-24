@@ -63,8 +63,9 @@ const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
 const weekDashboardIcon = require("../../assets/home/calendar_month.png");
 const storedDashboardIcon = require("../../assets/tabs/kitchen.png");
 // 교차 카드의 보관 열. 개수는 crossStats가 세므로 여기엔 열 정의만 둔다.
-// 아이콘은 tintColor로 색을 입히는 단색 알파 마스크다(assets/storage/*.png,
-// scripts/make-storage-icons.js로 생성). 배경 칩 없이 아이콘만 얹는다.
+// ⚠️ 아이콘은 색이 이미 입혀진 일러스트다 — tintColor를 걸면 한 색으로 뭉개진다.
+// ⚠️ 파일명은 반드시 ASCII로 둔다. 안드로이드 릴리즈 빌드는 번들 이미지를
+//    drawable 리소스로 복사하는데 리소스명에 한글을 쓸 수 없다(2026-08-24).
 const STORAGE_COLUMNS = [
   { key: "fridge", label: "냉장", storage: "냉장", icon: require("../../assets/storage/storage-fridge.png") },
   { key: "freezer", label: "냉동", storage: "냉동", icon: require("../../assets/storage/storage-freezer.png") },
@@ -646,15 +647,14 @@ const styles = StyleSheet.create({
     flex: 1
   },
   crossColHead: {
-    width: 44,
+    width: 46,
     alignItems: "center",
     gap: 2
   },
-  // 배경 칩 없이 아이콘만 얹습니다. 단색 마스크라 tintColor로 색을 정합니다.
+  // 배경 칩 없이 아이콘만 얹습니다. 색이 있는 일러스트라 tintColor는 주지 않습니다.
   crossColIcon: {
-    width: 18,
-    height: 18,
-    tintColor: "#8d968f"
+    width: 28,
+    height: 28
   },
   crossColLabel: {
     ...typography.caption,
@@ -663,7 +663,7 @@ const styles = StyleSheet.create({
   },
   // 숫자 한 칸. 폭을 crossColHead와 같은 40으로 고정해 열이 어긋나지 않게 합니다.
   crossCell: {
-    width: 44,
+    width: 46,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 4

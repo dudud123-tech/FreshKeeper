@@ -111,6 +111,47 @@ export default function InventoryList({
   // 편집 시트 탭. 기본(상품명·소비기한·일정) / 상세(카테고리·보관·구매링크).
   // 접기 방식은 한 번 더 눌러야 해서 접근이 불편하다는 피드백으로 탭으로 바꿨다(2026-08-23).
   const [editTab, setEditTab] = useState("basic");
+  // 상품명을 누르면 뜨는 큰 카드 팝업. 항목을 통째로 담아두면 수정 후에도 옛
+  // 값이 남으므로 id만 들고 매번 현재 목록에서 찾는다. 완료/삭제로 목록에서
+  // 빠지면 자연히 null이 되어 팝업도 닫힌다(2026-08-24).
+  const [detailItemId, setDetailItemId] = useState("");
+  const isCompletedScope = inventoryScope === "completed";
+  const detailItem = useMemo(
+    () => (detailItemId ? sortedItems.find((item) => String(item.id) === detailItemId) || null : null),
+    [sortedItems, detailItemId]
+  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const searchedItems = sortedItems.filter((item) => String(item.name || "").toLowerCase().includes(normalizedQuery));
+  const completedStats = useMemo(() => summarizeCompletedItems(sortedItems), [sortedItems]);
+  const visibleItems = useMemo(() => {
+    if (!isCompletedScope) return searchedItems;
+    return searchedItems.filter((item) => isRecentCompletedItem(item, COMPLETED_VISIBLE_DAYS));
+  }, [isCompletedScope, searchedItems]);
+  const visibleEntries = useMemo(() => {
+    if (!isCompletedScope) return visibleItems.map((item) => ({ kind: "item", item }));
+    return buildCompletedMonthEntries(visibleItems);
+  }, [isCompletedScope, visibleItems]);
+  const editCategoryOptions = useMemo(() => orderedCategoryOptions(categories), [categories]);
+  const listRenderKey = `inventory-list-${inventoryScope}-${sortMode}-${categoryFilter}-${storageFilter}-${favoriteFilter}-${focusItemId || "all"}`;
+  const itemKeyPrefix = sortMode === "등록일순" ? "created" : "expiry";
+
+  async function openPurchaseUrl(url) {
+    const rawUrl = String(url || "").trim();
+    if (!rawUrl) return;
+    const nextUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    try {
+      // canOpenURL은 Android 11+ 패키지 가시성 정책 때문에 실제로 열리는 링크도
+      // false를 반환하는 경우가 흔해서(false negative), 사전 체크 없이 바로 열고
+      // 실패하면 그때 안내한다.
+      await Linking.openURL(nextUrl);
+    } catch {
+      Alert.alert("링크 열기 실패", "이 링크를 열 수 없습니다.");
+    }
+  }
+
+  // 예전에는 이 편집 폼을 목록 카드 안에서 펼쳤다. 카테고리 12개 칩이 날짜 필드
+  // 위를 차지해서 소비기한·먹을 날을 고치려면 매번 아래까지 스크롤해야 했고,
+  // 카드가 길어져 목록도 밀렸다. 바텀시트로 띄워 넓은 화면에서 수정하게 바꿨다(2026-08-23).
   function renderEditSheet() {
     if (!editForm) return null;
     return (

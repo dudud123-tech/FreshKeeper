@@ -61,7 +61,7 @@ const coupangLogoIcon = require("../../assets/actions/coupang2.png");
 const expiredDashboardIcon = require("../../assets/home/priority_high_80dp.png");
 const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
 const weekDashboardIcon = require("../../assets/home/calendar_month.png");
-const storedDashboardIcon = require("../../assets/home/snowflake_80dp.png");
+const storedDashboardIcon = require("../../assets/tabs/kitchen.png");
 // 교차 카드의 보관 열. 개수는 crossStats가 세므로 여기엔 열 정의만 둔다.
 const STORAGE_COLUMNS = [
   { key: "fridge", label: "냉장", storage: "냉장" },
@@ -156,7 +156,7 @@ export default function HomePage({
     { key: "expired", label: "만료", tone: "expired", icon: expiredDashboardIcon, filter: "expired" },
     { key: "urgent", label: "임박", tone: "urgent", icon: urgentDashboardIcon, filter: "urgent" },
     { key: "week", label: "이번 주", tone: "week", icon: weekDashboardIcon, filter: "week" },
-    { key: "all", label: "보관 중", tone: "stored", icon: storedDashboardIcon, filter: "all" }
+    { key: "all", label: "전체", tone: "stored", icon: storedDashboardIcon, filter: "all" }
   ];
 
   return (
@@ -605,26 +605,28 @@ const styles = StyleSheet.create({
     gap: 8
   },
   crossIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center"
   },
   crossIcon: {
-    width: 17,
-    height: 17,
+    width: 19,
+    height: 19,
     tintColor: "#fff"
   },
   // 상태 이름이 남는 폭을 먹어야 개수가 오른쪽에 붙는다.
   crossLabel: {
     ...typography.label,
+    fontSize: 16,
+    lineHeight: 22,
     color: "#3d4742",
     flex: 1
   },
   crossValue: {
-    fontSize: 19,
-    lineHeight: 23,
+    fontSize: 23,
+    lineHeight: 27,
     fontWeight: "900"
   },
   // 열 제목 줄. 숫자 칸과 폭을 똑같이 맞춰야 세로로 줄이 선다.
@@ -640,20 +642,22 @@ const styles = StyleSheet.create({
   },
   crossColHead: {
     ...typography.caption,
+    fontSize: 13,
     color: "#9aa39d",
-    width: 40,
+    width: 44,
     textAlign: "center"
   },
   // 숫자 한 칸. 폭을 crossColHead와 같은 40으로 고정해 열이 어긋나지 않게 합니다.
   crossCell: {
-    width: 40,
+    width: 44,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 4
   },
   crossCellValue: {
     ...typography.label,
-    fontSize: 15,
+    fontSize: 17,
+    lineHeight: 23,
     color: "#2f3a34"
   },
   // 0은 흐리게 — 있는 숫자가 먼저 눈에 들어오게 합니다.

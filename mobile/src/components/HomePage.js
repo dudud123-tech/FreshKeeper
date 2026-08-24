@@ -173,20 +173,6 @@ export default function HomePage({
         }
       }}
     >
-      {/* 통계 4칸 위에 얹는 작은 배지. 성장 카드에 달려 있던 모양 그대로 —
-          흰 줄이 사선으로 지나가 눈에 띄게 한다(2026-08-24). */}
-      <Pressable style={styles.rankingBadge} onPress={() => setRankingModalVisible(true)}>
-        <ShimmerHighlight />
-        <Text style={styles.rankingBadgeIcon}>🏆</Text>
-        <Text style={styles.rankingBadgeText}>나의 랭킹</Text>
-      </Pressable>
-
-      <PersonalRankingModal
-        visible={rankingModalVisible}
-        onClose={() => setRankingModalVisible(false)}
-        rankings={personalRankings}
-      />
-
       {/* 상태(언제까지) x 보관 위치(어디에) 표. 한 줄에 다 담으려고 열 제목을
           맨 위에 한 번만 쓴다 — 줄마다 "냉장 n 냉동 n"을 반복하면 줄이 길어져
           두 줄로 접히고, 그러면 카드가 세로로 두 배가 된다.
@@ -195,7 +181,15 @@ export default function HomePage({
           눈에 들어오게 한다(2026-08-24). */}
       <View style={styles.crossCard}>
         <View style={styles.crossHeadRow}>
-          <View style={styles.crossHeadSpacer} />
+          {/* 열 제목 줄 왼쪽은 원래 비어 있던 자리라, 배지를 여기 넣으면
+              카드 높이가 늘지 않는다(2026-08-24). */}
+          <View style={styles.crossHeadSpacer}>
+            <Pressable style={styles.rankingBadge} onPress={() => setRankingModalVisible(true)}>
+              <ShimmerHighlight />
+              <Text style={styles.rankingBadgeIcon}>🏆</Text>
+              <Text style={styles.rankingBadgeText}>나의 랭킹</Text>
+            </Pressable>
+          </View>
           {STORAGE_COLUMNS.map((col) => (
             <View key={col.key} style={styles.crossColHead}>
               <Image source={col.icon} resizeMode="contain" style={styles.crossColIcon} />
@@ -232,6 +226,12 @@ export default function HomePage({
           );
         })}
       </View>
+
+      <PersonalRankingModal
+        visible={rankingModalVisible}
+        onClose={() => setRankingModalVisible(false)}
+        rankings={personalRankings}
+      />
 
       {/* 소비기한 축("이번 주 먼저 먹을 것") 바로 위에 일정 축을 둔다. 두 축이
           위아래로 나란히 있어야 홈이 "오늘 뭘 먹지"에 답하는 화면이 된다.
@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
   crossCard: {
     borderRadius: 18,
     backgroundColor: "#fff",
-    marginTop: 14,
+    marginTop: 16,
     paddingVertical: 4,
     shadowColor: "#0d3f2e",
     shadowOpacity: 0.08,
@@ -638,7 +638,7 @@ const styles = StyleSheet.create({
   crossHeadRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
+    paddingRight: 14,
     paddingTop: 12,
     paddingBottom: 6
   },
@@ -683,12 +683,12 @@ const styles = StyleSheet.create({
   // 흰 줄(rankingBadgeShine)이 알약 밖으로 삐져나오지 않습니다.
   rankingBadge: {
     alignSelf: "flex-start",
+    marginLeft: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     backgroundColor: "#e8f7ef",
     borderRadius: 999,
-    marginTop: 14,
     paddingHorizontal: 9,
     paddingVertical: 4,
     overflow: "hidden"

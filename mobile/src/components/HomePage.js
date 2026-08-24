@@ -15,7 +15,6 @@ import {
 } from "../utils/mealPlan";
 import { getFoodImageSource } from "../utils/foodImages";
 import { fetchBestCategoryProducts, isCoupangUrl } from "../services/coupangApi";
-import { openCoupangOrderHistory } from "../utils/coupangLinks";
 import { computePersonalRankings } from "../utils/personalRankings";
 
 const planCompleteIcon = require("../../assets/actions/fork_spoon_80dp.png");
@@ -56,6 +55,8 @@ async function openExternalUrl(url) {
 
 const shoppingCartIcon = require("../../assets/actions/shopping_cart_80dp.png");
 const coupangBadgeIcon = require("../../assets/actions/coupang.png");
+// 다시 구매 패널의 구매 버튼이 쓴다(RepurchaseItem). 홈 상단 쿠팡 카드는
+// 없앴지만 이 로고는 그쪽에서 계속 필요하다.
 const coupangLogoIcon = require("../../assets/actions/coupang2.png");
 const expiredDashboardIcon = require("../../assets/home/priority_high_80dp.png");
 const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
@@ -189,20 +190,6 @@ export default function HomePage({
           </Pressable>
         ))}
       </View>
-
-      {/* 대시보드 통계 카드 바로 아래. "다시 구매" 패널은 기본 접힘이라 여기 넣으면
-          탭을 한 번 더 해야 보이고 성격도 다르다(그건 이미 등록한 상품 재구매,
-          이건 새 상품 등록용 지름길). 카드 스타일은 AddItemPage.js의
-          orderHistoryShortcut과 동일하게 맞춰 두 화면에서 같은 모양으로 보이게
-          한다(2026-08-13 홈 노출 요청). */}
-      <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
-        <View style={styles.orderHistoryShortcutRow}>
-          <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />
-          <Text style={styles.orderHistoryShortcutTitle}>주문내역 바로가기</Text>
-          <Text style={styles.orderHistoryShortcutChevron}>{"›"}</Text>
-        </View>
-        <Text style={styles.orderHistoryShortcutHint}>캡처해서 공유하면 자동 등록돼요.</Text>
-      </Pressable>
 
       {/* 소비기한 축("이번 주 먼저 먹을 것") 바로 위에 일정 축을 둔다. 두 축이
           위아래로 나란히 있어야 홈이 "오늘 뭘 먹지"에 답하는 화면이 된다.
@@ -1071,47 +1058,6 @@ const styles = StyleSheet.create({
   planCompleteIcon: {
     width: 30,
     height: 30
-  },
-  // 상품이 없을 때 보여주는 빈 카드입니다.
-  // 대시보드 통계 카드 아래 항상 보이는 쿠팡 주문내역 캡처하러 가기 카드. AddItemPage.js의
-  // orderHistoryShortcut과 같은 모양으로 맞춰 두 화면에서 일관되게 보이도록 한다.
-  orderHistoryShortcut: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#e6e4df",
-    backgroundColor: "#fff",
-    gap: 5,
-    marginTop: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10
-  },
-  // coupang2.png는 정사각형이 아니라 가로로 긴 워드마크(565×131, 약 4.3:1)라
-  // 실제 비율에 맞춰 가로로 넓게 잡는다. 로고 자체가 색을 가진 브랜드 이미지라
-  // tintColor는 주지 않는다.
-  orderHistoryShortcutIcon: {
-    width: 58,
-    height: 14
-  },
-  orderHistoryShortcutRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8
-  },
-  orderHistoryShortcutTitle: {
-    // 제목이 남는 가로 공간을 먹어야 화살표가 오른쪽 끝으로 밀린다.
-    ...typography.cardTitle,
-    color: "#18201c",
-    flex: 1
-  },
-  orderHistoryShortcutHint: {
-    ...typography.caption,
-    color: "#68716b",
-  },
-  orderHistoryShortcutChevron: {
-    color: "#1f7a5a",
-    fontSize: 22,
-    fontWeight: "700",
-    marginTop: -2
   },
   emptyCard: {
     flex: 1,

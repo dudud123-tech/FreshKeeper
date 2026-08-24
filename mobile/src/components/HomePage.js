@@ -115,22 +115,23 @@ export default function HomePage({
   const priorityCardWidth = Math.max((layoutWidth - 32 - 20) / 3, 104);
   // 보관 위치별 개수. summary(useInventory)는 소비기한 축만 세므로 여기서 만든다.
   // 완료된 상품은 빼고 지금 보관 중인 것만 센다.
+  const storageTotal = useMemo(
+    () => items.filter((item) => item.status !== "completed").length,
+    [items]
+  );
   const storageStats = useMemo(() => {
     const counts = { 냉장: 0, 냉동: 0, 실온: 0 };
-    let total = 0;
     for (const item of items) {
       if (item.status === "completed") continue;
-      total += 1;
       if (counts[item.storage] !== undefined) counts[item.storage] += 1;
     }
     return [
-      { key: "all", label: "전체", glyph: "🧺", value: total, storage: "" },
       { key: "fridge", label: "냉장", glyph: "❄️", value: counts["냉장"], storage: "냉장" },
       { key: "freezer", label: "냉동", glyph: "🧊", value: counts["냉동"], storage: "냉동" },
       { key: "room", label: "실온", glyph: "📦", value: counts["실온"], storage: "실온" }
     ];
   }, [items]);
-  const storageTotal = storageStats[0]?.value || 0;
+
   const dashboardStats = [
     {
       label: "만료",
@@ -223,7 +224,7 @@ export default function HomePage({
           <Pressable
             key={stat.label}
             style={styles.storageStat}
-            onPress={() => onOpenInventory("all", stat.storage ? { storage: stat.storage } : {})}
+            onPress={() => onOpenInventory("all", { storage: stat.storage })}
           >
             <View style={[styles.storageIconChip, styles[`storageIconChip_${stat.key}`]]}>
               <Text style={styles.storageIconGlyph}>{stat.glyph}</Text>
@@ -668,9 +669,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center"
-  },
-  storageIconChip_all: {
-    backgroundColor: "#e6f4ee"
   },
   storageIconChip_fridge: {
     backgroundColor: "#e8f0fd"

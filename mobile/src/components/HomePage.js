@@ -157,6 +157,18 @@ export default function HomePage({
         ))}
       </View>
 
+      <Pressable style={styles.rankingEntry} onPress={() => setRankingModalVisible(true)}>
+        <Text style={styles.rankingEntryIcon}>🏆</Text>
+        <Text style={styles.rankingEntryText}>나의 랭킹</Text>
+        <Text style={styles.rankingEntryChevron}>{"›"}</Text>
+      </Pressable>
+
+      <PersonalRankingModal
+        visible={rankingModalVisible}
+        onClose={() => setRankingModalVisible(false)}
+        rankings={personalRankings}
+      />
+
       {/* 대시보드 통계 카드 바로 아래. "다시 구매" 패널은 기본 접힘이라 여기 넣으면
           탭을 한 번 더 해야 보이고 성격도 다르다(그건 이미 등록한 상품 재구매,
           이건 새 상품 등록용 지름길). 카드 스타일은 AddItemPage.js의
@@ -247,18 +259,6 @@ export default function HomePage({
       </View>
 
       <BannerAdSlot />
-
-      <Pressable style={styles.rankingEntry} onPress={() => setRankingModalVisible(true)}>
-        <Text style={styles.rankingEntryIcon}>🏆</Text>
-        <Text style={styles.rankingEntryText}>나의 랭킹</Text>
-        <Text style={styles.rankingEntryChevron}>{"›"}</Text>
-      </Pressable>
-
-      <PersonalRankingModal
-        visible={rankingModalVisible}
-        onClose={() => setRankingModalVisible(false)}
-        rankings={personalRankings}
-      />
     </ScrollView>
   );
 }
@@ -544,11 +544,11 @@ const styles = StyleSheet.create({
   },
   dashboardStatsCard: {
     flexDirection: "row",
-    minHeight: 74,
+    minHeight: 94,
     borderRadius: 18,
     backgroundColor: "#fff",
     marginTop: 14,
-    paddingVertical: 10,
+    paddingVertical: 13,
     shadowColor: "#0d3f2e",
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -565,16 +565,16 @@ const styles = StyleSheet.create({
     borderRightColor: "#efe9df"
   },
   dashboardStatLabelRow: {
-    minHeight: 20,
+    minHeight: 24,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 4
   },
   dashboardStatIconWrap: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center"
   },
@@ -591,8 +591,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#6e95f4"
   },
   dashboardStatIcon: {
-    width: 14,
-    height: 14,
+    width: 17,
+    height: 17,
     tintColor: "#fff"
   },
   dashboardStatLabel: {
@@ -603,11 +603,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "center",
-    marginTop: 6
+    marginTop: 8
   },
   dashboardStatValue: {
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 30,
+    lineHeight: 34,
     fontWeight: "900"
   },
   dashboardStatValue_expired: {
@@ -628,7 +628,8 @@ const styles = StyleSheet.create({
     marginLeft: 2,
     marginBottom: 2
   },
-  // 홈 맨 아래 "나의 랭킹" 진입점 한 줄입니다.
+  // 통계 카드 바로 아래 "나의 랭킹" 진입점 한 줄입니다. 통계 4칸과 성격이 같은
+  // (내 데이터 요약) 정보라 붙여 둡니다.
   rankingEntry: {
     flexDirection: "row",
     alignItems: "center",

@@ -129,7 +129,6 @@ export default function App() {
     restoreItem,
     toggleFavorite,
     setItemPlan,
-    clearItemPlan,
     completePlanOccurrence,
     startEdit,
     cancelEdit,
@@ -790,7 +789,6 @@ export default function App() {
             <SchedulePage
               items={items}
               setItemPlan={setItemPlan}
-              clearItemPlan={clearItemPlan}
               completeItem={completePlanOccurrence}
               openCalendar={openCalendar}
               startEdit={startEdit}

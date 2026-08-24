@@ -378,14 +378,6 @@ export function useInventory({
     );
   }
 
-  function clearItemPlan(id) {
-    setItems((current) =>
-      current.map((item) =>
-        item.id === id ? { ...item, plannedDate: "", plannedMeal: "", plannedTime: "", planRepeat: "" } : item
-      )
-    );
-  }
-
   function startEdit(item) {
     setEditingId(item.id);
     setEditForm({
@@ -506,7 +498,6 @@ export function useInventory({
     restoreItem,
     toggleFavorite,
     setItemPlan,
-    clearItemPlan,
     completePlanOccurrence,
     startEdit,
     cancelEdit,

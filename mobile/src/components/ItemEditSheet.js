@@ -20,6 +20,7 @@ const EDIT_COPY = {
   plannedWeekday: "\uBA39\uC744 \uC694\uC77C",
   plannedTime: "\uC54C\uB9BC \uC2DC\uAC04",
   planRepeat: "\uBC18\uBCF5",
+  planClear: "\uC77C\uC815 \uC9C0\uC6B0\uAE30",
   memo: "\uBA54\uBAA8",
   memoPlaceholder: "\uC608: \uD574\uB3D9 \uD544\uC694, \uC5C4\uB9C8 \uB4DC\uB9B4 \uAC83",
   tabBasic: "\uAE30\uD55C\u00B7\uC77C\uC815",
@@ -182,7 +183,28 @@ export default function ItemEditSheet({
                           </View>
                         </Field>
                       ) : null}
-                      
+                      {/* 일정을 아예 없애는 유일한 출구다. 예전에는 일정 화면 줄의
+                          "X" 버튼이었는데, 아이콘만으로는 상품이 지워지는 걸로
+                          오해하기 쉬워 글자로 바꿔 여기로 옮겼다. 값만 비우고
+                          실제 반영은 저장할 때 된다 — 이 시트의 다른 필드와 같은
+                          방식이라 실수로 눌러도 취소로 되돌릴 수 있다(2026-08-24). */}
+                      {editForm.plannedDate ? (
+                        <Pressable
+                          style={styles.planClearButton}
+                          onPress={() =>
+                            setEditForm((current) => ({
+                              ...current,
+                              plannedDate: "",
+                              plannedMeal: "",
+                              plannedTime: "",
+                              planRepeat: ""
+                            }))
+                          }
+                          accessibilityRole="button"
+                        >
+                          <Text style={styles.planClearText}>{EDIT_COPY.planClear}</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                     {/* 구조화된 필드로는 못 담는 것들(해동 필요, 보관 위치, 줄 사람 등)을
                         적어두는 자유 입력 칸. 알림이 뜰 때 본문에 같이 실린다(2026-08-23). */}
@@ -428,6 +450,19 @@ const styles = StyleSheet.create({
   planGroupTitle: {
     ...typography.label,
     color: "#1f7a5a",
+  },
+  // 일정을 비우는 버튼입니다. 저장을 눌러야 실제로 반영되므로 위험한 동작처럼
+  // 보이지 않게 담백하게 둡니다.
+  planClearButton: {
+    alignSelf: "flex-start",
+    minHeight: 36,
+    justifyContent: "center",
+    marginTop: 4,
+    paddingHorizontal: 2
+  },
+  planClearText: {
+    ...typography.label,
+    color: "#9f3929"
   },
   planHint: {
     ...typography.caption,

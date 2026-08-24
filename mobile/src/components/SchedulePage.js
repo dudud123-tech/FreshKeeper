@@ -35,7 +35,6 @@ const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
 export default function SchedulePage({
   items,
   setItemPlan,
-  clearItemPlan,
   completeItem,
   openCalendar,
   startEdit
@@ -112,7 +111,6 @@ export default function SchedulePage({
                 key={item.id}
                 item={item}
                 onComplete={() => completeItem(item.id)}
-                onClear={() => clearItemPlan(item.id)}
                 onOpenDetail={() => setDetailItemId(String(item.id))}
                 showPlannedDate
               />
@@ -137,7 +135,6 @@ export default function SchedulePage({
                     key={item.id}
                     item={item}
                     onComplete={() => completeItem(item.id)}
-                    onClear={() => clearItemPlan(item.id)}
                     onOpenDetail={() => setDetailItemId(String(item.id))}
                   />
                 ))}
@@ -248,7 +245,7 @@ export default function SchedulePage({
 
 // 일정 한 줄. 소비기한 D-day를 같이 보여줘서 "언제 먹을지"와 "언제까지 먹어야 하는지"
 // 두 축을 한눈에 비교할 수 있게 한다.
-function ScheduleRow({ item, onComplete, onClear, onOpenDetail, showPlannedDate = false }) {
+function ScheduleRow({ item, onComplete, onOpenDetail, showPlannedDate = false }) {
   const status = statusFor(item);
   const timeLabel = formatPlanTime(planTimeFor(item, DEFAULT_PLAN_TIME));
   const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)} 반복` : "";
@@ -283,9 +280,6 @@ function ScheduleRow({ item, onComplete, onClear, onOpenDetail, showPlannedDate 
           </Text>
         ) : null}
       </View>
-      <Pressable style={styles.rowAction} onPress={onClear} accessibilityRole="button" accessibilityLabel="일정 해제">
-        <Text style={styles.rowClearText}>✕</Text>
-      </Pressable>
       <Pressable style={styles.rowAction} onPress={onComplete} accessibilityRole="button" accessibilityLabel="먹었어요">
         <Image source={completeIcon} resizeMode="contain" style={styles.rowCompleteIcon} />
       </Pressable>
@@ -424,11 +418,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center"
-  },
-  rowClearText: {
-    color: "#a2aaa5",
-    fontSize: 17,
-    fontWeight: "700"
   },
   // fork_spoon_80dp.png는 초록 원+흰 체크가 이미 그려진 완성형 아이콘이라 tintColor를 주지 않는다.
   rowCompleteIcon: {

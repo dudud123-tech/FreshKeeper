@@ -380,15 +380,14 @@ export default function AddItemPage({
                   </View>
                 )}
 
-                {/* 앱 전체에서 쿠팡 주문내역으로 가는 유일한 진입점이라 모드 밖에 둔다.
-                    예전엔 "사진등록" 브랜치 안에 있어서 직접등록을 마지막으로 쓴
-                    사용자는(mode가 세션 내내 유지된다) 다시는 못 보는 상태였다.
-                    홈에도 같은 카드가 있었지만 문을 두 개 두는 셈이라 없앴다.
-                    영수증을 이미 고른 뒤에는 할 일이 끝났으므로 감춘다.
+                {/* 앱 전체에서 쿠팡 주문내역으로 가는 유일한 진입점이다(홈에도 같은
+                    카드가 있었지만 문을 두 개 두는 셈이라 없앴다).
+                    사진으로 등록할 때만 쓸모가 있어 "직접등록" 모드에서는 감춘다.
+                    영수증을 이미 고른 뒤에도 할 일이 끝났으므로 감춘다.
                     캡처 후 돌아오는 길(공유하기 → 오늘까지야)은 이미 구현돼 있는데
                     안내가 없어서(SharedImageModule.kt, App.js) 여기서 같이
-                    알려준다(2026-08-13 피드백 대응, 2026-08-24 모드 밖으로 이동). */}
-                {!receiptImage ? (
+                    알려준다(2026-08-13 피드백 대응). */}
+                {mode !== "manual" && !receiptImage ? (
                   <Pressable style={styles.orderHistoryShortcut} onPress={openCoupangOrderHistory}>
                     <View style={styles.orderHistoryShortcutRow}>
                       <Image source={coupangLogoIcon} resizeMode="contain" style={styles.orderHistoryShortcutIcon} />

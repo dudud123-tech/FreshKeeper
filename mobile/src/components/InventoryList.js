@@ -165,20 +165,31 @@ export default function InventoryList({
       { label: "등록일", value: createdDateLabel(item) }
     ];
     if (planLabel) rows.push({ label: "먹을 날", value: planLabel });
+    if (isCompletedScope) rows.push({ label: "완료", value: completionTimingLabel(item) });
     return (
       <Modal visible transparent animationType="fade" onRequestClose={() => setDetailItemId("")}>
         <View style={styles.detailBackdrop}>
           <Pressable style={styles.detailBackdropFill} onPress={() => setDetailItemId("")} />
           <View style={styles.detailCard}>
-            <ScrollView contentContainerStyle={styles.detailScroll} showsVerticalScrollIndicator={false}>
-              <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.detailImage} />
-              <Text style={styles.detailName}>{String(item.name || "")}</Text>
-              <View style={[styles.detailStatusBox, styles["detailStatus_" + (isCompletedScope ? "done" : status.tone)]]}>
-                <Text style={[styles.detailStatusText, styles["detailStatusText_" + (isCompletedScope ? "done" : status.tone)]]}>
-                  {isCompletedScope ? "먹었어요" : status.label}
-                </Text>
-                <Text style={styles.detailStatusSub}>
-                  {isCompletedScope ? completionTimingLabel(item) : expiryType + " " + (item.expiry || "-")}
+            {/* 평소에는 내용이 카드 한 장에 다 들어와 스크롤이 생기지 않는다.
+                다만 시스템 글꼴을 크게 쓰는 사용자(이 팝업이 겨냥하는 바로 그
+                사용자다)나 메모가 긴 경우까지 잘리면 안 되므로 ScrollView로
+                감싸 둔다. 버튼은 바깥에 있어 항상 닿는다(2026-08-24). */}
+            <ScrollView
+              contentContainerStyle={styles.detailBody}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {/* 사진 소스가 전부 정사각형이라(카테고리 기본 256x256, 사용자 사진도
+                  aspect [1,1]) 박스도 정사각으로 둔다. 가로로 긴 박스에 cover를
+                  걸면 위아래가 잘린다. contain은 혹시 비정사각 사진이 들어와도
+                  잘리지 않게 하는 보험이다. 256px 원본이라 너무 키우면 뭉개져서
+                  카드 폭 가득 대신 적당한 크기로 잡는다(2026-08-24). */}
+              <Image source={getFoodImageSource(item)} resizeMode="contain" style={styles.detailImage} />
+              <View style={styles.detailTitleRow}>
+                <Text style={styles.detailName} numberOfLines={2}>{String(item.name || "")}</Text>
+                <Text style={[styles.badge, isCompletedScope ? styles.completedBadge : styles[status.tone]]}>
+                  {isCompletedScope ? "완료" : status.label}
                 </Text>
               </View>
               {rows.map((row) => (
@@ -190,7 +201,7 @@ export default function InventoryList({
               {item.memo?.trim() ? (
                 <View style={styles.detailMemoBox}>
                   <Text style={styles.detailRowLabel}>메모</Text>
-                  <Text style={styles.detailMemoText}>{item.memo.trim()}</Text>
+                  <Text style={styles.detailMemoText} numberOfLines={3}>{item.memo.trim()}</Text>
                 </View>
               ) : null}
             </ScrollView>
@@ -1452,102 +1463,62 @@ const styles = StyleSheet.create({
   },
   detailCard: {
     width: "100%",
-    maxHeight: "88%",
+    maxHeight: "92%",
     borderRadius: 22,
     backgroundColor: "#fff",
     overflow: "hidden"
   },
-  detailScroll: {
-    paddingBottom: 8
+  detailBody: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 4
   },
-  // 사진은 카드 폭을 꽉 채웁니다 — 상세 팝업을 여는 가장 큰 이유입니다.
+  // 정사각형입니다. 소스가 1:1이라 잘림이 없고, 카테고리 기본 이미지가 256px
+  // 뿐이라 이보다 키우면 뭉갭니다.
   detailImage: {
-    width: "100%",
-    height: 220,
+    alignSelf: "center",
+    width: 168,
+    height: 168,
+    borderRadius: 16,
     backgroundColor: "#f3f6f4"
   },
-  detailName: {
-    fontSize: 26,
-    lineHeight: 34,
-    fontWeight: "800",
-    color: "#18201c",
-    paddingHorizontal: 20,
-    paddingTop: 16
-  },
-  detailStatusBox: {
-    borderRadius: 16,
-    marginHorizontal: 20,
-    marginTop: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+  detailTitleRow: {
+    flexDirection: "row",
     alignItems: "center",
-    gap: 4
+    gap: 8,
+    marginTop: 14,
+    marginBottom: 4
   },
-  detailStatus_expired: {
-    backgroundColor: "#fdecea"
-  },
-  detailStatus_warning: {
-    backgroundColor: "#fdf1e3"
-  },
-  detailStatus_normal: {
-    backgroundColor: "#e9f5ef"
-  },
-  detailStatus_done: {
-    backgroundColor: "#eef1ef"
-  },
-  detailStatusText: {
-    fontSize: 30,
-    lineHeight: 38,
-    fontWeight: "900"
-  },
-  detailStatusText_expired: {
-    color: "#c0392b"
-  },
-  detailStatusText_warning: {
-    color: "#c8781f"
-  },
-  detailStatusText_normal: {
-    color: "#1f7a5a"
-  },
-  detailStatusText_done: {
-    color: "#5b665f"
-  },
-  detailStatusSub: {
-    fontSize: 17,
-    lineHeight: 24,
-    color: "#46514a"
+  detailName: {
+    ...typography.screenTitle,
+    color: "#18201c",
+    flex: 1
   },
   detailRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-    marginHorizontal: 20,
-    paddingVertical: 13,
+    paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f2f0"
   },
   detailRowLabel: {
-    fontSize: 17,
-    lineHeight: 24,
+    ...typography.body,
     color: "#77807a"
   },
   detailRowValue: {
-    fontSize: 19,
-    lineHeight: 26,
-    fontWeight: "700",
+    ...typography.label,
     color: "#18201c",
     flexShrink: 1,
     textAlign: "right"
   },
   detailMemoBox: {
-    marginHorizontal: 20,
-    marginTop: 14,
-    gap: 6
+    marginTop: 12,
+    gap: 4
   },
   detailMemoText: {
-    fontSize: 19,
-    lineHeight: 28,
+    ...typography.body,
     color: "#2f3a34"
   },
   // 버튼은 손가락으로 누르기 쉽게 높이를 넉넉히 잡습니다.
@@ -1560,7 +1531,7 @@ const styles = StyleSheet.create({
   },
   detailButton: {
     flex: 1,
-    minHeight: 56,
+    minHeight: 48,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center"
@@ -1571,16 +1542,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff"
   },
   detailButtonGhostText: {
-    fontSize: 19,
-    fontWeight: "700",
+    ...typography.label,
+    fontSize: 16,
     color: "#46514a"
   },
   detailButtonPrimary: {
     backgroundColor: "#1f7a5a"
   },
   detailButtonPrimaryText: {
-    fontSize: 19,
-    fontWeight: "800",
+    ...typography.label,
+    fontSize: 16,
     color: "#fff"
   },
   sheetBackdrop: {

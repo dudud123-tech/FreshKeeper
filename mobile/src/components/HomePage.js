@@ -115,10 +115,35 @@ export default function HomePage({
   const priorityCardWidth = Math.max((layoutWidth - 32 - 20) / 3, 104);
   // 보관 위치별 개수. summary(useInventory)는 소비기한 축만 세므로 여기서 만든다.
   // 완료된 상품은 빼고 지금 보관 중인 것만 센다.
-  const storageTotal = useMemo(
-    () => items.filter((item) => item.status !== "completed").length,
-    [items]
-  );
+  // 상태(만료/임박/이번 주/보관 중) x 보관 위치(냉장/냉동/실온) 교차 집계.
+  // 기준은 useInventory의 summary와 똑같이 맞춰야 한다 — 숫자가 어긋나면
+  // 홈과 보관함이 다른 말을 하게 된다(임박/이번 주는 서로 포함 관계라
+  // 한 상품이 여러 줄에 동시에 잡히는 게 정상이다).
+  const crossStats = useMemo(() => {
+    const blank = () => ({ 냉장: 0, 냉동: 0, 실온: 0 });
+    const rows = {
+      expired: { total: 0, byStorage: blank() },
+      urgent: { total: 0, byStorage: blank() },
+      week: { total: 0, byStorage: blank() },
+      all: { total: 0, byStorage: blank() }
+    };
+    for (const item of items) {
+      if (item.status === "completed") continue;
+      const days = daysUntil(item.expiry);
+      const keys = ["all"];
+      if (days < 0) keys.push("expired");
+      else {
+        if (days <= reminderDays) keys.push("urgent");
+        if (days <= 7) keys.push("week");
+      }
+      for (const key of keys) {
+        rows[key].total += 1;
+        if (rows[key].byStorage[item.storage] !== undefined) rows[key].byStorage[item.storage] += 1;
+      }
+    }
+    return rows;
+  }, [items, reminderDays]);
+
   const storageStats = useMemo(() => {
     const counts = { 냉장: 0, 냉동: 0, 실온: 0 };
     for (const item of items) {
@@ -132,36 +157,14 @@ export default function HomePage({
     ];
   }, [items]);
 
-  const dashboardStats = [
-    {
-      label: "만료",
-      value: summary.expired,
-      icon: expiredDashboardIcon,
-      tone: "expired",
-      filter: "expired"
-    },
-    {
-      label: "임박",
-      value: summary.urgent,
-      icon: urgentDashboardIcon,
-      tone: "urgent",
-      filter: "urgent"
-    },
-    {
-      label: "이번 주",
-      value: summary.week || 0,
-      icon: weekDashboardIcon,
-      tone: "week",
-      filter: "week"
-    },
-    {
-      label: "보관 중",
-      value: summary.total,
-      icon: storedDashboardIcon,
-      tone: "stored",
-      filter: "all"
-    }
-  ];
+  // 보관 중은 개수가 0이어도 항상 보여준다(집이 비었다는 것도 정보다).
+  // 나머지는 0이면 줄째로 감춘다 — "만료 0개"는 알려줄 게 없는 줄이다.
+  const crossRows = [
+    { key: "expired", label: "만료", tone: "expired", icon: expiredDashboardIcon, filter: "expired" },
+    { key: "urgent", label: "임박", tone: "urgent", icon: urgentDashboardIcon, filter: "urgent" },
+    { key: "week", label: "이번 주", tone: "week", icon: weekDashboardIcon, filter: "week" },
+    { key: "all", label: "보관 중", tone: "stored", icon: storedDashboardIcon, filter: "all" }
+  ].filter((row) => row.key === "all" || crossStats[row.key].total > 0);
 
   return (
     <ScrollView
@@ -189,51 +192,49 @@ export default function HomePage({
         rankings={personalRankings}
       />
 
-      <View style={styles.dashboardStatsCard}>
-        {dashboardStats.map((stat, index) => (
-          <Pressable
-            key={stat.label}
-            style={[styles.dashboardStat, index < dashboardStats.length - 1 && styles.dashboardStatDivider]}
-            onPress={() => onOpenInventory(stat.filter)}
-          >
-            <View style={styles.dashboardStatLabelRow}>
-              <View style={[styles.dashboardStatIconWrap, styles[`dashboardStatIconWrap_${stat.tone}`]]}>
-                <Image source={stat.icon} resizeMode="contain" style={styles.dashboardStatIcon} />
-              </View>
-              <Text style={styles.dashboardStatLabel}>{stat.label}</Text>
+      {/* 상태(언제까지)와 보관 위치(어디에)를 한 카드로 엮는다. 예전엔 두 카드로
+          나뉘어 있었는데, 같은 상품을 두 번 세면서도 "만료된 게 어디 있는지"라는
+          정작 알고 싶은 건 어느 쪽도 답해주지 못했다.
+          줄 제목을 누르면 그 상태로, 보관 칩을 누르면 상태+보관 위치로 걸러진
+          보관함이 열린다. 개수가 0인 보관 칩은 그리지 않는다 — 없는 칸까지
+          채우면 정작 있는 것이 안 보인다(2026-08-24). */}
+      <View style={styles.crossCard}>
+        {crossRows.map((row, index) => {
+          const stat = crossStats[row.key];
+          const chips = storageStats.filter((s) => stat.byStorage[s.storage] > 0);
+          return (
+            <View key={row.key} style={[styles.crossRow, index > 0 && styles.crossRowDivider]}>
+              <Pressable style={styles.crossRowHead} onPress={() => onOpenInventory(row.filter)}>
+                <View style={[styles.crossIconWrap, styles["dashboardStatIconWrap_" + row.tone]]}>
+                  <Image source={row.icon} resizeMode="contain" style={styles.crossIcon} />
+                </View>
+                <Text style={styles.crossLabel}>{row.label}</Text>
+                <Text style={[styles.crossValue, styles["dashboardStatValue_" + row.tone]]}>{stat.total}</Text>
+                <Text style={styles.crossUnit}>개</Text>
+                <Text style={styles.crossChevron}>{"›"}</Text>
+              </Pressable>
+              {chips.length ? (
+                <View style={styles.crossChipRow}>
+                  {chips.map((s) => (
+                    <Pressable
+                      key={s.key}
+                      style={styles.crossChip}
+                      onPress={() => onOpenInventory(row.filter, { storage: s.storage })}
+                    >
+                      <Text style={styles.crossChipGlyph}>{s.glyph}</Text>
+                      <Text style={styles.crossChipLabel}>{s.label}</Text>
+                      <Text style={styles.crossChipValue}>{stat.byStorage[s.storage]}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.crossEmpty}>
+                  {row.key === "all" ? "아직 등록한 상품이 없어요." : "보관 위치가 지정되지 않았어요."}
+                </Text>
+              )}
             </View>
-            <View style={styles.dashboardStatValueRow}>
-              <Text style={[styles.dashboardStatValue, styles[`dashboardStatValue_${stat.tone}`]]}>{stat.value}</Text>
-              <Text style={styles.dashboardStatUnit}>개</Text>
-            </View>
-          </Pressable>
-        ))}
-      </View>
-
-      {/* 위 카드가 "언제까지"라면 이건 "어디에" 축이다. 색은 만료(빨강)·임박(주황)과
-          겹치지 않게 골랐다 — 보관 위치를 위험도로 오해하지 않게 하려는 것이라
-          실온도 임박 주황 대신 차분한 갈색을 쓴다.
-          냉장/냉동/실온 전용 아이콘 에셋이 없어 이모지를 쓴다.
-          총계는 헤더 오른쪽에서 한 번만 보여준다 — "전체" 타일과 "전체보기" 링크가
-          있었지만 둘 다 같은 숫자·같은 동작이라 걷어냈다(2026-08-24). */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>보관 위치</Text>
-        <Text style={styles.sectionCount}>{storageTotal}개</Text>
-      </View>
-      <View style={styles.storageStatsCard}>
-        {storageStats.map((stat) => (
-          <Pressable
-            key={stat.label}
-            style={styles.storageStat}
-            onPress={() => onOpenInventory("all", { storage: stat.storage })}
-          >
-            <View style={[styles.storageIconChip, styles[`storageIconChip_${stat.key}`]]}>
-              <Text style={styles.storageIconGlyph}>{stat.glyph}</Text>
-            </View>
-            <Text style={styles.storageStatLabel}>{stat.label}</Text>
-            <Text style={styles.storageStatValue}>{stat.value}</Text>
-          </Pressable>
-        ))}
+          );
+        })}
       </View>
 
       {/* 소비기한 축("이번 주 먼저 먹을 것") 바로 위에 일정 축을 둔다. 두 축이
@@ -561,42 +562,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: Platform.OS === "android" ? 126 : 104
   },
-  dashboardStatsCard: {
-    flexDirection: "row",
-    minHeight: 94,
-    borderRadius: 18,
-    backgroundColor: "#fff",
-    marginTop: 14,
-    paddingVertical: 13,
-    shadowColor: "#0d3f2e",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 2
-  },
-  dashboardStat: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4
-  },
-  dashboardStatDivider: {
-    borderRightWidth: 1,
-    borderRightColor: "#efe9df"
-  },
-  dashboardStatLabelRow: {
-    minHeight: 24,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4
-  },
-  dashboardStatIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center"
-  },
   dashboardStatIconWrap_expired: {
     backgroundColor: "#ee645f"
   },
@@ -608,26 +573,6 @@ const styles = StyleSheet.create({
   },
   dashboardStatIconWrap_stored: {
     backgroundColor: "#6e95f4"
-  },
-  dashboardStatIcon: {
-    width: 17,
-    height: 17,
-    tintColor: "#fff"
-  },
-  dashboardStatLabel: {
-    ...typography.captionStrong,
-    color: "#617068",
-  },
-  dashboardStatValueRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "center",
-    marginTop: 8
-  },
-  dashboardStatValue: {
-    fontSize: 30,
-    lineHeight: 34,
-    fontWeight: "900"
   },
   dashboardStatValue_expired: {
     color: "#ee645f"
@@ -641,57 +586,98 @@ const styles = StyleSheet.create({
   dashboardStatValue_stored: {
     color: "#6e95f4"
   },
-  dashboardStatUnit: {
-    ...typography.captionStrong,
-    color: "#68716b",
-    marginLeft: 2,
-    marginBottom: 2
-  },
-  // 보관 위치 타일 4개를 담는 카드입니다. 칸 나누는 세로선 없이 아이콘 칩으로 구분합니다.
-  storageStatsCard: {
-    flexDirection: "row",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#e9ece9",
+  // 상태 x 보관 교차 카드입니다. 줄마다 상태 머리글 + 보관 칩으로 이뤄집니다.
+  crossCard: {
+    borderRadius: 18,
     backgroundColor: "#fff",
-    paddingVertical: 14,
-    paddingHorizontal: 4
+    marginTop: 14,
+    paddingVertical: 4,
+    shadowColor: "#0d3f2e",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2
   },
-  storageStat: {
-    flex: 1,
+  crossRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 11
+  },
+  crossRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: "#f0f2f0"
+  },
+  crossRowHead: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6
+    gap: 8
   },
-  // 아이콘을 감싸는 둥근 사각형입니다. 색은 아래 storageIconChip_*가 채웁니다.
-  storageIconChip: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  crossIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center"
   },
-  storageIconChip_fridge: {
-    backgroundColor: "#e8f0fd"
+  crossIcon: {
+    width: 17,
+    height: 17,
+    tintColor: "#fff"
   },
-  storageIconChip_freezer: {
-    backgroundColor: "#e3f4f8"
+  // 상태 이름이 남는 폭을 먹어야 개수가 오른쪽에 붙는다.
+  crossLabel: {
+    ...typography.label,
+    color: "#3d4742",
+    flex: 1
   },
-  // 실온은 임박(주황 #ee9a35)과 헷갈리지 않게 차분한 갈색 계열로 둡니다.
-  storageIconChip_room: {
-    backgroundColor: "#f5efe4"
+  crossValue: {
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: "900"
   },
-  storageIconGlyph: {
-    fontSize: 18
+  crossUnit: {
+    ...typography.caption,
+    color: "#8b948d",
+    marginLeft: -1
   },
-  storageStatLabel: {
+  crossChevron: {
+    color: "#b6bfb9",
+    fontSize: 20,
+    fontWeight: "700",
+    marginTop: -2,
+    marginLeft: 2
+  },
+  // 보관 칩 줄. 아이콘 원(26) + 간격(8)만큼 들여써서 상태 이름과 세로로 맞춥니다.
+  crossChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 8,
+    marginLeft: 34
+  },
+  crossChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 999,
+    backgroundColor: "#f2f5f3",
+    paddingHorizontal: 10,
+    paddingVertical: 5
+  },
+  crossChipGlyph: {
+    fontSize: 12
+  },
+  crossChipLabel: {
     ...typography.caption,
     color: "#68716b"
   },
-  storageStatValue: {
+  crossChipValue: {
     ...typography.captionStrong,
-    fontSize: 15,
     color: "#18201c"
+  },
+  crossEmpty: {
+    ...typography.caption,
+    color: "#a2aaa5",
+    marginTop: 6,
+    marginLeft: 34
   },
   // 통계 카드 위 "나의 랭킹" 배지입니다. overflow: hidden이라야 위를 지나가는
   // 흰 줄(rankingBadgeShine)이 알약 밖으로 삐져나오지 않습니다.
@@ -851,11 +837,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 6,
     borderLeftColor: "#1f7a5a",
     paddingLeft: 10
-  },
-  // 섹션 제목 오른쪽에 붙는 개수입니다("보관 위치" 옆 총계).
-  sectionCount: {
-    ...typography.caption,
-    color: "#8b948d"
   },
   // 오른쪽 "더보기 >" 텍스트입니다.
   moreText: {

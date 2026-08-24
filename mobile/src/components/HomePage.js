@@ -213,11 +213,12 @@ export default function HomePage({
       {/* 위 카드가 "언제까지"라면 이건 "어디에" 축이다. 색은 만료(빨강)·임박(주황)과
           겹치지 않게 골랐다 — 보관 위치를 위험도로 오해하지 않게 하려는 것이라
           실온도 임박 주황 대신 차분한 갈색을 쓴다.
-          냉장/냉동/실온 전용 아이콘 에셋이 없어 이모지를 쓴다(2026-08-24). */}
-      {/* "전체보기"는 뺐다 — 바로 아래 "전체" 타일이 같은 동작이라 같은 버튼이
-          두 개인 셈이었다(2026-08-24). */}
+          냉장/냉동/실온 전용 아이콘 에셋이 없어 이모지를 쓴다.
+          총계는 헤더 오른쪽에서 한 번만 보여준다 — "전체" 타일과 "전체보기" 링크가
+          있었지만 둘 다 같은 숫자·같은 동작이라 걷어냈다(2026-08-24). */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>보관 중인 식재료 {storageTotal}</Text>
+        <Text style={styles.sectionTitle}>보관 위치</Text>
+        <Text style={styles.sectionCount}>{storageTotal}개</Text>
       </View>
       <View style={styles.storageStatsCard}>
         {storageStats.map((stat) => (
@@ -838,10 +839,23 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 10
   },
-  // 섹션 제목입니다. 예: "오늘 먹기로 한 것", "이번 주 먼저 먹을 것".
+  // 섹션 제목입니다. 예: "보관 위치", "오늘 먹기로 한 것".
+  // 앱 헤더("오늘까지야, 놓치기 전에")가 20px/800이라 예전 18px/800으로는 같은
+  // 급으로 읽혔다. 크기를 낮춰 계층을 만들고, 대신 왼쪽 초록바로 섹션 시작을
+  // 표시한다 — 글자만 줄이면 구분이 약해지기 때문이다(2026-08-24).
   sectionTitle: {
-    ...typography.sectionTitle,
-    color: "#18201c",
+    fontSize: 14,
+    fontWeight: "800",
+    lineHeight: 20,
+    color: "#2f3a34",
+    borderLeftWidth: 3,
+    borderLeftColor: "#1f7a5a",
+    paddingLeft: 8
+  },
+  // 섹션 제목 오른쪽에 붙는 개수입니다("보관 위치" 옆 총계).
+  sectionCount: {
+    ...typography.caption,
+    color: "#8b948d"
   },
   // 오른쪽 "더보기 >" 텍스트입니다.
   moreText: {

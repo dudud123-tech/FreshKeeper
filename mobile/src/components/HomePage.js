@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from "react-native-reanimated";
 import BannerAdSlot from "./BannerAdSlot";
 import { typography } from "../theme/typography";
 import { daysUntil, itemCreatedDate, todayIso } from "../utils/date";
@@ -32,28 +31,6 @@ async function openExternalUrl(url) {
   }
 }
 
-// "나의 랭킹" 배지 위를 사선으로 스쳐 지나가는 은은한 흰색 하이라이트.
-function ShimmerHighlight() {
-  const translateX = useSharedValue(-24);
-
-  useEffect(() => {
-    translateX.value = withRepeat(
-      withSequence(
-        withTiming(-24, { duration: 0 }),
-        withTiming(100, { duration: 900 }),
-        withTiming(100, { duration: 0 })
-      ),
-      -1
-    );
-  }, [translateX]);
-
-  const shimmerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }, { rotate: "18deg" }]
-  }));
-
-  return <Animated.View pointerEvents="none" style={[styles.growthRankingBadgeShine, shimmerStyle]} />;
-}
-
 const shoppingCartIcon = require("../../assets/actions/shopping_cart_80dp.png");
 const coupangBadgeIcon = require("../../assets/actions/coupang.png");
 const coupangLogoIcon = require("../../assets/actions/coupang2.png");
@@ -61,51 +38,10 @@ const expiredDashboardIcon = require("../../assets/home/priority_high_80dp.png")
 const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
 const weekDashboardIcon = require("../../assets/home/calendar_month.png");
 const storedDashboardIcon = require("../../assets/home/snowflake_80dp.png");
-const levelImages = [
-  require("../../assets/Level/season1/1.png"),
-  require("../../assets/Level/season1/2.png"),
-  require("../../assets/Level/season1/3.png"),
-  require("../../assets/Level/season1/4.png"),
-  require("../../assets/Level/season1/5.png"),
-  require("../../assets/Level/season1/6.png"),
-  require("../../assets/Level/season1/7.png"),
-  require("../../assets/Level/season1/8.png"),
-  require("../../assets/Level/season1/9.png"),
-  require("../../assets/Level/season1/10.png")
-];
-const levelNames = [
-  { name: "씨앗", meaning: "관리의 시작" },
-  { name: "새싹", meaning: "첫 성장이 시작됨" },
-  { name: "어린잎", meaning: "관리 습관이 자리 잡기 시작" },
-  { name: "푸른잎", meaning: "꾸준히 성장 중" },
-  { name: "무럭무럭", meaning: "눈에 띄게 잘 자라는 단계" },
-  { name: "어린나무", meaning: "안정적인 관리 습관 형성" },
-  { name: "열매 맺는 나무", meaning: "관리 성과가 나타나기 시작" },
-  { name: "풍성한 나무", meaning: "꾸준한 관리가 쌓인 상태" },
-  { name: "꽃피는 나무", meaning: "좋은 관리 습관이 완성 단계에 가까움" },
-  { name: "황금 열매", meaning: "최고의 관리 상태" }
-];
-const LEVEL_XP_THRESHOLDS = [0, 30, 80, 150, 250, 380, 540, 730, 950, 1200];
-// 성장 XP. 등록은 낮게, "기한 내에 실제로 먹은 것"은 높게 둔다 — 영수증·쿠팡
-// 캡처 한 번에 10개가 한꺼번에 등록되기 때문에, 등록에 무게를 실으면 관리를
-// 안 해도 레벨이 뛴다(등록 5XP 시절 6개만 등록해도 레벨 2였다). 2026-08-23에
-// 전체를 약 1/3로 낮춰 만렙까지 열심히 써도 1년쯤 걸리게 맞췄다.
-//
-// ⚠️ useGrowthSync.js와 HomePage.js 두 곳에 같은 값이 있다(로그인 사용자는
-// 서버 적립, 비로그인은 로컬 계산). 한쪽만 바꾸면 두 값이 어긋난다.
-// ⚠️ 이미 적립된 XP는 D1의 growth_events에 xp_delta로 남아 있어 소급되지
-// 않는다. 값을 바꿔도 기존 사용자 레벨은 내려가지 않고, 앞으로 쌓일 XP만 준다.
-const REGISTER_XP_PER_ITEM = 1;
-const COMPLETE_XP_PER_ITEM = 6;
-const URGENT_COMPLETE_XP_PER_ITEM = 9;
-const EXPIRED_ITEM_PENALTY_XP = 5;
-
 export default function HomePage({
   items,
   summary,
   reminderDays,
-  growthProfile,
-  growthDashboardReport,
   onOpenInventory,
   onOpenAdd,
   onOpenSchedule,
@@ -157,8 +93,6 @@ export default function HomePage({
   const recentItems = [...activeItems]
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
     .slice(0, 4);
-  const growthReport = normalizeGrowthProfile(growthProfile) || getGrowthReport(items, reminderDays);
-  const growthLevel = levelNames[growthReport.level - 1] || levelNames[0];
   const dashboardStats = [
     {
       label: "만료",
@@ -202,50 +136,6 @@ export default function HomePage({
         }
       }}
     >
-      <Pressable style={styles.growthCard} onPress={() => onOpenInventory("completed")}>
-        <Image
-          source={levelImages[growthReport.level - 1] || levelImages[0]}
-          resizeMode="contain"
-          style={styles.growthLevelImage}
-        />
-        <View style={styles.growthHeader}>
-          <View>
-            <View style={styles.growthEyebrowRow}>
-              <View style={styles.growthEyebrowPill}>
-                <Text style={styles.growthEyebrowLeaf}>❤</Text>
-                <Text style={styles.growthEyebrow}>냉장고 관리단계</Text>
-              </View>
-              <Pressable
-                style={styles.growthRankingBadge}
-                onPress={() => setRankingModalVisible(true)}
-              >
-                <ShimmerHighlight />
-                <Text style={styles.growthRankingBadgeIcon}>🏆</Text>
-                <Text style={styles.growthRankingBadgeText}>나의 랭킹</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.growthTitle}>
-              <Text>{growthLevel.name}</Text>
-              <Text style={styles.growthTitleMeaning}> - {growthLevel.meaning}</Text>
-            </Text>
-          </View>
-        </View>
-        {/* 만료/임박 등 실제 알림성 정보는 바로 아래 통계 카드가 이미 보여주므로,
-            성장 카드는 레벨/진행도에만 집중하고 중복되던 문구 2줄은 뺐다(2026-08-08). */}
-        <View style={styles.growthProgressTrack}>
-          <View style={[styles.growthProgressFill, { width: `${growthReport.percent}%` }]} />
-        </View>
-        <View style={styles.growthFooter}>
-          <Text style={styles.growthFooterText}>다음 단계까지 {growthReport.remainingXp} XP</Text>
-        </View>
-      </Pressable>
-
-      <PersonalRankingModal
-        visible={rankingModalVisible}
-        onClose={() => setRankingModalVisible(false)}
-        rankings={personalRankings}
-      />
-
       <View style={styles.dashboardStatsCard}>
         {dashboardStats.map((stat, index) => (
           <Pressable
@@ -357,6 +247,18 @@ export default function HomePage({
       </View>
 
       <BannerAdSlot />
+
+      <Pressable style={styles.rankingEntry} onPress={() => setRankingModalVisible(true)}>
+        <Text style={styles.rankingEntryIcon}>🏆</Text>
+        <Text style={styles.rankingEntryText}>나의 랭킹</Text>
+        <Text style={styles.rankingEntryChevron}>{"›"}</Text>
+      </Pressable>
+
+      <PersonalRankingModal
+        visible={rankingModalVisible}
+        onClose={() => setRankingModalVisible(false)}
+        rankings={personalRankings}
+      />
     </ScrollView>
   );
 }
@@ -630,138 +532,6 @@ function labelForDays(days) {
   return `D-${days}`;
 }
 
-function getDashboardReport({ activeItems, completedItems, summary }) {
-  const now = new Date();
-  const weekStart = startOfDay(addDays(now, -6));
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const weekCompleted = completedItems.filter((item) => isDateSince(item.completedAt, weekStart)).length;
-  const monthCompleted = completedItems.filter((item) => isDateSince(item.completedAt, monthStart)).length;
-  const weekRegistered = [...activeItems, ...completedItems].filter((item) => {
-    return isDateSince(item.createdAt, weekStart);
-  }).length;
-
-  if (weekCompleted > 0) {
-    return {
-      title: "이번 주 리포트",
-      body: `${weekCompleted}개를 버리기 전에 챙겼어요.`
-    };
-  }
-
-  if (monthCompleted > 0) {
-    return {
-      title: "이번 달 리포트",
-      body: `${monthCompleted}개를 잘 관리했어요.`
-    };
-  }
-
-  if (summary.expired > 0) {
-    return {
-      title: "정리가 필요해요",
-      body: `만료된 상품 ${summary.expired}개를 확인해 주세요.`
-    };
-  }
-
-  if (summary.urgent > 0) {
-    return {
-      title: "놓치기 전에 확인해요",
-      body: `${summary.urgent}개를 먼저 챙기면 좋아요.`
-    };
-  }
-
-  if (weekRegistered > 0) {
-    return {
-      title: "관리 리듬 좋아요",
-      body: "새로 등록한 상품을 차근차근 챙겨요."
-    };
-  }
-
-  return {
-    title: "관리 리듬 좋아요",
-    body: "지금 급한 상품이 없어요."
-  };
-}
-
-function normalizeDashboardReport(report) {
-  if (!report || typeof report !== "object") return null;
-  const title = String(report.title || "").trim();
-  const body = String(report.body || "").trim();
-  if (!title || !body) return null;
-  return { title, body };
-}
-
-function addDays(date, days) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function startOfDay(date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function isDateSince(value, since) {
-  const date = new Date(value || 0);
-  return !Number.isNaN(date.getTime()) && date >= since;
-}
-
-function getGrowthReport(items, reminderDays) {
-  const activeItems = items.filter((item) => item.status !== "completed");
-  const completedItems = items.filter((item) => item.status === "completed");
-  const registeredXp = items.length * REGISTER_XP_PER_ITEM;
-  let completionXp = 0;
-  let completedBeforeExpiry = 0;
-
-  completedItems.forEach((item) => {
-    const completedAt = new Date(item.completedAt || 0);
-    const expiryAt = new Date(`${item.expiry}T23:59:59`);
-    if (Number.isNaN(completedAt.getTime()) || Number.isNaN(expiryAt.getTime())) return;
-    if (completedAt <= expiryAt) {
-      completedBeforeExpiry += 1;
-      const daysLeftWhenCompleted = Math.ceil((expiryAt.getTime() - completedAt.getTime()) / 86400000);
-      completionXp += daysLeftWhenCompleted <= reminderDays
-        ? URGENT_COMPLETE_XP_PER_ITEM
-        : COMPLETE_XP_PER_ITEM;
-    }
-  });
-
-  const expiredPenalty = activeItems.filter((item) => daysUntil(item.expiry) < 0).length * EXPIRED_ITEM_PENALTY_XP;
-  const xp = Math.max(0, registeredXp + completionXp - expiredPenalty);
-  const levelIndex = LEVEL_XP_THRESHOLDS.reduce((currentLevel, threshold, index) => {
-    return xp >= threshold ? index : currentLevel;
-  }, 0);
-  const level = Math.min(10, levelIndex + 1);
-  const currentThreshold = LEVEL_XP_THRESHOLDS[level - 1] || 0;
-  const nextThreshold = LEVEL_XP_THRESHOLDS[level] || currentThreshold;
-  const range = Math.max(1, nextThreshold - currentThreshold);
-  const progressXp = Math.max(0, xp - currentThreshold);
-  const percent = level >= 10 ? 100 : Math.min(95, Math.max(8, Math.round((progressXp / range) * 100)));
-  const remainingXp = level >= 10 ? 0 : Math.max(0, nextThreshold - xp);
-
-  return {
-    level,
-    xp,
-    completedBeforeExpiry,
-    percent,
-    remainingXp
-  };
-}
-
-function normalizeGrowthProfile(profile) {
-  if (!profile || typeof profile !== "object") return null;
-  const level = Number(profile.level);
-  const xp = Number(profile.xp);
-  if (!Number.isFinite(level) || !Number.isFinite(xp)) return null;
-  return {
-    level: Math.min(10, Math.max(1, Math.round(level))),
-    xp: Math.max(0, Math.round(xp)),
-    completedBeforeExpiry: Math.max(0, Math.round(Number(profile.completedBeforeExpiry || 0))),
-    percent: Math.min(100, Math.max(0, Math.round(Number(profile.percent || 0)))),
-    remainingXp: Math.max(0, Math.round(Number(profile.remainingXp || 0)))
-  };
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -858,127 +628,32 @@ const styles = StyleSheet.create({
     marginLeft: 2,
     marginBottom: 2
   },
-  growthCard: {
-    borderRadius: 18,
+  // 홈 맨 아래 "나의 랭킹" 진입점 한 줄입니다.
+  rankingEntry: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e6e4df",
     backgroundColor: "#fff",
-    marginTop: 0,
-    padding: 16,
-    position: "relative",
-    shadowColor: "#0d3f2e",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 1
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12
   },
-  growthHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingRight: 112
+  rankingEntryIcon: {
+    fontSize: 15
   },
-  growthEyebrowRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 7
-  },
-  growthEyebrowPill: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#e8f7ef",
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    marginLeft: -4
-  },
-  growthEyebrow: {
-    ...typography.captionStrong,
-    color: "#1f7a5a",
-    fontSize: 11
-  },
-  growthEyebrowLeaf: {
-    ...typography.captionStrong,
-    color: "#9bd9b4",
-    fontSize: 10
-  },
-  growthTitle: {
+  rankingEntryText: {
     ...typography.cardTitle,
     color: "#18201c",
+    flex: 1
   },
-  growthTitleMeaning: {
-    ...typography.bodyStrong,
-    color: "#68716b"
-  },
-  growthLevelImage: {
-    position: "absolute",
-    top: 5,
-    right: 10,
-    width: 140,
-    height: 140
-  },
-  growthMessage: {
-    ...typography.bodyStrong,
-    color: "#14583f",
-    marginTop: 14
-  },
-  growthText: {
-    ...typography.caption,
-    color: "#68716b",
-    marginTop: 4
-  },
-  growthProgressTrack: {
-    height: 10,
-    borderRadius: 999,
-    backgroundColor: "#edf0ec",
-    overflow: "hidden",
-    marginTop: 14,
-    // 화분 이미지(오른쪽 140px)와 세로로 겹치는 위치라 막대 길이를 그만큼 줄여서
-    // 겹침을 피한다 — growthHeader의 paddingRight와 같은 값(2026-08-08).
-    marginRight: 112
-  },
-  growthProgressFill: {
-    height: "100%",
-    borderRadius: 999,
-    backgroundColor: "#1f7a5a"
-  },
-  growthFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 8
-  },
-  growthFooterText: {
-    ...typography.captionStrong,
-    color: "#68716b",
-  },
-  growthRankingBadge: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#e8f7ef",
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    overflow: "hidden"
-  },
-  growthRankingBadgeShine: {
-    position: "absolute",
-    top: -8,
-    bottom: -8,
-    left: 0,
-    width: 10,
-    backgroundColor: "rgba(255,255,255,0.65)"
-  },
-  growthRankingBadgeIcon: {
-    fontSize: 11
-  },
-  growthRankingBadgeText: {
-    ...typography.captionStrong,
+  rankingEntryChevron: {
     color: "#1f7a5a",
-    fontSize: 11
+    fontSize: 22,
+    fontWeight: "700",
+    marginTop: -2
   },
   rankingBackdrop: {
     flex: 1,

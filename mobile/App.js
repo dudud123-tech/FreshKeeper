@@ -255,11 +255,10 @@ export default function App() {
     defaultExpiryType: DEFAULT_EXPIRY_TYPE,
     authUser
   });
-  const { growthProfile, growthDashboardReport } = useGrowthSync({
-    items,
-    reminderDays,
-    authUser
-  });
+  // 성장 XP는 홈에서 더 이상 보여주지 않지만(성장 카드 제거, 2026-08-24) 서버
+  // 적립은 계속 돌린다 — growth_events가 끊기면 나중에 성장을 되살릴 때 그
+  // 공백 기간의 이력이 영영 비어버린다. 반환값은 쓰는 곳이 없어 받지 않는다.
+  useGrowthSync({ items, reminderDays, authUser });
   const [launchVisible, setLaunchVisible] = useState(!launchScreenShown);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [updateRequired, setUpdateRequired] = useState(false);
@@ -651,8 +650,6 @@ export default function App() {
               items={items}
               summary={summary}
               reminderDays={reminderDays}
-              growthProfile={growthProfile}
-              growthDashboardReport={growthDashboardReport}
               onOpenInventory={goToInventory}
               onOpenAdd={() => goToPage(PAGE_ADD)}
               onOpenSchedule={() => goToPage(PAGE_SCHEDULE)}

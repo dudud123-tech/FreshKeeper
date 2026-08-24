@@ -132,11 +132,13 @@
 | 완료 XP | `COMPLETE_XP_PER_ITEM` | `6` | 소비기한 안에 먹었을 때. 성장의 주 동력이라 등록보다 훨씬 높게 둔다 |
 | 임박 완료 XP | `URGENT_COMPLETE_XP_PER_ITEM` | `9` | 임박 알림 기준(`reminderDays`) 안에 들어온 상품을 먹었을 때. 놓치기 쉬운 걸 챙긴 보상이라 일반 완료보다 높다 |
 | 만료 페널티 XP | `EXPIRED_ITEM_PENALTY_XP` | `5` | 기한이 지나도록 안 먹고 남아 있는 상품 하나당 차감 |
-| 레벨 임계값 | `LEVEL_XP_THRESHOLDS` / `GROWTH_LEVEL_XP_THRESHOLDS` | `[0, 30, 80, 150, 250, 380, 540, 730, 950, 1200]` | 레벨 1~10 기준선 |
+| 레벨 임계값 | `GROWTH_LEVEL_XP_THRESHOLDS` in `cloudflare/worker/src/index.js` | `[0, 30, 80, 150, 250, 380, 540, 730, 950, 1200]` | 레벨 1~10 기준선 |
 
-위 XP 4개는 **`mobile/src/hooks/useGrowthSync.js`와 `mobile/src/components/HomePage.js` 두 곳에 같은 값이 있다.** 로그인 사용자는 useGrowthSync가 서버로 이벤트를 보내 적립하고, 비로그인 사용자는 HomePage가 로컬에서 계산한다 — 한쪽만 고치면 로그인 여부에 따라 레벨이 달라진다.
+⚠️ **2026-08-24부터 앱에는 성장을 보여주는 화면이 없다.** 홈의 성장 카드를 뺐고(눈길이 가지 않는다는 판단), 그때 앱 쪽 레벨 계산기(`getGrowthReport`)·레벨 이름·임계값 사본도 함께 지웠다. 지금 XP 상수가 있는 곳은 **`mobile/src/hooks/useGrowthSync.js` 한 곳뿐**이고, 레벨 환산은 워커에만 있다.
 
-임계값은 `mobile/src/components/HomePage.js`와 `cloudflare/worker/src/index.js` **양쪽에 있고 반드시 같아야 한다.** 바꾸면 워커 배포(`wrangler deploy`)도 함께 필요하다.
+적립 자체는 계속 돌고 있다 — `useGrowthSync`가 서버로 이벤트를 계속 보내 D1 `growth_events`에 쌓인다. 나중에 성장을 되살릴 때 그 공백 기간 이력이 비지 않게 하려고 일부러 남겨 둔 것이다. 되살리려면 화면만 다시 만들고 `/api/growth/profile`을 읽으면 된다.
+
+레벨 이미지(`mobile/assets/Level/season1/1~10.png`)도 참조하는 코드는 없지만 지우지 않고 남겨 뒀다.
 
 ⚠️ **XP 값을 바꿔도 소급되지 않는다.** 적립된 XP는 D1 `growth_events` 테이블에 `xp_delta`로 행마다 박혀 있고, `event_key` 기준 `INSERT OR IGNORE`라 같은 이벤트를 다시 보내도 갱신되지 않는다. 그래서 **XP 값을 낮춰도 기존 사용자 레벨은 내려가지 않고** 앞으로 쌓일 XP만 준다. 반대로 **임계값을 올리면 이미 쌓인 XP는 그대로인데 기준만 높아져 기존 사용자 레벨이 즉시 내려간다** — 이쪽이 훨씬 위험하다.
 

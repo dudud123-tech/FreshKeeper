@@ -372,9 +372,7 @@ export default function AddItemPage({
 
                         </>
                       ) : (
-                        <Text style={styles.receiptEmptyText}>
-                          {"\uc0c1\ud488 \ud6c4\ubcf4\uac00 \uc544\uc9c1 \uc5c6\uc2b5\ub2c8\ub2e4. \uc774\ubbf8\uc9c0\ub97c \uc120\ud0dd\ud558\uac70\ub098 \uc9c1\uc811 \uc785\ub825\ud574 \uc8fc\uc138\uc694."}
-                        </Text>
+                        null
                       )}
                     </View>
                   </View>
@@ -1115,7 +1113,10 @@ const styles = StyleSheet.create({
     flex: 1
   },
   orderHistoryShortcutHint: {
-    ...typography.caption,
+    // 크기는 제목(cardTitle)과 같게 두고, 굵기와 색으로만 단계를 나눈다.
+    ...typography.body,
+    fontSize: 16,
+    lineHeight: 23,
     color: "#68716b",
   },
   orderHistoryShortcutChevron: {
@@ -1292,12 +1293,6 @@ const styles = StyleSheet.create({
     // 인식/처리 상태 문구 스타일.
     ...typography.caption,
     color: "#14583f",
-  },
-  receiptEmptyText: {
-    // 영수증을 아직 고르지 않았을 때 보여 주는 안내 문구.
-    ...typography.caption,
-    color: "#68716b",
-    paddingVertical: 8
   },
   manualInlineGroups: {
     // 직접 등록에서 보관 방식 같은 짧은 그룹을 한 줄로 배치한다.

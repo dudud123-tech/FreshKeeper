@@ -124,12 +124,13 @@ export default function HomePage({
       if (counts[item.storage] !== undefined) counts[item.storage] += 1;
     }
     return [
-      { label: "전체", value: total, storage: "" },
-      { label: "냉장", value: counts["냉장"], storage: "냉장" },
-      { label: "냉동", value: counts["냉동"], storage: "냉동" },
-      { label: "실온", value: counts["실온"], storage: "실온" }
+      { key: "all", label: "전체", glyph: "🧺", value: total, storage: "" },
+      { key: "fridge", label: "냉장", glyph: "❄️", value: counts["냉장"], storage: "냉장" },
+      { key: "freezer", label: "냉동", glyph: "🧊", value: counts["냉동"], storage: "냉동" },
+      { key: "room", label: "실온", glyph: "📦", value: counts["실온"], storage: "실온" }
     ];
   }, [items]);
+  const storageTotal = storageStats[0]?.value || 0;
   const dashboardStats = [
     {
       label: "만료",
@@ -208,22 +209,28 @@ export default function HomePage({
         ))}
       </View>
 
-      {/* 위 카드가 "언제까지"라면 이건 "어디에" 축이라 바로 아래 붙인다.
-          일부러 다르게 생기게 했다 — 아이콘 없이 숫자와 라벨만 있는 낮은 카드다.
-          두 줄이 똑같이 생기면 무엇이 급한 정보인지 구분이 안 되고, 만료(빨강)·
-          임박(주황) 같은 의미색을 보관 구분에 재사용하면 오해를 부른다(2026-08-24). */}
+      {/* 위 카드가 "언제까지"라면 이건 "어디에" 축이다. 색은 만료(빨강)·임박(주황)과
+          겹치지 않게 골랐다 — 보관 위치를 위험도로 오해하지 않게 하려는 것이라
+          실온도 임박 주황 대신 차분한 갈색을 쓴다.
+          냉장/냉동/실온 전용 아이콘 에셋이 없어 이모지를 쓴다(2026-08-24). */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>보관 중인 식재료 {storageTotal}</Text>
+        <Pressable onPress={() => onOpenInventory("all")}>
+          <Text style={styles.moreText}>전체보기 &gt;</Text>
+        </Pressable>
+      </View>
       <View style={styles.storageStatsCard}>
-        {storageStats.map((stat, index) => (
+        {storageStats.map((stat) => (
           <Pressable
             key={stat.label}
-            style={[styles.storageStat, index < storageStats.length - 1 && styles.storageStatDivider]}
+            style={styles.storageStat}
             onPress={() => onOpenInventory("all", stat.storage ? { storage: stat.storage } : {})}
           >
-            <View style={styles.storageStatValueRow}>
-              <Text style={styles.storageStatValue}>{stat.value}</Text>
-              <Text style={styles.storageStatUnit}>개</Text>
+            <View style={[styles.storageIconChip, styles[`storageIconChip_${stat.key}`]]}>
+              <Text style={styles.storageIconGlyph}>{stat.glyph}</Text>
             </View>
             <Text style={styles.storageStatLabel}>{stat.label}</Text>
+            <Text style={styles.storageStatValue}>{stat.value}</Text>
           </Pressable>
         ))}
       </View>
@@ -639,48 +646,54 @@ const styles = StyleSheet.create({
     marginLeft: 2,
     marginBottom: 2
   },
-  // 보관 위치 카드입니다. 위 소비기한 카드보다 낮고 아이콘이 없습니다 — 급한
-  // 정보(만료/임박)가 계속 주인공이어야 해서 일부러 눌러 둡니다.
+  // 보관 위치 타일 4개를 담는 카드입니다. 칸 나누는 세로선 없이 아이콘 칩으로 구분합니다.
   storageStatsCard: {
     flexDirection: "row",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#e9ece9",
     backgroundColor: "#fff",
-    marginTop: 10,
-    paddingVertical: 10
+    paddingVertical: 14,
+    paddingHorizontal: 4
   },
   storageStat: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 4
+    gap: 6
   },
-  storageStatDivider: {
-    borderRightWidth: 1,
-    borderRightColor: "#eef1ee"
-  },
-  storageStatValueRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
+  // 아이콘을 감싸는 둥근 사각형입니다. 색은 아래 storageIconChip_*가 채웁니다.
+  storageIconChip: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
     justifyContent: "center"
   },
-  storageStatValue: {
-    fontSize: 20,
-    lineHeight: 24,
-    fontWeight: "800",
-    color: "#18201c"
+  storageIconChip_all: {
+    backgroundColor: "#e6f4ee"
   },
-  storageStatUnit: {
-    ...typography.caption,
-    color: "#8b948d",
-    marginLeft: 2,
-    marginBottom: 2
+  storageIconChip_fridge: {
+    backgroundColor: "#e8f0fd"
+  },
+  storageIconChip_freezer: {
+    backgroundColor: "#e3f4f8"
+  },
+  // 실온은 임박(주황 #ee9a35)과 헷갈리지 않게 차분한 갈색 계열로 둡니다.
+  storageIconChip_room: {
+    backgroundColor: "#f5efe4"
+  },
+  storageIconGlyph: {
+    fontSize: 18
   },
   storageStatLabel: {
     ...typography.caption,
-    color: "#68716b",
-    marginTop: 3
+    color: "#68716b"
+  },
+  storageStatValue: {
+    ...typography.captionStrong,
+    fontSize: 15,
+    color: "#18201c"
   },
   // 통계 카드 위 "나의 랭킹" 배지입니다. overflow: hidden이라야 위를 지나가는
   // 흰 줄(rankingBadgeShine)이 알약 밖으로 삐져나오지 않습니다.

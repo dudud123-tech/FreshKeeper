@@ -213,11 +213,10 @@ export default function HomePage({
           겹치지 않게 골랐다 — 보관 위치를 위험도로 오해하지 않게 하려는 것이라
           실온도 임박 주황 대신 차분한 갈색을 쓴다.
           냉장/냉동/실온 전용 아이콘 에셋이 없어 이모지를 쓴다(2026-08-24). */}
+      {/* "전체보기"는 뺐다 — 바로 아래 "전체" 타일이 같은 동작이라 같은 버튼이
+          두 개인 셈이었다(2026-08-24). */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>보관 중인 식재료 {storageTotal}</Text>
-        <Pressable onPress={() => onOpenInventory("all")}>
-          <Text style={styles.moreText}>전체보기 &gt;</Text>
-        </Pressable>
       </View>
       <View style={styles.storageStatsCard}>
         {storageStats.map((stat) => (

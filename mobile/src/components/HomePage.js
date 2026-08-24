@@ -62,6 +62,12 @@ const expiredDashboardIcon = require("../../assets/home/priority_high_80dp.png")
 const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
 const weekDashboardIcon = require("../../assets/home/calendar_month.png");
 const storedDashboardIcon = require("../../assets/home/snowflake_80dp.png");
+// 교차 카드의 보관 열. 개수는 crossStats가 세므로 여기엔 열 정의만 둔다.
+const STORAGE_COLUMNS = [
+  { key: "fridge", label: "냉장", storage: "냉장" },
+  { key: "freezer", label: "냉동", storage: "냉동" },
+  { key: "room", label: "실온", storage: "실온" }
+];
 export default function HomePage({
   items,
   summary,
@@ -144,27 +150,14 @@ export default function HomePage({
     return rows;
   }, [items, reminderDays]);
 
-  const storageStats = useMemo(() => {
-    const counts = { 냉장: 0, 냉동: 0, 실온: 0 };
-    for (const item of items) {
-      if (item.status === "completed") continue;
-      if (counts[item.storage] !== undefined) counts[item.storage] += 1;
-    }
-    return [
-      { key: "fridge", label: "냉장", glyph: "❄️", value: counts["냉장"], storage: "냉장" },
-      { key: "freezer", label: "냉동", glyph: "🧊", value: counts["냉동"], storage: "냉동" },
-      { key: "room", label: "실온", glyph: "📦", value: counts["실온"], storage: "실온" }
-    ];
-  }, [items]);
-
-  // 보관 중은 개수가 0이어도 항상 보여준다(집이 비었다는 것도 정보다).
-  // 나머지는 0이면 줄째로 감춘다 — "만료 0개"는 알려줄 게 없는 줄이다.
+  // 등록된 게 없어도 네 줄을 그대로 보여준다 — 숫자가 0인 것과 줄이 사라지는
+  // 건 다르다. 자리가 늘 같은 곳에 있어야 눈이 익는다(2026-08-24).
   const crossRows = [
     { key: "expired", label: "만료", tone: "expired", icon: expiredDashboardIcon, filter: "expired" },
     { key: "urgent", label: "임박", tone: "urgent", icon: urgentDashboardIcon, filter: "urgent" },
     { key: "week", label: "이번 주", tone: "week", icon: weekDashboardIcon, filter: "week" },
     { key: "all", label: "보관 중", tone: "stored", icon: storedDashboardIcon, filter: "all" }
-  ].filter((row) => row.key === "all" || crossStats[row.key].total > 0);
+  ];
 
   return (
     <ScrollView
@@ -192,16 +185,21 @@ export default function HomePage({
         rankings={personalRankings}
       />
 
-      {/* 상태(언제까지)와 보관 위치(어디에)를 한 카드로 엮는다. 예전엔 두 카드로
-          나뉘어 있었는데, 같은 상품을 두 번 세면서도 "만료된 게 어디 있는지"라는
-          정작 알고 싶은 건 어느 쪽도 답해주지 못했다.
-          줄 제목을 누르면 그 상태로, 보관 칩을 누르면 상태+보관 위치로 걸러진
-          보관함이 열린다. 개수가 0인 보관 칩은 그리지 않는다 — 없는 칸까지
-          채우면 정작 있는 것이 안 보인다(2026-08-24). */}
+      {/* 상태(언제까지) x 보관 위치(어디에) 표. 한 줄에 다 담으려고 열 제목을
+          맨 위에 한 번만 쓴다 — 줄마다 "냉장 n 냉동 n"을 반복하면 줄이 길어져
+          두 줄로 접히고, 그러면 카드가 세로로 두 배가 된다.
+          줄 왼쪽(아이콘~합계)을 누르면 그 상태로, 숫자 칸을 누르면 상태+보관
+          위치로 걸러진 보관함이 열린다. 0은 흐리게 그려서 있는 숫자가 먼저
+          눈에 들어오게 한다(2026-08-24). */}
       <View style={styles.crossCard}>
+        <View style={styles.crossHeadRow}>
+          <View style={styles.crossHeadSpacer} />
+          {STORAGE_COLUMNS.map((col) => (
+            <Text key={col.key} style={styles.crossColHead}>{col.label}</Text>
+          ))}
+        </View>
         {crossRows.map((row, index) => {
           const stat = crossStats[row.key];
-          const chips = storageStats.filter((s) => stat.byStorage[s.storage] > 0);
           return (
             <View key={row.key} style={[styles.crossRow, index > 0 && styles.crossRowDivider]}>
               <Pressable style={styles.crossRowHead} onPress={() => onOpenInventory(row.filter)}>
@@ -210,28 +208,21 @@ export default function HomePage({
                 </View>
                 <Text style={styles.crossLabel}>{row.label}</Text>
                 <Text style={[styles.crossValue, styles["dashboardStatValue_" + row.tone]]}>{stat.total}</Text>
-                <Text style={styles.crossUnit}>개</Text>
-                <Text style={styles.crossChevron}>{"›"}</Text>
               </Pressable>
-              {chips.length ? (
-                <View style={styles.crossChipRow}>
-                  {chips.map((s) => (
-                    <Pressable
-                      key={s.key}
-                      style={styles.crossChip}
-                      onPress={() => onOpenInventory(row.filter, { storage: s.storage })}
-                    >
-                      <Text style={styles.crossChipGlyph}>{s.glyph}</Text>
-                      <Text style={styles.crossChipLabel}>{s.label}</Text>
-                      <Text style={styles.crossChipValue}>{stat.byStorage[s.storage]}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.crossEmpty}>
-                  {row.key === "all" ? "아직 등록한 상품이 없어요." : "보관 위치가 지정되지 않았어요."}
-                </Text>
-              )}
+              {STORAGE_COLUMNS.map((col) => {
+                const count = stat.byStorage[col.storage];
+                return (
+                  <Pressable
+                    key={col.key}
+                    style={styles.crossCell}
+                    onPress={() => onOpenInventory(row.filter, { storage: col.storage })}
+                    accessibilityRole="button"
+                    accessibilityLabel={row.label + " " + col.label + " " + count + "개"}
+                  >
+                    <Text style={[styles.crossCellValue, count === 0 && styles.crossCellZero]}>{count}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
           );
         })}
@@ -598,14 +589,17 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   crossRow: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 14,
-    paddingVertical: 11
+    paddingVertical: 9
   },
   crossRowDivider: {
     borderTopWidth: 1,
     borderTopColor: "#f0f2f0"
   },
   crossRowHead: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 8
@@ -629,55 +623,43 @@ const styles = StyleSheet.create({
     flex: 1
   },
   crossValue: {
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 19,
+    lineHeight: 23,
     fontWeight: "900"
   },
-  crossUnit: {
-    ...typography.caption,
-    color: "#8b948d",
-    marginLeft: -1
-  },
-  crossChevron: {
-    color: "#b6bfb9",
-    fontSize: 20,
-    fontWeight: "700",
-    marginTop: -2,
-    marginLeft: 2
-  },
-  // 보관 칩 줄. 아이콘 원(26) + 간격(8)만큼 들여써서 상태 이름과 세로로 맞춥니다.
-  crossChipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 8,
-    marginLeft: 34
-  },
-  crossChip: {
+  // 열 제목 줄. 숫자 칸과 폭을 똑같이 맞춰야 세로로 줄이 선다.
+  crossHeadRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    borderRadius: 999,
-    backgroundColor: "#f2f5f3",
-    paddingHorizontal: 10,
-    paddingVertical: 5
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 2
   },
-  crossChipGlyph: {
-    fontSize: 12
+  crossHeadSpacer: {
+    flex: 1
   },
-  crossChipLabel: {
+  crossColHead: {
     ...typography.caption,
-    color: "#68716b"
+    color: "#9aa39d",
+    width: 40,
+    textAlign: "center"
   },
-  crossChipValue: {
-    ...typography.captionStrong,
-    color: "#18201c"
+  // 숫자 한 칸. 폭을 crossColHead와 같은 40으로 고정해 열이 어긋나지 않게 합니다.
+  crossCell: {
+    width: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4
   },
-  crossEmpty: {
-    ...typography.caption,
-    color: "#a2aaa5",
-    marginTop: 6,
-    marginLeft: 34
+  crossCellValue: {
+    ...typography.label,
+    fontSize: 15,
+    color: "#2f3a34"
+  },
+  // 0은 흐리게 — 있는 숫자가 먼저 눈에 들어오게 합니다.
+  crossCellZero: {
+    color: "#ccd3ce",
+    fontWeight: "400"
   },
   // 통계 카드 위 "나의 랭킹" 배지입니다. overflow: hidden이라야 위를 지나가는
   // 흰 줄(rankingBadgeShine)이 알약 밖으로 삐져나오지 않습니다.

@@ -20,7 +20,7 @@ const EDIT_COPY = {
   plannedWeekday: "\uBA39\uC744 \uC694\uC77C",
   plannedTime: "\uC54C\uB9BC \uC2DC\uAC04",
   planRepeat: "\uBC18\uBCF5",
-  planClear: "\uC77C\uC815 \uC9C0\uC6B0\uAE30",
+  planReset: "\uC77C\uC815 \uCD08\uAE30\uD654",
   memo: "\uBA54\uBAA8",
   memoPlaceholder: "\uC608: \uD574\uB3D9 \uD544\uC694, \uC5C4\uB9C8 \uB4DC\uB9B4 \uAC83",
   tabBasic: "\uAE30\uD55C\u00B7\uC77C\uC815",
@@ -183,26 +183,27 @@ export default function ItemEditSheet({
                           </View>
                         </Field>
                       ) : null}
-                      {/* 일정을 아예 없애는 유일한 출구다. 예전에는 일정 화면 줄의
-                          "X" 버튼이었는데, 아이콘만으로는 상품이 지워지는 걸로
-                          오해하기 쉬워 글자로 바꿔 여기로 옮겼다. 값만 비우고
-                          실제 반영은 저장할 때 된다 — 이 시트의 다른 필드와 같은
-                          방식이라 실수로 눌러도 취소로 되돌릴 수 있다(2026-08-24). */}
+                      {/* 일정을 지우지 않고 처음 값으로 되돌린다 — 오늘, 기본 알림
+                          시각, 반복 안 함. 지우면 상품이 일정 화면에서 통째로
+                          사라져 버려서, 날짜만 잘못 잡았을 때 쓰기에는 과했다.
+                          값만 바꾸고 실제 반영은 저장할 때 된다 — 이 시트의 다른
+                          필드와 같은 방식이라 실수로 눌러도 취소로 되돌릴 수
+                          있다(2026-08-24). */}
                       {editForm.plannedDate ? (
                         <Pressable
-                          style={styles.planClearButton}
+                          style={styles.planResetButton}
                           onPress={() =>
                             setEditForm((current) => ({
                               ...current,
-                              plannedDate: "",
+                              plannedDate: todayIso(),
                               plannedMeal: "",
-                              plannedTime: "",
+                              plannedTime: DEFAULT_PLAN_TIME,
                               planRepeat: ""
                             }))
                           }
                           accessibilityRole="button"
                         >
-                          <Text style={styles.planClearText}>{EDIT_COPY.planClear}</Text>
+                          <Text style={styles.planResetText}>{EDIT_COPY.planReset}</Text>
                         </Pressable>
                       ) : null}
                     </View>
@@ -451,18 +452,18 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: "#1f7a5a",
   },
-  // 일정을 비우는 버튼입니다. 저장을 눌러야 실제로 반영되므로 위험한 동작처럼
-  // 보이지 않게 담백하게 둡니다.
-  planClearButton: {
+  // 일정을 기본값으로 되돌리는 버튼입니다. 저장을 눌러야 실제로 반영되므로
+  // 위험한 동작처럼 보이지 않게 담백하게 둡니다.
+  planResetButton: {
     alignSelf: "flex-start",
     minHeight: 36,
     justifyContent: "center",
     marginTop: 4,
     paddingHorizontal: 2
   },
-  planClearText: {
+  planResetText: {
     ...typography.label,
-    color: "#9f3929"
+    color: "#68716b"
   },
   planHint: {
     ...typography.caption,

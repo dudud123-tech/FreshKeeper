@@ -37,7 +37,8 @@ export default function SchedulePage({
   setItemPlan,
   clearItemPlan,
   completeItem,
-  openCalendar
+  openCalendar,
+  startEdit
 }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerDate, setPickerDate] = useState(() => todayIso());
@@ -48,6 +49,9 @@ export default function SchedulePage({
   // 상품명을 누르면 뜨는 상세 카드. 보관함과 같은 팝업을 쓴다. 스냅샷 대신
   // id만 들고 매번 목록에서 찾아, 완료·해제로 빠지면 저절로 닫힌다(2026-08-24).
   const [detailItemId, setDetailItemId] = useState("");
+  // 수정 시트를 열기 직전의 값. 돌아왔을 때 무엇이 바뀌었는지 빨간색으로
+  // 표시하려면 비교 대상이 있어야 한다(2026-08-24).
+  const [detailBaseline, setDetailBaseline] = useState(null);
   const detailItem = useMemo(
     () => (detailItemId ? items.find((item) => String(item.id) === detailItemId) || null : null),
     [items, detailItemId]
@@ -109,7 +113,6 @@ export default function SchedulePage({
                 item={item}
                 onComplete={() => completeItem(item.id)}
                 onClear={() => clearItemPlan(item.id)}
-                onEdit={() => openPickerForItem(item)}
                 onOpenDetail={() => setDetailItemId(String(item.id))}
                 showPlannedDate
               />
@@ -135,7 +138,6 @@ export default function SchedulePage({
                     item={item}
                     onComplete={() => completeItem(item.id)}
                     onClear={() => clearItemPlan(item.id)}
-                    onEdit={() => openPickerForItem(item)}
                     onOpenDetail={() => setDetailItemId(String(item.id))}
                   />
                 ))}
@@ -155,15 +157,20 @@ export default function SchedulePage({
         <BannerAdSlot />
       </ScrollView>
 
+      {/* 보관함과 같은 상품 수정 시트를 연다. 시트는 App.js의 overlays에 있어
+          이 화면 위에도 뜬다. 상세 카드는 닫지 않는다 — 수정을 마치고 돌아오면
+          바뀐 값이 이 카드에 그대로 보여야 한다(2026-08-24). */}
       <ItemDetailModal
         item={detailItem}
+        baseline={detailBaseline}
         completedScope={false}
-        editLabel="일정 바꾸기"
-        onClose={() => setDetailItemId("")}
-        onEdit={() => {
-          const target = detailItem;
+        onClose={() => {
           setDetailItemId("");
-          if (target) openPickerForItem(target);
+          setDetailBaseline(null);
+        }}
+        onEdit={() => {
+          setDetailBaseline(detailItem);
+          startEdit(detailItem);
         }}
       />
 
@@ -220,8 +227,8 @@ export default function SchedulePage({
                   return (
                     <Pressable key={item.id} style={styles.pickerRow} onPress={() => assignItem(item.id)}>
                       <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.pickerImage} />
-                      <Text style={styles.pickerName} numberOfLines={1}>{item.name}</Text>
-                      <Text style={[styles.pickerDday, styles[`tone_${status.tone}`]]}>{status.label}</Text>
+                      <Text style={styles.pickerName} maxFontSizeMultiplier={1.3} numberOfLines={1}>{item.name}</Text>
+                      <Text style={[styles.pickerDday, styles[`tone_${status.tone}`]]} maxFontSizeMultiplier={1.3} numberOfLines={1}>{status.label}</Text>
                     </Pressable>
                   );
                 })
@@ -241,28 +248,41 @@ export default function SchedulePage({
 
 // 일정 한 줄. 소비기한 D-day를 같이 보여줘서 "언제 먹을지"와 "언제까지 먹어야 하는지"
 // 두 축을 한눈에 비교할 수 있게 한다.
-function ScheduleRow({ item, onComplete, onClear, onEdit, onOpenDetail, showPlannedDate = false }) {
+function ScheduleRow({ item, onComplete, onClear, onOpenDetail, showPlannedDate = false }) {
   const status = statusFor(item);
   const timeLabel = formatPlanTime(planTimeFor(item, DEFAULT_PLAN_TIME));
   const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)} 반복` : "";
   return (
     <View style={styles.row}>
       <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.rowImage} />
-      <Pressable style={styles.rowBody} onPress={onEdit}>
+      {/* 줄 전체를 눌러 일정 바꾸기로 가던 동작은 뺐다 — 상품명 탭(상세 카드)과
+          함께 같은 목적지로 가는 문이 여러 개가 되어 헷갈렸다. 이제 상품명만
+          누를 수 있고, 거기서 "수정하기"로 들어간다(2026-08-24). */}
+      <View style={styles.rowBody}>
         <Pressable
           onPress={onOpenDetail}
           accessibilityRole="button"
           accessibilityLabel={`${item.name} 자세히 보기`}
         >
-          <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.rowName} maxFontSizeMultiplier={1.3} numberOfLines={1}>{item.name}</Text>
         </Pressable>
-        <Text style={styles.rowMeta}>
+        {/* D-day를 별도 칸으로 두면 글자를 키운 기기에서 그 칸이 넓어지고,
+            남는 폭이 없어 이 텍스트가 한 글자씩 세로로 접힌다. 상세 카드와
+            같은 방식으로 소비기한 옆 괄호에 넣어 칸 하나를 없앤다(2026-08-24). */}
+        <Text style={styles.rowMeta} maxFontSizeMultiplier={1.3} numberOfLines={2}>
           {showPlannedDate ? `${item.plannedDate} · ` : ""}
           소비기한 {item.expiry}
+          {item.expiry ? " " : ""}
+          {item.expiry ? (
+            <Text style={styles[`tone_${status.tone}`]}>({status.label})</Text>
+          ) : null}
         </Text>
-        {timeLabel ? <Text style={styles.rowTime}>{`⏰ ${timeLabel} 알림${repeatSuffix}`}</Text> : null}
-      </Pressable>
-      <Text style={[styles.rowDday, styles[`tone_${status.tone}`]]}>{status.label}</Text>
+        {timeLabel ? (
+          <Text style={styles.rowTime} maxFontSizeMultiplier={1.3} numberOfLines={2}>
+            {`⏰ ${timeLabel} 알림${repeatSuffix}`}
+          </Text>
+        ) : null}
+      </View>
       <Pressable style={styles.rowAction} onPress={onClear} accessibilityRole="button" accessibilityLabel="일정 해제">
         <Text style={styles.rowClearText}>✕</Text>
       </Pressable>
@@ -343,11 +363,15 @@ const styles = StyleSheet.create({
   rowImage: {
     width: 44,
     height: 44,
+    flexShrink: 0,
     borderRadius: 10,
     backgroundColor: "#f3f6f4"
   },
   rowBody: {
     flex: 1,
+    // 글자를 키운 기기에서 이 칸이 0에 가깝게 눌리며 한 글자씩 접히던 문제가
+    // 있었다. minWidth를 두어 최소 폭을 지킨다(2026-08-24).
+    minWidth: 0,
     gap: 2
   },
   rowName: {
@@ -384,10 +408,6 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: "#fff",
   },
-  rowDday: {
-    ...typography.captionStrong,
-    flexShrink: 0
-  },
   tone_normal: {
     color: "#1f7a5a"
   },
@@ -400,6 +420,7 @@ const styles = StyleSheet.create({
   rowAction: {
     width: 32,
     height: 32,
+    flexShrink: 0,
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center"
@@ -477,13 +498,15 @@ const styles = StyleSheet.create({
   pickerImage: {
     width: 36,
     height: 36,
+    flexShrink: 0,
     borderRadius: 9,
     backgroundColor: "#f3f6f4"
   },
   pickerName: {
     ...typography.bodyStrong,
     color: "#18201c",
-    flex: 1
+    flex: 1,
+    minWidth: 0
   },
   pickerDday: {
     ...typography.captionStrong

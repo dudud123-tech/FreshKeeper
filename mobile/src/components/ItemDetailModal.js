@@ -13,6 +13,7 @@ import { planBadgeLabel } from "../utils/mealPlan";
 // 일정 바꾸기를 연다. 그래서 버튼 문구도 editLabel로 받는다.
 export default function ItemDetailModal({
   item,
+  baseline = null,
   expiryType = "소비기한",
   completedScope = false,
   editLabel = "수정하기",
@@ -21,20 +22,17 @@ export default function ItemDetailModal({
 }) {
   if (!item) return null;
 
-  const status = statusFor(item);
-  const planLabel = planBadgeLabel(item);
-  const expiryValue = item.expiry || "-";
-  const rows = [
-    // D-day는 소비기한 옆 괄호에 붙인다. 따로 뱃지로 두면 같은 정보가 화면에
-    // 두 번 나온다(2026-08-24).
-    { label: expiryType, value: item.expiry ? `${expiryValue} (${status.label})` : expiryValue },
-    { label: "보관", value: item.storage || "-" },
-    { label: "카테고리", value: item.category || "-" },
-    { label: "등록일", value: createdDateLabel(item) }
-  ];
-  if (planLabel) rows.push({ label: "먹을 날", value: planLabel });
-  if (completedScope) rows.push({ label: "완료", value: completionTimingLabel(item) });
-
+  const rows = buildRows(item, expiryType, completedScope);
+  // baseline은 수정 시트를 열기 직전의 값이다. 방금 무엇을 고쳤는지 빨간색으로
+  // 짚어주면 저장이 제대로 됐는지 눈으로 바로 확인할 수 있다(2026-08-24).
+  const baseRows = baseline ? buildRows(baseline, expiryType, completedScope) : null;
+  const changedValue = (key, value) => {
+    if (!baseRows) return false;
+    const prev = baseRows.find((row) => row.key === key);
+    return prev ? prev.value !== value : false;
+  };
+  const nameChanged = Boolean(baseline) && String(baseline.name || "") !== String(item.name || "");
+  const memoChanged = Boolean(baseline) && String(baseline.memo || "").trim() !== String(item.memo || "").trim();
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -50,17 +48,21 @@ export default function ItemDetailModal({
                 박스에 cover를 걸면 위아래가 잘린다. contain은 혹시 비정사각
                 사진이 들어와도 잘리지 않게 하는 보험이다. */}
             <Image source={getFoodImageSource(item)} resizeMode="contain" style={styles.image} />
-            <Text style={styles.name} numberOfLines={2}>{String(item.name || "")}</Text>
+            <Text style={[styles.name, nameChanged && styles.changed]} numberOfLines={2}>
+              {String(item.name || "")}
+            </Text>
             {rows.map((row) => (
-              <View key={row.label} style={styles.row}>
+              <View key={row.key} style={styles.row}>
                 <Text style={styles.rowLabel}>{row.label}</Text>
-                <Text style={styles.rowValue}>{row.value}</Text>
+                <Text style={[styles.rowValue, changedValue(row.key, row.value) && styles.changed]}>
+                  {row.value}
+                </Text>
               </View>
             ))}
             {item.memo?.trim() ? (
               <View style={styles.memoBox}>
                 <Text style={styles.rowLabel}>메모</Text>
-                <Text style={styles.memoText} numberOfLines={3}>{item.memo.trim()}</Text>
+                <Text style={[styles.memoText, memoChanged && styles.changed]} numberOfLines={3}>{item.memo.trim()}</Text>
               </View>
             ) : null}
           </ScrollView>
@@ -76,6 +78,25 @@ export default function ItemDetailModal({
       </View>
     </Modal>
   );
+}
+
+// 표시할 줄을 만든다. 바뀐 값을 찾으려면 지금 값과 예전 값을 같은 방식으로
+// 만들어 비교해야 해서 함수로 뺐다.
+function buildRows(item, expiryType, completedScope) {
+  const status = statusFor(item);
+  const planLabel = planBadgeLabel(item);
+  const expiryValue = item.expiry || "-";
+  const rows = [
+    // D-day는 소비기한 옆 괄호에 붙인다. 따로 뱃지로 두면 같은 정보가 화면에
+    // 두 번 나온다(2026-08-24).
+    { key: "expiry", label: expiryType, value: item.expiry ? `${expiryValue} (${status.label})` : expiryValue },
+    { key: "storage", label: "보관", value: item.storage || "-" },
+    { key: "category", label: "카테고리", value: item.category || "-" },
+    { key: "createdAt", label: "등록일", value: createdDateLabel(item) }
+  ];
+  if (planLabel) rows.push({ key: "plan", label: "먹을 날", value: planLabel });
+  if (completedScope) rows.push({ key: "completed", label: "완료", value: completionTimingLabel(item) });
+  return rows;
 }
 
 const styles = StyleSheet.create({
@@ -141,6 +162,10 @@ const styles = StyleSheet.create({
   memoText: {
     ...typography.body,
     color: "#2f3a34"
+  },
+  // 방금 수정한 값입니다. 저장이 제대로 됐는지 눈으로 바로 확인하라고 짚어줍니다.
+  changed: {
+    color: "#c0392b"
   },
   // 버튼은 손가락으로 누르기 쉽게 높이를 넉넉히 잡습니다.
   actions: {

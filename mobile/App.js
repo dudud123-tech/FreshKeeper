@@ -21,6 +21,7 @@ import CalendarModal from "./src/components/CalendarModal";
 import ForceUpdateScreen from "./src/components/ForceUpdateScreen";
 import HomePage from "./src/components/HomePage";
 import InventoryList from "./src/components/InventoryList";
+import ItemEditSheet from "./src/components/ItemEditSheet";
 import LaunchScreen from "./src/components/LaunchScreen";
 import OnboardingScreen from "./src/components/OnboardingScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
@@ -607,6 +608,21 @@ export default function App() {
       onReplayTutorial={replayOnboarding}
       overlays={
         <>
+          {/* 수정 시트는 보관함과 먹는 일정 양쪽에서 띄운다. AppShell이 현재
+              페이지만 그리기 때문에 InventoryList 안에 두면 일정 화면에서는
+              마운트되지 않아 아무것도 안 뜬다. 그래서 여기서 한 번만 그린다.
+              달력(CalendarModal)보다 먼저 두어 시트 위에 달력이 뜨게 한다(2026-08-24). */}
+          <ItemEditSheet
+            editForm={editForm}
+            setEditForm={setEditForm}
+            editSubmitting={editSubmitting}
+            saveEdit={saveEdit}
+            cancelEdit={cancelEdit}
+            openCalendar={openCalendar}
+            categories={categories}
+            storageTypes={storageTypes}
+            suggestCategory={suggestCategory}
+          />
           <CalendarModal
             visible={calendar.visible}
             value={calendar.value}
@@ -777,6 +793,7 @@ export default function App() {
               clearItemPlan={clearItemPlan}
               completeItem={completePlanOccurrence}
               openCalendar={openCalendar}
+              startEdit={startEdit}
             />
 
             <ScrollView style={appShellStyles.screen} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">

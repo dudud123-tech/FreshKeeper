@@ -26,46 +26,6 @@ const forkSpoonIcon = require("../../assets/actions/fork_spoon_80dp.png");
 const bookmarkOffIcon = require("../../assets/actions/bookmark_off.png");
 const bookmarkOnIcon = require("../../assets/actions/bookmark_on.png");
 const COMPLETED_VISIBLE_DAYS = 90;
-const EDIT_COPY = {
-  editing: "\uC218\uC815 \uC911",
-  productName: "\uC0C1\uD488\uBA85",
-  purchaseUrl: "\uAD6C\uB9E4 \uB9C1\uD06C",
-  purchasePlaceholder: DEFAULT_PURCHASE_URL,
-  plannedDate: "\uBA39\uC744 \uB0A0",
-  plannedWeekday: "\uBA39\uC744 \uC694\uC77C",
-  plannedTime: "\uC54C\uB9BC \uC2DC\uAC04",
-  planRepeat: "\uBC18\uBCF5",
-  memo: "\uBA54\uBAA8",
-  memoPlaceholder: "\uC608: \uD574\uB3D9 \uD544\uC694, \uC5C4\uB9C8 \uB4DC\uB9B4 \uAC83",
-  tabBasic: "\uAE30\uD55C\u00B7\uC77C\uC815",
-  tabDetail: "\uBD84\uB958\u00B7\uB9C1\uD06C",
-  category: "\uCE74\uD14C\uACE0\uB9AC",
-  storage: "\uBCF4\uAD00",
-  expiry: "\uC18C\uBE44\uAE30\uD55C",
-  cancel: "\uCDE8\uC18C",
-  save: "\uC800\uC7A5"
-};
-const CATEGORY_EDIT_ORDER = [
-  "\uC720\uC81C\uD488",
-  "\uCC44\uC18C/\uACFC\uC77C",
-  "\uC721\uB958/\uC0DD\uC120",
-  "\uC2E0\uC120\uC2DD\uD488",
-  "\uB0C9\uB3D9\uC2DD\uD488",
-  "\uAC00\uACF5\uC2DD\uD488",
-  "\uAC74\uC5B4\uBB3C/\uAC74\uC870\uC2DD\uD488",
-  "\uC18C\uC2A4\uB958",
-  "\uC74C\uB8CC",
-  "\uAC04\uC2DD",
-  "\uC57D",
-  "\uAE30\uD0C0"
-];
-const COMPACT_CATEGORY_LABELS = {
-  "\uAC74\uC5B4\uBB3C/\uAC74\uC870\uC2DD\uD488": "\uAC74\uC5B4\uBB3C",
-  "\uAC00\uACF5\uC2DD\uD488": "\uAC00\uACF5",
-  "\uB0C9\uB3D9\uC2DD\uD488": "\uB0C9\uB3D9",
-  "\uC2E0\uC120\uC2DD\uD488": "\uC2E0\uC120"
-};
-
 export default function InventoryList({
   scrollRef,
   onLayout,
@@ -115,6 +75,9 @@ export default function InventoryList({
   // 값이 남으므로 id만 들고 매번 현재 목록에서 찾는다. 완료/삭제로 목록에서
   // 빠지면 자연히 null이 되어 팝업도 닫힌다(2026-08-24).
   const [detailItemId, setDetailItemId] = useState("");
+  // 수정 시트를 열기 직전의 값. 돌아왔을 때 무엇이 바뀌었는지 빨간색으로
+  // 표시하려면 비교 대상이 있어야 한다(2026-08-24).
+  const [detailBaseline, setDetailBaseline] = useState(null);
   const isCompletedScope = inventoryScope === "completed";
   const detailItem = useMemo(
     () => (detailItemId ? sortedItems.find((item) => String(item.id) === detailItemId) || null : null),
@@ -131,7 +94,6 @@ export default function InventoryList({
     if (!isCompletedScope) return visibleItems.map((item) => ({ kind: "item", item }));
     return buildCompletedMonthEntries(visibleItems);
   }, [isCompletedScope, visibleItems]);
-  const editCategoryOptions = useMemo(() => orderedCategoryOptions(categories), [categories]);
   const listRenderKey = `inventory-list-${inventoryScope}-${sortMode}-${categoryFilter}-${storageFilter}-${favoriteFilter}-${focusItemId || "all"}`;
   const itemKeyPrefix = sortMode === "등록일순" ? "created" : "expiry";
 
@@ -147,190 +109,6 @@ export default function InventoryList({
     } catch {
       Alert.alert("링크 열기 실패", "이 링크를 열 수 없습니다.");
     }
-  }
-
-  // 예전에는 이 편집 폼을 목록 카드 안에서 펼쳤다. 카테고리 12개 칩이 날짜 필드
-  // 위를 차지해서 소비기한·먹을 날을 고치려면 매번 아래까지 스크롤해야 했고,
-  // 카드가 길어져 목록도 밀렸다. 바텀시트로 띄워 넓은 화면에서 수정하게 바꿨다(2026-08-23).
-  function renderEditSheet() {
-    if (!editForm) return null;
-    return (
-      <Modal visible transparent animationType="slide" onRequestClose={cancelEdit}>
-        <View style={styles.sheetBackdrop}>
-          <Pressable style={styles.sheetBackdropFill} onPress={cancelEdit} />
-          <View style={styles.sheetCard}>
-            <View style={styles.sheetHandle} />
-            {/* 헤더는 ScrollView 밖에 둔다 — 안에 있으면 메모까지 내려갔을 때 저장
-                버튼이 같이 사라져서, 다 고치고 나서 위로 되돌아와야 했다.
-                "수정 중" 배지는 카드 안에서 인라인으로 고치던 시절의 흔적이라
-                뺐다. 바텀시트에서는 화면 전체가 이미 수정 모드고, 그 자리에는
-                지금 무엇을 고치는 중인지가 더 쓸모 있다(2026-08-23). */}
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle} numberOfLines={1}>
-                {editForm.name?.trim() || EDIT_COPY.editing}
-              </Text>
-              <View style={styles.sheetHeaderActions}>
-                <Pressable style={styles.sheetCancelAction} onPress={cancelEdit} accessibilityRole="button">
-                  <Text style={styles.sheetCancelText}>{EDIT_COPY.cancel}</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.sheetSaveAction, editSubmitting && styles.sheetSaveActionDisabled]}
-                  onPress={editSubmitting ? undefined : saveEdit}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.sheetSaveText}>{editSubmitting ? "저장 중..." : EDIT_COPY.save}</Text>
-                </Pressable>
-              </View>
-            </View>
-            <ScrollView
-              style={styles.sheetScroll}
-              contentContainerStyle={styles.sheetScrollContent}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.editPanel}>
-                <View style={styles.sheetTabs}>
-                  <TabButton active={editTab === "basic"} label={EDIT_COPY.tabBasic} onPress={() => setEditTab("basic")} />
-                  <TabButton active={editTab === "detail"} label={EDIT_COPY.tabDetail} onPress={() => setEditTab("detail")} />
-                </View>
-                {editTab === "basic" ? (
-                  <View>
-                <Field label={EDIT_COPY.productName}>
-                      <TextInput
-                        value={editForm.name}
-                        onChangeText={(value) =>
-                          setEditForm((current) => ({
-                            ...current,
-                            name: value,
-                            category: suggestCategory(value)
-                          }))
-                        }
-                        style={styles.input}
-                      />
-                    </Field>
-                <Field label={EDIT_COPY.expiry}>
-                      <DateButton
-                        value={editForm.expiry}
-                        onPress={() => openCalendar(editForm.expiry, (value) => setEditForm((current) => ({ ...current, expiry: value })))}
-                      />
-                    </Field>
-                {/* 먹는 일정 묶음. 소비기한과 달리 "언제 먹을지" 축에 속하는 값들이라
-                        한 상자로 묶어 무엇에 딸린 설정인지 눈에 보이게 한다(2026-08-23). */}
-                    <View style={styles.planGroup}>
-                      <Text style={styles.planGroupTitle}>{"\uCC59\uACA8 \uBA39\uAE30"}</Text>
-                      {/* 반복을 맨 위에 둔다. 매일 반복이면 특정 날짜를 고르는 게 의미가
-                          없고, 매주면 날짜보다 요일이 중요하다 — 무엇을 물어볼지가 반복
-                          선택에 따라 달라지기 때문이다(2026-08-23). */}
-                      <ChoiceGroup
-                        label={EDIT_COPY.planRepeat}
-                        options={PLAN_REPEATS.map((option) => option.id)}
-                        value={editForm.planRepeat || ""}
-                        onChange={(value) =>
-                          setEditForm((current) => {
-                            // 매일 반복은 날짜를 안 물어보므로 시작일이 비어 있으면 오늘로 채운다.
-                            // plannedDate가 없으면 일정이 없는 것으로 취급된다(mealPlan.hasPlan).
-                            const plannedDate =
-                              value === "daily" && !current.plannedDate ? todayIso() : current.plannedDate;
-                            return { ...current, planRepeat: value, plannedDate, ...resolvedPlanTime(current, plannedDate) };
-                          })
-                        }
-                        formatLabel={(option) => repeatLabel(option)}
-                        compact
-                      />
-                      {editForm.planRepeat !== "daily" ? (
-                        <Field label={editForm.planRepeat === "weekly" ? EDIT_COPY.plannedWeekday : EDIT_COPY.plannedDate}>
-                          <DateButton
-                            value={editForm.plannedDate || todayIso()}
-                            onPress={() =>
-                              openCalendar(editForm.plannedDate || todayIso(), (value) =>
-                                setEditForm((current) => ({ ...current, plannedDate: value, ...resolvedPlanTime(current, value) }))
-                              )
-                            }
-                            showWeekday
-                          />
-                          {editForm.planRepeat === "weekly" ? (
-                            <Text style={styles.planHint}>
-                              {`매주 ${weekdayLabel(editForm.plannedDate || todayIso())}요일에 알려드려요.`}
-                            </Text>
-                          ) : null}
-                        </Field>
-                      ) : null}
-                    {editForm.plannedDate ? (
-                        <Field label={EDIT_COPY.plannedTime}>
-                          <View style={styles.planTimeRow}>
-                            <TimeField
-                              value={planTimeFor(editForm, DEFAULT_PLAN_TIME)}
-                              onChange={(next) => setEditForm((current) => ({ ...current, plannedTime: next }))}
-                            />
-                          </View>
-                        </Field>
-                      ) : null}
-                      
-                    </View>
-                    {/* 구조화된 필드로는 못 담는 것들(해동 필요, 보관 위치, 줄 사람 등)을
-                        적어두는 자유 입력 칸. 알림이 뜰 때 본문에 같이 실린다(2026-08-23). */}
-                    <Field label={EDIT_COPY.memo}>
-                      <TextInput
-                        value={editForm.memo || ""}
-                        onChangeText={(value) => setEditForm((current) => ({ ...current, memo: value }))}
-                        placeholder={EDIT_COPY.memoPlaceholder}
-                        placeholderTextColor="#a0a8a2"
-                        multiline
-                        style={[styles.input, styles.memoInput]}
-                      />
-                    </Field>
-                  </View>
-                ) : (
-                  <View>
-                {editForm.purchaseUrl?.trim() ? (
-                        <View style={styles.affiliateDisclosureBanner}>
-                          <Text style={styles.affiliateDisclosureText}>
-                            {"이 포스팅은 쿠팡 파트너스 활동의 일환으로,\n이에 따른 일정액의 수수료를 제공받습니다."}
-                          </Text>
-                        </View>
-                      ) : null}
-                    <Field label={EDIT_COPY.purchaseUrl}>
-                        <TextInput
-                          value={editForm.purchaseUrl || ""}
-                          onChangeText={(value) => setEditForm((current) => ({ ...current, purchaseUrl: value }))}
-                          placeholder={EDIT_COPY.purchasePlaceholder}
-                          placeholderTextColor="#a0a8a2"
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          autoComplete="off"
-                          importantForAutofill="noExcludeDescendants"
-                          spellCheck={false}
-                          // keyboardType="url"(안드로이드 TYPE_TEXT_VARIATION_URI)이
-                          // 삼성패스 자동완성 제안을 부르는 실제 트리거로 보여서 뺐다.
-                          // 대부분 링크를 붙여넣기로 넣으니 기본 키보드로도 무리 없음.
-                          returnKeyType="done"
-                          disableFullscreenUI
-                          style={styles.input}
-                        />
-                      </Field>
-                    <ChoiceGroup
-                        label={EDIT_COPY.category}
-                        options={editCategoryOptions}
-                        value={editForm.category}
-                        onChange={(value) => setEditForm((current) => ({ ...current, category: value }))}
-                        formatLabel={formatCompactCategoryLabel}
-                        compact
-                      />
-                    <ChoiceGroup
-                        label={EDIT_COPY.storage}
-                        options={storageTypes}
-                        value={editForm.storage}
-                        onChange={(value) => setEditForm((current) => ({ ...current, storage: value }))}
-                        compact
-                      />
-                  </View>
-                )}
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    );
   }
 
   return (
@@ -592,88 +370,24 @@ export default function InventoryList({
         {visibleItems.length > 0 && visibleItems.length < 10 ? <BannerAdSlot /> : null}
       </View>
     </ScrollView>
-    {renderEditSheet()}
     <ItemDetailModal
       item={detailItem}
       expiryType={expiryType}
       completedScope={isCompletedScope}
-      onClose={() => setDetailItemId("")}
-      onEdit={() => {
+      baseline={detailBaseline}
+      onClose={() => {
         setDetailItemId("");
+        setDetailBaseline(null);
+      }}
+      onEdit={() => {
+        // 상세 카드를 닫지 않는다 — 수정 시트는 App.js의 overlays에서 이 위에
+        // 뜨고, 저장/취소로 시트가 닫히면 바뀐 값이 이 카드에 그대로 보인다.
+        setDetailBaseline(detailItem);
         startEdit(detailItem);
       }}
     />
     </>
   );
-}
-
-// 일정이 생기는 순간 알림 시각도 같이 확정한다. TimeField는 사용자가 칸을
-// 직접 건드려야만 onChange가 뜨기 때문에, 그냥 두면 화면에는 시각이 보이는데
-// plannedTime은 빈 값으로 저장돼 실제 알림이 다른 시각에 왔다(2026-08-23).
-function resolvedPlanTime(form, plannedDate) {
-  if (!plannedDate) return {};
-  return { plannedTime: planTimeFor(form, DEFAULT_PLAN_TIME) };
-}
-
-function Field({ label, children }) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      {children}
-    </View>
-  );
-}
-
-function InlineField({ label, children }) {
-  return (
-    <View style={styles.inlineField}>
-      <Text style={styles.inlineLabel}>{label}</Text>
-      <View style={styles.inlineFieldControl}>{children}</View>
-    </View>
-  );
-}
-
-function ChoiceGroup({ label, options, value, onChange, formatLabel = (option) => option, compact = false }) {
-  return (
-    <View style={[styles.field, compact && styles.fieldCompact]}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.choices}>
-        {options.map((option) => (
-          <Pressable key={String(option)} style={[styles.choice, compact && styles.choiceCompact, value === option && styles.choiceActive]} onPress={() => onChange(option)}>
-            <Text style={[styles.choiceText, compact && styles.choiceTextCompact, value === option && styles.choiceTextActive]}>{formatLabel(option)}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function orderedCategoryOptions(options = []) {
-  const order = new Map(CATEGORY_EDIT_ORDER.map((category, index) => [category, index]));
-  return [...options].sort((left, right) => {
-    const leftOrder = order.has(left) ? order.get(left) : Number.MAX_SAFE_INTEGER;
-    const rightOrder = order.has(right) ? order.get(right) : Number.MAX_SAFE_INTEGER;
-    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-    return String(left).localeCompare(String(right), "ko");
-  });
-}
-
-function formatCompactCategoryLabel(option) {
-  return COMPACT_CATEGORY_LABELS[option] || option;
-}
-
-function DateButton({ value, onPress, showWeekday = false }) {
-  const weekday = showWeekday ? weekdayLabel(value) : "";
-  return (
-    <Pressable style={styles.dateButton} onPress={onPress}>
-      <Text style={styles.dateText}>{weekday ? `${formatDateLabel(value)} (${weekday})` : formatDateLabel(value)}</Text>
-    </Pressable>
-  );
-}
-
-function formatDateLabel(value) {
-  const [year, month, day] = value.split("-");
-  return `${Number(year)}\uB144 ${Number(month)}\uC6D4 ${Number(day)}\uC77C`;
 }
 
 function ExpiryTimeline({ timeline, children }) {
@@ -982,68 +696,6 @@ const styles = StyleSheet.create({
   categoryChipTextActive: {
     color: "#fff"
   },
-  field: {
-    gap: 7,
-    marginTop: 8
-  },
-  inlineField: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 6
-  },
-  inlineLabel: {
-    ...typography.captionStrong,
-    width: 58,
-    color: "#68716b"
-  },
-  inlineFieldControl: {
-    flex: 1
-  },
-  fieldCompact: {
-    gap: 5,
-    marginTop: 6
-  },
-  label: {
-    ...typography.label,
-    color: "#68716b",
-  },
-  choices: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  choice: {
-    minHeight: 42,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#d9cfc0",
-    backgroundColor: "#f7f3eb",
-    justifyContent: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 8
-  },
-  choiceCompact: {
-    minHeight: 32,
-    width: 72,
-    paddingHorizontal: 4,
-    paddingVertical: 5
-  },
-  choiceActive: {
-    borderColor: "#1f7a5a",
-    backgroundColor: "#1f7a5a"
-  },
-  choiceText: {
-    ...typography.label,
-    color: "#18201c",
-  },
-  choiceTextCompact: {
-    ...typography.label,
-    textAlign: "center"
-  },
-  choiceTextActive: {
-    color: "#fff"
-  },
   focusNotice: {
     flexDirection: "row",
     alignItems: "center",
@@ -1158,87 +810,6 @@ const styles = StyleSheet.create({
   itemContent: {
     flex: 1
   },
-  editPanel: {
-    gap: 10
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#ebeeec"
-  },
-  sheetTitle: {
-    ...typography.sectionTitle,
-    color: "#18201c",
-    flexShrink: 1
-  },
-  sheetHeaderActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2
-  },
-  sheetCancelAction: {
-    minHeight: 36,
-    justifyContent: "center",
-    paddingHorizontal: 12
-  },
-  sheetCancelText: {
-    ...typography.label,
-    color: "#68716b",
-  },
-  sheetSaveAction: {
-    minHeight: 36,
-    borderRadius: 999,
-    backgroundColor: "#1f7a5a",
-    justifyContent: "center",
-    paddingHorizontal: 18
-  },
-  sheetSaveActionDisabled: {
-    opacity: 0.6
-  },
-  sheetSaveText: {
-    ...typography.label,
-    color: "#fff",
-  },
-  input: {
-    ...typography.body,
-    minHeight: 40,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#d9cfc0",
-    backgroundColor: "#fff",
-    color: "#18201c",
-    paddingHorizontal: 12
-  },
-  affiliateDisclosureBanner: {
-    // 공정위 지침 + 쿠팡 파트너스 가이드: 대가성 문구는 게시물 최상단에, 본문보다
-    // 크거나 눈에 띄는 색으로 노출해야 한다(2026-08-04 최종 승인 반려 후 위치 수정).
-    borderRadius: 10,
-    backgroundColor: "#fff0e7",
-    paddingHorizontal: 10,
-    paddingVertical: 8
-  },
-  affiliateDisclosureText: {
-    ...typography.body,
-    color: "#d95f3d"
-  },
-  dateButton: {
-    minHeight: 40,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#d9cfc0",
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8
-  },
-  dateText: {
-    ...typography.body,
-    color: "#18201c",
-  },
   dateSubText: {
     ...typography.caption,
     color: "#68716b",
@@ -1328,74 +899,10 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#18201c",
   },
-  sheetTabs: {
-    flexDirection: "row",
-    gap: 6,
-    backgroundColor: "#f1f4f2",
-    borderRadius: 10,
-    padding: 4,
-    marginBottom: 4
-  },
-  planGroup: {
-    marginTop: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#d4e7df",
-    backgroundColor: "#f8fbf9",
-    padding: 12
-  },
-  planHint: {
-    ...typography.caption,
-    color: "#3f8f6d",
-    marginTop: 6
-  },
-  planGroupTitle: {
-    ...typography.label,
-    color: "#1f7a5a",
-  },
   // 상품명 터치 영역. 글자만 감싸되 목록 줄 높이는 그대로 두려고 세로 여백을 줍니다.
   itemNamePress: {
     flex: 1,
     paddingVertical: 4
-  },
-  sheetBackdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(24, 32, 28, 0.45)"
-  },
-  sheetBackdropFill: {
-    flex: 1
-  },
-  sheetCard: {
-    height: "82%",
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    backgroundColor: "#fbfcfb",
-    paddingTop: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 18
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#d7dbd8",
-    marginBottom: 6
-  },
-  sheetScroll: {
-    flex: 1
-  },
-  sheetScrollContent: {
-    paddingBottom: 32
-  },
-  planTimeRow: {
-    flexDirection: "row"
-  },
-  memoInput: {
-    minHeight: 62,
-    textAlignVertical: "top",
-    paddingTop: 10
   },
   memoLine: {
     ...typography.caption,

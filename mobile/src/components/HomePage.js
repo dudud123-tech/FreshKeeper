@@ -63,10 +63,12 @@ const urgentDashboardIcon = require("../../assets/home/schedule_80dp.png");
 const weekDashboardIcon = require("../../assets/home/calendar_month.png");
 const storedDashboardIcon = require("../../assets/tabs/kitchen.png");
 // 교차 카드의 보관 열. 개수는 crossStats가 세므로 여기엔 열 정의만 둔다.
+// 아이콘은 tintColor로 색을 입히는 단색 알파 마스크다(assets/storage/*.png,
+// scripts/make-storage-icons.js로 생성). 배경 칩 없이 아이콘만 얹는다.
 const STORAGE_COLUMNS = [
-  { key: "fridge", label: "냉장", storage: "냉장" },
-  { key: "freezer", label: "냉동", storage: "냉동" },
-  { key: "room", label: "실온", storage: "실온" }
+  { key: "fridge", label: "냉장", storage: "냉장", icon: require("../../assets/storage/storage-fridge.png") },
+  { key: "freezer", label: "냉동", storage: "냉동", icon: require("../../assets/storage/storage-freezer.png") },
+  { key: "room", label: "실온", storage: "실온", icon: require("../../assets/storage/storage-room.png") }
 ];
 export default function HomePage({
   items,
@@ -195,7 +197,10 @@ export default function HomePage({
         <View style={styles.crossHeadRow}>
           <View style={styles.crossHeadSpacer} />
           {STORAGE_COLUMNS.map((col) => (
-            <Text key={col.key} style={styles.crossColHead}>{col.label}</Text>
+            <View key={col.key} style={styles.crossColHead}>
+              <Image source={col.icon} resizeMode="contain" style={styles.crossColIcon} />
+              <Text style={styles.crossColLabel}>{col.label}</Text>
+            </View>
           ))}
         </View>
         {crossRows.map((row, index) => {
@@ -634,18 +639,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 2
+    paddingTop: 12,
+    paddingBottom: 6
   },
   crossHeadSpacer: {
     flex: 1
   },
   crossColHead: {
-    ...typography.caption,
-    fontSize: 13,
-    color: "#9aa39d",
     width: 44,
-    textAlign: "center"
+    alignItems: "center",
+    gap: 2
+  },
+  // 배경 칩 없이 아이콘만 얹습니다. 단색 마스크라 tintColor로 색을 정합니다.
+  crossColIcon: {
+    width: 18,
+    height: 18,
+    tintColor: "#8d968f"
+  },
+  crossColLabel: {
+    ...typography.caption,
+    fontSize: 12,
+    color: "#9aa39d"
   },
   // 숫자 한 칸. 폭을 crossColHead와 같은 40으로 고정해 열이 어긋나지 않게 합니다.
   crossCell: {

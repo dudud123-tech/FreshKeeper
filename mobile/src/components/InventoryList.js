@@ -4,8 +4,10 @@ import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
 import { isCoupangUrl } from "../services/coupangApi";
 import { statusFor, timelineFor, todayIso, weekdayLabel } from "../utils/date";
+import { completionTimingLabel, createdDateLabel } from "../utils/itemLabels";
 import { DEFAULT_PLAN_TIME, planBadgeLabel, planTimeFor, PLAN_REPEATS, repeatLabel } from "../utils/mealPlan";
 import { TabButton, TimeField } from "./CommonControls";
+import ItemDetailModal from "./ItemDetailModal";
 
 
 import { getFoodImageSource } from "../utils/foodImages";
@@ -109,127 +111,6 @@ export default function InventoryList({
   // 편집 시트 탭. 기본(상품명·소비기한·일정) / 상세(카테고리·보관·구매링크).
   // 접기 방식은 한 번 더 눌러야 해서 접근이 불편하다는 피드백으로 탭으로 바꿨다(2026-08-23).
   const [editTab, setEditTab] = useState("basic");
-  // 상품명을 누르면 뜨는 큰 카드 팝업. 항목을 통째로 담아두면 수정 후에도 옛
-  // 값이 남으므로 id만 들고 매번 현재 목록에서 찾는다. 완료/삭제로 목록에서
-  // 빠지면 자연히 null이 되어 팝업도 닫힌다(2026-08-24).
-  const [detailItemId, setDetailItemId] = useState("");
-  const isCompletedScope = inventoryScope === "completed";
-  const detailItem = useMemo(
-    () => (detailItemId ? sortedItems.find((item) => String(item.id) === detailItemId) || null : null),
-    [sortedItems, detailItemId]
-  );
-  const normalizedQuery = query.trim().toLowerCase();
-  const searchedItems = sortedItems.filter((item) => String(item.name || "").toLowerCase().includes(normalizedQuery));
-  const completedStats = useMemo(() => summarizeCompletedItems(sortedItems), [sortedItems]);
-  const visibleItems = useMemo(() => {
-    if (!isCompletedScope) return searchedItems;
-    return searchedItems.filter((item) => isRecentCompletedItem(item, COMPLETED_VISIBLE_DAYS));
-  }, [isCompletedScope, searchedItems]);
-  const visibleEntries = useMemo(() => {
-    if (!isCompletedScope) return visibleItems.map((item) => ({ kind: "item", item }));
-    return buildCompletedMonthEntries(visibleItems);
-  }, [isCompletedScope, visibleItems]);
-  const editCategoryOptions = useMemo(() => orderedCategoryOptions(categories), [categories]);
-  const listRenderKey = `inventory-list-${inventoryScope}-${sortMode}-${categoryFilter}-${storageFilter}-${favoriteFilter}-${focusItemId || "all"}`;
-  const itemKeyPrefix = sortMode === "등록일순" ? "created" : "expiry";
-
-  async function openPurchaseUrl(url) {
-    const rawUrl = String(url || "").trim();
-    if (!rawUrl) return;
-    const nextUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-    try {
-      // canOpenURL은 Android 11+ 패키지 가시성 정책 때문에 실제로 열리는 링크도
-      // false를 반환하는 경우가 흔해서(false negative), 사전 체크 없이 바로 열고
-      // 실패하면 그때 안내한다.
-      await Linking.openURL(nextUrl);
-    } catch {
-      Alert.alert("링크 열기 실패", "이 링크를 열 수 없습니다.");
-    }
-  }
-
-  // 예전에는 이 편집 폼을 목록 카드 안에서 펼쳤다. 카테고리 12개 칩이 날짜 필드
-  // 위를 차지해서 소비기한·먹을 날을 고치려면 매번 아래까지 스크롤해야 했고,
-  // 카드가 길어져 목록도 밀렸다. 바텀시트로 띄워 넓은 화면에서 수정하게 바꿨다(2026-08-23).
-  // 상품명을 누르면 뜨는 큰 카드 팝업. 시력이 좋지 않은 사용자를 염두에 두고
-  // 사진을 크게, 글자를 목록보다 훨씬 크게, 버튼도 손가락으로 누르기 쉬운
-  // 크기로 잡았다. 색만으로 상태를 알리지 않고 글자로도 같이 적는다(2026-08-24).
-  function renderDetailModal() {
-    if (!detailItem) return null;
-    const item = detailItem;
-    const status = statusFor(item);
-    const planLabel = planBadgeLabel(item);
-    const rows = [
-      { label: "소비기한", value: item.expiry || "-" },
-      { label: "보관", value: item.storage || "-" },
-      { label: "카테고리", value: item.category || "-" },
-      { label: "등록일", value: createdDateLabel(item) }
-    ];
-    if (planLabel) rows.push({ label: "먹을 날", value: planLabel });
-    if (isCompletedScope) rows.push({ label: "완료", value: completionTimingLabel(item) });
-    return (
-      <Modal visible transparent animationType="fade" onRequestClose={() => setDetailItemId("")}>
-        <View style={styles.detailBackdrop}>
-          <Pressable style={styles.detailBackdropFill} onPress={() => setDetailItemId("")} />
-          <View style={styles.detailCard}>
-            {/* 평소에는 내용이 카드 한 장에 다 들어와 스크롤이 생기지 않는다.
-                다만 시스템 글꼴을 크게 쓰는 사용자(이 팝업이 겨냥하는 바로 그
-                사용자다)나 메모가 긴 경우까지 잘리면 안 되므로 ScrollView로
-                감싸 둔다. 버튼은 바깥에 있어 항상 닿는다(2026-08-24). */}
-            <ScrollView
-              contentContainerStyle={styles.detailBody}
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-            >
-              {/* 사진 소스가 전부 정사각형이라(카테고리 기본 256x256, 사용자 사진도
-                  aspect [1,1]) 박스도 정사각으로 둔다. 가로로 긴 박스에 cover를
-                  걸면 위아래가 잘린다. contain은 혹시 비정사각 사진이 들어와도
-                  잘리지 않게 하는 보험이다. 256px 원본이라 너무 키우면 뭉개져서
-                  카드 폭 가득 대신 적당한 크기로 잡는다(2026-08-24). */}
-              <Image source={getFoodImageSource(item)} resizeMode="contain" style={styles.detailImage} />
-              <View style={styles.detailTitleRow}>
-                <Text style={styles.detailName} numberOfLines={2}>{String(item.name || "")}</Text>
-                <Text style={[styles.badge, isCompletedScope ? styles.completedBadge : styles[status.tone]]}>
-                  {isCompletedScope ? "완료" : status.label}
-                </Text>
-              </View>
-              {rows.map((row) => (
-                <View key={row.label} style={styles.detailRow}>
-                  <Text style={styles.detailRowLabel}>{row.label}</Text>
-                  <Text style={styles.detailRowValue}>{row.value}</Text>
-                </View>
-              ))}
-              {item.memo?.trim() ? (
-                <View style={styles.detailMemoBox}>
-                  <Text style={styles.detailRowLabel}>메모</Text>
-                  <Text style={styles.detailMemoText} numberOfLines={3}>{item.memo.trim()}</Text>
-                </View>
-              ) : null}
-            </ScrollView>
-            <View style={styles.detailActions}>
-              <Pressable
-                style={[styles.detailButton, styles.detailButtonGhost]}
-                onPress={() => setDetailItemId("")}
-                accessibilityRole="button"
-              >
-                <Text style={styles.detailButtonGhostText}>닫기</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.detailButton, styles.detailButtonPrimary]}
-                onPress={() => {
-                  setDetailItemId("");
-                  startEdit(item);
-                }}
-                accessibilityRole="button"
-              >
-                <Text style={styles.detailButtonPrimaryText}>수정하기</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    );
-  }
-
   function renderEditSheet() {
     if (!editForm) return null;
     return (
@@ -671,7 +552,16 @@ export default function InventoryList({
       </View>
     </ScrollView>
     {renderEditSheet()}
-    {renderDetailModal()}
+    <ItemDetailModal
+      item={detailItem}
+      expiryType={expiryType}
+      completedScope={isCompletedScope}
+      onClose={() => setDetailItemId("")}
+      onEdit={() => {
+        setDetailItemId("");
+        startEdit(detailItem);
+      }}
+    />
     </>
   );
 }
@@ -823,16 +713,6 @@ function CardIconButton({ icon, onPress, danger = false, complete = false, acces
   );
 }
 
-function createdDateLabel(item) {
-  if (typeof item?.createdAt === "string" && item.createdAt.length >= 10) {
-    return item.createdAt.slice(0, 10);
-  }
-  if (typeof item?.expiry === "string" && item.expiry.length >= 10) {
-    return item.expiry.slice(0, 10);
-  }
-  return "-";
-}
-
 function completedDateLabel(item) {
   if (typeof item?.completedAt === "string" && item.completedAt.length >= 10) {
     return `완료 ${item.completedAt.slice(0, 10)}`;
@@ -910,18 +790,6 @@ function getStoragePillStyle(storageLabel) {
     return styles.storagePillRoom;
   }
   return styles.storagePillCold;
-}
-
-function completionTimingLabel(item) {
-  if (!item?.completedAt || !item?.expiry) return "소비기한 기준 정보가 부족합니다.";
-  const completed = new Date(item.completedAt);
-  const [year, month, day] = String(item.expiry).split("-").map(Number);
-  const expiry = new Date(year, month - 1, day);
-  if (Number.isNaN(completed.getTime()) || Number.isNaN(expiry.getTime())) return "소비기한 기준 정보가 부족합니다.";
-  const diff = Math.ceil((expiry - completed) / 86400000);
-  if (diff > 0) return `소비기한 ${diff}일 전에 완료`;
-  if (diff === 0) return "소비기한 당일 완료";
-  return `소비기한 ${Math.abs(diff)}일 후 완료`;
 }
 
 const styles = StyleSheet.create({
@@ -1448,111 +1316,6 @@ const styles = StyleSheet.create({
   itemNamePress: {
     flex: 1,
     paddingVertical: 4
-  },
-  // ── 상품 상세 팝업 ────────────────────────────────────────────────
-  // 시력이 좋지 않은 사용자를 위해 목록보다 글자와 사진을 크게 잡습니다.
-  detailBackdrop: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 18,
-    backgroundColor: "rgba(24, 32, 28, 0.55)"
-  },
-  detailBackdropFill: {
-    ...StyleSheet.absoluteFillObject
-  },
-  detailCard: {
-    width: "100%",
-    maxHeight: "92%",
-    borderRadius: 22,
-    backgroundColor: "#fff",
-    overflow: "hidden"
-  },
-  detailBody: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 4
-  },
-  // 정사각형입니다. 소스가 1:1이라 잘림이 없고, 카테고리 기본 이미지가 256px
-  // 뿐이라 이보다 키우면 뭉갭니다.
-  detailImage: {
-    alignSelf: "center",
-    width: 168,
-    height: 168,
-    borderRadius: 16,
-    backgroundColor: "#f3f6f4"
-  },
-  detailTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 14,
-    marginBottom: 4
-  },
-  detailName: {
-    ...typography.screenTitle,
-    color: "#18201c",
-    flex: 1
-  },
-  detailRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f2f0"
-  },
-  detailRowLabel: {
-    ...typography.body,
-    color: "#77807a"
-  },
-  detailRowValue: {
-    ...typography.label,
-    color: "#18201c",
-    flexShrink: 1,
-    textAlign: "right"
-  },
-  detailMemoBox: {
-    marginTop: 12,
-    gap: 4
-  },
-  detailMemoText: {
-    ...typography.body,
-    color: "#2f3a34"
-  },
-  // 버튼은 손가락으로 누르기 쉽게 높이를 넉넉히 잡습니다.
-  detailActions: {
-    flexDirection: "row",
-    gap: 10,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#eef1ef"
-  },
-  detailButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  detailButtonGhost: {
-    borderWidth: 1,
-    borderColor: "#d7ddd9",
-    backgroundColor: "#fff"
-  },
-  detailButtonGhostText: {
-    ...typography.label,
-    fontSize: 16,
-    color: "#46514a"
-  },
-  detailButtonPrimary: {
-    backgroundColor: "#1f7a5a"
-  },
-  detailButtonPrimaryText: {
-    ...typography.label,
-    fontSize: 16,
-    color: "#fff"
   },
   sheetBackdrop: {
     flex: 1,

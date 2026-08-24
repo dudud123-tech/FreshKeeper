@@ -18,6 +18,7 @@ import {
   upcomingScheduleDates
 } from "../utils/mealPlan";
 import { ChoiceGroup, DateButton, TimeField } from "./CommonControls";
+import ItemDetailModal from "./ItemDetailModal";
 import BannerAdSlot from "./BannerAdSlot";
 
 const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
@@ -44,6 +45,13 @@ export default function SchedulePage({
   const [pickerRepeat, setPickerRepeat] = useState("");
   // 값이 있으면 "새 상품 추가"가 아니라 "이 상품의 일정 수정" 모드다.
   const [editingItem, setEditingItem] = useState(null);
+  // 상품명을 누르면 뜨는 상세 카드. 보관함과 같은 팝업을 쓴다. 스냅샷 대신
+  // id만 들고 매번 목록에서 찾아, 완료·해제로 빠지면 저절로 닫힌다(2026-08-24).
+  const [detailItemId, setDetailItemId] = useState("");
+  const detailItem = useMemo(
+    () => (detailItemId ? items.find((item) => String(item.id) === detailItemId) || null : null),
+    [items, detailItemId]
+  );
 
   const dates = useMemo(() => upcomingScheduleDates(), []);
   const days = useMemo(() => groupPlannedItemsByDate(items, dates), [items, dates]);
@@ -102,6 +110,7 @@ export default function SchedulePage({
                 onComplete={() => completeItem(item.id)}
                 onClear={() => clearItemPlan(item.id)}
                 onEdit={() => openPickerForItem(item)}
+                onOpenDetail={() => setDetailItemId(String(item.id))}
                 showPlannedDate
               />
             ))}
@@ -127,6 +136,7 @@ export default function SchedulePage({
                     onComplete={() => completeItem(item.id)}
                     onClear={() => clearItemPlan(item.id)}
                     onEdit={() => openPickerForItem(item)}
+                    onOpenDetail={() => setDetailItemId(String(item.id))}
                   />
                 ))}
               </View>
@@ -144,6 +154,18 @@ export default function SchedulePage({
 
         <BannerAdSlot />
       </ScrollView>
+
+      <ItemDetailModal
+        item={detailItem}
+        completedScope={false}
+        editLabel="일정 바꾸기"
+        onClose={() => setDetailItemId("")}
+        onEdit={() => {
+          const target = detailItem;
+          setDetailItemId("");
+          if (target) openPickerForItem(target);
+        }}
+      />
 
       <Modal visible={pickerVisible} transparent animationType="fade" onRequestClose={() => setPickerVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -219,7 +241,7 @@ export default function SchedulePage({
 
 // 일정 한 줄. 소비기한 D-day를 같이 보여줘서 "언제 먹을지"와 "언제까지 먹어야 하는지"
 // 두 축을 한눈에 비교할 수 있게 한다.
-function ScheduleRow({ item, onComplete, onClear, onEdit, showPlannedDate = false }) {
+function ScheduleRow({ item, onComplete, onClear, onEdit, onOpenDetail, showPlannedDate = false }) {
   const status = statusFor(item);
   const timeLabel = formatPlanTime(planTimeFor(item, DEFAULT_PLAN_TIME));
   const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)} 반복` : "";
@@ -227,7 +249,13 @@ function ScheduleRow({ item, onComplete, onClear, onEdit, showPlannedDate = fals
     <View style={styles.row}>
       <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.rowImage} />
       <Pressable style={styles.rowBody} onPress={onEdit}>
-        <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+        <Pressable
+          onPress={onOpenDetail}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.name} 자세히 보기`}
+        >
+          <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+        </Pressable>
         <Text style={styles.rowMeta}>
           {showPlannedDate ? `${item.plannedDate} · ` : ""}
           소비기한 {item.expiry}

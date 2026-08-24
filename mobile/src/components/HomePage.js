@@ -844,13 +844,13 @@ const styles = StyleSheet.create({
   // 급으로 읽혔다. 크기를 낮춰 계층을 만들고, 대신 왼쪽 초록바로 섹션 시작을
   // 표시한다 — 글자만 줄이면 구분이 약해지기 때문이다(2026-08-24).
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "800",
-    lineHeight: 20,
+    lineHeight: 23,
     color: "#2f3a34",
-    borderLeftWidth: 3,
+    borderLeftWidth: 6,
     borderLeftColor: "#1f7a5a",
-    paddingLeft: 8
+    paddingLeft: 10
   },
   // 섹션 제목 오른쪽에 붙는 개수입니다("보관 위치" 옆 총계).
   sectionCount: {

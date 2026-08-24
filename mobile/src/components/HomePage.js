@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from "react-native-reanimated";
 import BannerAdSlot from "./BannerAdSlot";
 import { typography } from "../theme/typography";
-import { daysUntil, itemCreatedDate, todayIso } from "../utils/date";
+import { daysUntil, todayIso } from "../utils/date";
 import {
   DEFAULT_PLAN_TIME,
   formatPlanTime,
@@ -18,6 +19,28 @@ import { openCoupangOrderHistory } from "../utils/coupangLinks";
 import { computePersonalRankings } from "../utils/personalRankings";
 
 const planCompleteIcon = require("../../assets/actions/fork_spoon_80dp.png");
+
+// "나의 랭킹" 배지 위를 사선으로 스쳐 지나가는 은은한 흰색 하이라이트.
+function ShimmerHighlight() {
+  const translateX = useSharedValue(-24);
+
+  useEffect(() => {
+    translateX.value = withRepeat(
+      withSequence(
+        withTiming(-24, { duration: 0 }),
+        withTiming(100, { duration: 900 }),
+        withTiming(100, { duration: 0 })
+      ),
+      -1
+    );
+  }, [translateX]);
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }, { rotate: "18deg" }]
+  }));
+
+  return <Animated.View pointerEvents="none" style={[styles.rankingBadgeShine, shimmerStyle]} />;
+}
 
 async function openExternalUrl(url) {
   const trimmed = String(url || "").trim();
@@ -43,7 +66,6 @@ export default function HomePage({
   summary,
   reminderDays,
   onOpenInventory,
-  onOpenAdd,
   onOpenSchedule,
   completePlanItem,
   onChangeItemImage
@@ -90,9 +112,6 @@ export default function HomePage({
       .sort((a, b) => new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime())
   ].slice(0, 5);
   const priorityCardWidth = Math.max((layoutWidth - 32 - 20) / 3, 104);
-  const recentItems = [...activeItems]
-    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-    .slice(0, 4);
   const dashboardStats = [
     {
       label: "만료",
@@ -136,6 +155,20 @@ export default function HomePage({
         }
       }}
     >
+      {/* 통계 4칸 위에 얹는 작은 배지. 성장 카드에 달려 있던 모양 그대로 —
+          흰 줄이 사선으로 지나가 눈에 띄게 한다(2026-08-24). */}
+      <Pressable style={styles.rankingBadge} onPress={() => setRankingModalVisible(true)}>
+        <ShimmerHighlight />
+        <Text style={styles.rankingBadgeIcon}>🏆</Text>
+        <Text style={styles.rankingBadgeText}>나의 랭킹</Text>
+      </Pressable>
+
+      <PersonalRankingModal
+        visible={rankingModalVisible}
+        onClose={() => setRankingModalVisible(false)}
+        rankings={personalRankings}
+      />
+
       <View style={styles.dashboardStatsCard}>
         {dashboardStats.map((stat, index) => (
           <Pressable
@@ -156,18 +189,6 @@ export default function HomePage({
           </Pressable>
         ))}
       </View>
-
-      <Pressable style={styles.rankingEntry} onPress={() => setRankingModalVisible(true)}>
-        <Text style={styles.rankingEntryIcon}>🏆</Text>
-        <Text style={styles.rankingEntryText}>나의 랭킹</Text>
-        <Text style={styles.rankingEntryChevron}>{"›"}</Text>
-      </Pressable>
-
-      <PersonalRankingModal
-        visible={rankingModalVisible}
-        onClose={() => setRankingModalVisible(false)}
-        rankings={personalRankings}
-      />
 
       {/* 대시보드 통계 카드 바로 아래. "다시 구매" 패널은 기본 접힘이라 여기 넣으면
           탭을 한 번 더 해야 보이고 성격도 다르다(그건 이미 등록한 상품 재구매,
@@ -240,23 +261,6 @@ export default function HomePage({
       {repurchasePanelVisible ? (
         <RepurchasePanel items={repurchaseItems} suggestedProducts={bestCategoryProducts} />
       ) : null}
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>최근 추가한 상품</Text>
-        <Pressable onPress={() => onOpenInventory("all")}>
-          <Text style={styles.moreText}>더보기 &gt;</Text>
-        </Pressable>
-      </View>
-      <View style={styles.recentList}>
-        {recentItems.length ? (
-          recentItems.map((item) => <RecentItem key={item.id} item={item} onChangeItemImage={onChangeItemImage} />)
-        ) : (
-          <Pressable style={styles.emptyWideCard} onPress={onOpenAdd}>
-            <Text style={styles.emptyTitle}>아직 등록한 상품이 없습니다</Text>
-            <Text style={styles.emptyText}>영수증이나 직접 입력으로 첫 상품을 추가해보세요.</Text>
-          </Pressable>
-        )}
-      </View>
 
       <BannerAdSlot />
     </ScrollView>
@@ -483,24 +487,7 @@ function PriorityCard({ item, width, onPress, onChangeItemImage }) {
   );
 }
 
-function RecentItem({ item, onChangeItemImage }) {
-  const days = daysUntil(item.expiry);
-  return (
-    <View style={styles.recentItem}>
-      <Pressable onPress={() => onChangeItemImage?.(item.id)}>
-        <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.recentImage} />
-      </Pressable>
-      <View style={styles.recentBody}>
-        <Text style={styles.recentName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.recentMeta}>{item.storage} · 등록 {itemCreatedDate(item)}</Text>
-      </View>
-      <Text style={[styles.recentDay, days <= 1 && styles.dDayDanger]}>{labelForDays(days)}</Text>
-    </View>
-  );
-}
-
-// 오늘 먹기로 한 상품 한 줄. 최근 목록(RecentItem)과 같은 행 모양을 써서 홈
-// 안에서 두 목록이 따로 노는 느낌이 안 나게 한다.
+// 오늘 먹기로 한 상품 한 줄.
 function PlanItem({ item, overdue, onComplete }) {
   const timeLabel = formatPlanTime(planTimeFor(item, DEFAULT_PLAN_TIME));
   const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)}` : "";
@@ -628,33 +615,35 @@ const styles = StyleSheet.create({
     marginLeft: 2,
     marginBottom: 2
   },
-  // 통계 카드 바로 아래 "나의 랭킹" 진입점 한 줄입니다. 통계 4칸과 성격이 같은
-  // (내 데이터 요약) 정보라 붙여 둡니다.
-  rankingEntry: {
+  // 통계 카드 위 "나의 랭킹" 배지입니다. overflow: hidden이라야 위를 지나가는
+  // 흰 줄(rankingBadgeShine)이 알약 밖으로 삐져나오지 않습니다.
+  rankingBadge: {
+    alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#e6e4df",
-    backgroundColor: "#fff",
+    gap: 4,
+    backgroundColor: "#e8f7ef",
+    borderRadius: 999,
     marginTop: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    overflow: "hidden"
   },
-  rankingEntryIcon: {
-    fontSize: 15
+  rankingBadgeShine: {
+    position: "absolute",
+    top: -8,
+    bottom: -8,
+    left: 0,
+    width: 10,
+    backgroundColor: "rgba(255,255,255,0.65)"
   },
-  rankingEntryText: {
-    ...typography.cardTitle,
-    color: "#18201c",
-    flex: 1
+  rankingBadgeIcon: {
+    fontSize: 11
   },
-  rankingEntryChevron: {
+  rankingBadgeText: {
+    ...typography.captionStrong,
     color: "#1f7a5a",
-    fontSize: 22,
-    fontWeight: "700",
-    marginTop: -2
+    fontSize: 11
   },
   rankingBackdrop: {
     flex: 1,
@@ -772,7 +761,7 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 10
   },
-  // 섹션 제목입니다. 예: "이번 주 먼저 먹을 것", "최근 추가한 상품".
+  // 섹션 제목입니다. 예: "오늘 먹기로 한 것", "이번 주 먼저 먹을 것".
   sectionTitle: {
     ...typography.sectionTitle,
     color: "#18201c",
@@ -1025,7 +1014,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
   },
-  // 최근 추가한 상품 목록을 감싸는 흰색 리스트 카드입니다.
+  // "오늘 먹기로 한 것" 목록을 감싸는 흰색 리스트 카드입니다.
   recentList: {
     borderRadius: 14,
     borderWidth: 1,
@@ -1033,7 +1022,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     overflow: "hidden"
   },
-  // 최근 추가한 상품 한 줄입니다.
+  // 목록 한 줄입니다("오늘 먹기로 한 것"이 씁니다).
   recentItem: {
     minHeight: 68,
     flexDirection: "row",
@@ -1083,11 +1072,6 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30
   },
-  // 최근 목록 오른쪽 D-day 텍스트입니다.
-  recentDay: {
-    ...typography.label,
-    color: "#ef8b1f",
-  },
   // 상품이 없을 때 보여주는 빈 카드입니다.
   // 대시보드 통계 카드 아래 항상 보이는 쿠팡 주문내역 캡처하러 가기 카드. AddItemPage.js의
   // orderHistoryShortcut과 같은 모양으로 맞춰 두 화면에서 일관되게 보이도록 한다.
@@ -1136,12 +1120,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e6e4df",
     backgroundColor: "#fff",
-    justifyContent: "center",
-    padding: 16
-  },
-  // 가로 전체를 쓰는 빈 카드입니다. 최근 목록이 비었을 때 사용됩니다.
-  emptyWideCard: {
-    minHeight: 96,
     justifyContent: "center",
     padding: 16
   },

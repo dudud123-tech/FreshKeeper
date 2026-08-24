@@ -651,7 +651,6 @@ export default function App() {
               summary={summary}
               reminderDays={reminderDays}
               onOpenInventory={goToInventory}
-              onOpenAdd={() => goToPage(PAGE_ADD)}
               onOpenSchedule={() => goToPage(PAGE_SCHEDULE)}
               completePlanItem={completePlanOccurrence}
               onChangeItemImage={changeItemImage}

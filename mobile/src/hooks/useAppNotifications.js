@@ -1,10 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import {
-  configureExpiryNotificationHandler,
-  getNotificationDiagnostics,
-  scheduleAllNotifications,
-  scheduleTestNotification
-} from "../services/notificationScheduler";
+import { useEffect, useState } from "react";
+import { configureExpiryNotificationHandler, scheduleAllNotifications } from "../services/notificationScheduler";
 
 export const DEFAULT_NOTIFICATION_SETTINGS = { enabled: true, hour: 9, minute: 0 };
 
@@ -40,16 +35,10 @@ export function useAppNotifications({ items, reminderDays, settingsReady }) {
     };
   }, [items, reminderDays, notificationSettings, settingsReady]);
 
-  // 기기에서 알림이 왜 안 오는지 가려내기 위한 진단. 설정 > 알림에서 부른다.
-  const refreshNotificationDiagnostics = useCallback(() => getNotificationDiagnostics(), []);
-  const sendTestNotification = useCallback(() => scheduleTestNotification(), []);
-
   return {
     notificationSettings,
     setNotificationSettings,
     notificationStatus,
-    normalizeNotificationSettings,
-    refreshNotificationDiagnostics,
-    sendTestNotification
+    normalizeNotificationSettings
   };
 }

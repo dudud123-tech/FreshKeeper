@@ -15,83 +15,6 @@ const kakaoAuthIcon = require("../../assets/auth/kakaotalk-logo.png");
 const naverAuthIcon = require("../../assets/auth/naver-logo.png");
 const shareMaterialIcon = require("../../assets/actions/share-material.png");
 
-// 알림이 안 온다는 신고를 기기에서 가려내기 위한 진단 블록. 예약이 0건이면 앱
-// 쪽 문제, 예약은 있는데 안 울리면 OS/제조사 절전 쪽 문제다. 이 둘을 구분하지
-// 못하면 계속 추측만 하게 된다(2026-08-25).
-function NotificationDiagnostics({ status, refresh, sendTest }) {
-  const [info, setInfo] = useState(null);
-  const [testResult, setTestResult] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const load = async () => {
-    if (!refresh) return;
-    setBusy(true);
-    try {
-      setInfo(await refresh());
-    } catch (error) {
-      setInfo({ error: String(error?.message || error) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    // 설정 화면에 들어올 때 한 번만 읽는다.
-  }, []);
-
-  const lines = [];
-  if (status) lines.push(["마지막 예약 결과", status]);
-  if (info?.error) lines.push(["읽기 실패", info.error]);
-  if (info?.supported) {
-    lines.push(["알림 권한", info.granted ? "허용됨" : "거부됨"]);
-    lines.push(["예약된 알림", info.count + "건"]);
-    lines.push([
-      "가장 이른 예약",
-      info.nextAt
-        ? `${info.nextAt.getMonth() + 1}/${info.nextAt.getDate()} ${String(info.nextAt.getHours()).padStart(2, "0")}:${String(info.nextAt.getMinutes()).padStart(2, "0")}`
-        : "없음"
-    ]);
-  }
-
-  return (
-    <View style={styles.diagBox}>
-      <Text style={styles.diagTitle}>알림 진단</Text>
-      {lines.map(([label, value]) => (
-        <View key={label} style={styles.diagRow}>
-          <Text style={styles.diagLabel}>{label}</Text>
-          <Text style={styles.diagValue}>{value}</Text>
-        </View>
-      ))}
-      <View style={styles.diagActions}>
-        <Pressable style={styles.diagButton} onPress={load} disabled={busy} accessibilityRole="button">
-          <Text style={styles.diagButtonText}>{busy ? "확인 중..." : "다시 확인"}</Text>
-        </Pressable>
-        <Pressable
-          style={styles.diagButton}
-          onPress={async () => {
-            setTestResult("예약 중...");
-            try {
-              setTestResult(await sendTest());
-            } catch (error) {
-              setTestResult("실패: " + String(error?.message || error));
-            }
-            load();
-          }}
-          accessibilityRole="button"
-        >
-          <Text style={styles.diagButtonText}>1분 뒤 테스트 알림</Text>
-        </Pressable>
-      </View>
-      {testResult ? <Text style={styles.diagResult}>{testResult}</Text> : null}
-      <Text style={styles.diagHint}>
-        예약이 0건이면 앱이 알림을 못 걸고 있는 것이고, 예약은 있는데 테스트 알림이
-        안 오면 휴대폰 절전 설정 문제입니다.
-      </Text>
-    </View>
-  );
-}
-
 export default function SettingsPanel({
   settingsTab,
   setSettingsTab,
@@ -99,9 +22,6 @@ export default function SettingsPanel({
   setReminderDays,
   notificationSettings,
   setNotificationSettings,
-  notificationStatus,
-  refreshNotificationDiagnostics,
-  sendTestNotification,
   shareFamilyDigest,
   shareFamilyCode,
   familyCodeInput,
@@ -248,11 +168,6 @@ export default function SettingsPanel({
             />
           </View>
         </View>
-        <NotificationDiagnostics
-          status={notificationStatus}
-          refresh={refreshNotificationDiagnostics}
-          sendTest={sendTestNotification}
-        />
         {/* 먹는 일정 알림은 여기에 설정을 두지 않는다. 상품마다 알림 시각을
             따로 갖는 구조라 "모든 상품 공통 시각"이라는 설정이 들어갈 자리가
             없고, 일정을 안 잡으면 알림 자체가 없어 on/off 토글도 필요 없다.
@@ -821,65 +736,6 @@ const styles = StyleSheet.create({
     borderColor: "#e3e8e5",
     backgroundColor: "#fff",
     padding: 16
-  },
-  diagBox: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#e6e4df",
-    backgroundColor: "#fff",
-    marginTop: 12,
-    padding: 14,
-    gap: 2
-  },
-  diagTitle: {
-    ...typography.label,
-    color: "#18201c",
-    marginBottom: 4
-  },
-  diagRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    paddingVertical: 4
-  },
-  diagLabel: {
-    ...typography.caption,
-    color: "#77807a"
-  },
-  diagValue: {
-    ...typography.captionStrong,
-    color: "#18201c",
-    flexShrink: 1,
-    textAlign: "right"
-  },
-  diagActions: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 10
-  },
-  diagButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#d7ddd9",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  diagButtonText: {
-    ...typography.captionStrong,
-    color: "#46514a"
-  },
-  diagResult: {
-    ...typography.caption,
-    color: "#1f7a5a",
-    marginTop: 8
-  },
-  diagHint: {
-    ...typography.caption,
-    color: "#8b948d",
-    marginTop: 8
   },
   notificationStatus: {
     ...typography.badge,

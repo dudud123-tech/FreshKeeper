@@ -109,6 +109,9 @@ export function useInventory({
   const [category, setCategory] = useState(categories[0]);
   const [storage, setStorage] = useState(storageTypes[0]);
   const [expiry, setExpiry] = useState(() => suggestedExpiryDate("", categories[0], storageTypes[0]));
+  // 직접등록에서 바로 잡는 "챙겨 먹기" 값. 예전에는 등록한 뒤 보관함 수정으로
+  // 다시 들어가야 했다(2026-08-26 피드백). 비어 있으면 일정 없는 상품이다.
+  const [manualPlan, setManualPlan] = useState({ plannedDate: "", plannedMeal: "", plannedTime: "", planRepeat: "" });
   const [editingId, setEditingId] = useState("");
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editForm, setEditForm] = useState(null);
@@ -238,7 +241,9 @@ export function useInventory({
         purchaseUrl,
         // 바코드로 등록한 상품이면 이 값을 남겨서, 나중에 보관함에서 사진을
         // 바꿔도 그 바코드의 로컬 사진 캐시를 같이 갱신할 수 있게 한다.
-        barcode: pendingBarcode || ""
+        barcode: pendingBarcode || "",
+        // 일정을 안 잡았으면 네 필드 모두 빈 값이라 일정 없는 상품이 된다.
+        ...manualPlan
       });
       if (!added) return;
       if (pendingBarcode) {
@@ -265,6 +270,7 @@ export function useInventory({
       setCategory(categories[0]);
       setStorage(storageTypes[0]);
       setExpiry(suggestedExpiryDate("", categories[0], storageTypes[0]));
+      setManualPlan({ plannedDate: "", plannedMeal: "", plannedTime: "", planRepeat: "" });
       onManualSubmit?.();
     } finally {
       setManualSubmitting(false);
@@ -468,6 +474,8 @@ export function useInventory({
     setStorage,
     expiry,
     setExpiry,
+    manualPlan,
+    setManualPlan,
     editingId,
     editSubmitting,
     editForm,

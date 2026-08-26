@@ -68,6 +68,10 @@ export function ChoiceGroup({ label, options, value, onChange, formatLabel = (op
 // +- 버튼은 한 칸씩 눌러야 해서, 두 방식 다 쓰기 불편하다는 피드백으로 바꿨다(2026-08-23).
 // 타이핑 중에는 사용자가 친 문자열을 그대로 두고(지우고 다시 치는 걸 막지 않게),
 // 입력이 끝났을 때 유효 범위로 보정해서 확정한다.
+function onlyDigits(text) {
+  return String(text).split("").filter((ch) => ch >= "0" && ch <= "9").join("");
+}
+
 export function TimeField({ value, onChange }) {
   const [hourText, setHourText] = useState("");
   const [minuteText, setMinuteText] = useState("");
@@ -77,14 +81,29 @@ export function TimeField({ value, onChange }) {
   const hourDisplay = editingPart === "hour" ? hourText : valueHour;
   const minuteDisplay = editingPart === "minute" ? minuteText : valueMinute;
 
-  function commit(part, text) {
-    const digits = text.replace(/\D/g, "");
-    setEditingPart("");
+  // 값을 실제로 올려보낸다. 예전에는 blur/완료에서만 불러서, 키보드를 닫지 않고
+  // 저장하면 입력한 시각이 반영되지 않았다(2026-08-26 피드백).
+  function push(part, digits) {
     if (!digits) return;
     const max = part === "hour" ? 23 : 59;
     const clamped = Math.max(0, Math.min(max, Number(digits)));
     const next = String(clamped).padStart(2, "0");
     onChange(part === "hour" ? `${next}:${valueMinute}` : `${valueHour}:${next}`);
+  }
+
+  // 한 글자 칠 때마다 곧바로 반영한다. 비우는 중(빈 문자열)에는 이전 값을 그대로
+  // 두어, 지웠다가 다시 치는 사이에 0시로 튀지 않게 한다.
+  function handleChange(part, text) {
+    const digits = onlyDigits(text).slice(0, 2);
+    if (part === "hour") setHourText(digits);
+    else setMinuteText(digits);
+    push(part, digits);
+  }
+
+  // 포커스가 빠질 때는 화면 표시를 정규화된 값으로 되돌린다.
+  function commit(part, text) {
+    setEditingPart("");
+    push(part, onlyDigits(text));
   }
 
   return (
@@ -95,7 +114,7 @@ export function TimeField({ value, onChange }) {
           setEditingPart("hour");
           setHourText("");
         }}
-        onChangeText={setHourText}
+        onChangeText={(text) => handleChange("hour", text)}
         onBlur={() => commit("hour", hourText)}
         onSubmitEditing={() => commit("hour", hourText)}
         keyboardType="number-pad"
@@ -112,7 +131,7 @@ export function TimeField({ value, onChange }) {
           setEditingPart("minute");
           setMinuteText("");
         }}
-        onChangeText={setMinuteText}
+        onChangeText={(text) => handleChange("minute", text)}
         onBlur={() => commit("minute", minuteText)}
         onSubmitEditing={() => commit("minute", minuteText)}
         keyboardType="number-pad"

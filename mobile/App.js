@@ -99,6 +99,8 @@ export default function App() {
     setStorage,
     expiry,
     setExpiry,
+    manualPlan,
+    setManualPlan,
     editingId,
     editSubmitting,
     editForm,
@@ -228,10 +230,7 @@ export default function App() {
   const {
     notificationSettings,
     setNotificationSettings,
-    normalizeNotificationSettings,
-    notificationStatus,
-    refreshNotificationDiagnostics,
-    sendTestNotification
+    normalizeNotificationSettings
   } = useAppNotifications({ items, reminderDays, settingsReady });
   const {
     familySettings,
@@ -692,6 +691,8 @@ export default function App() {
               setCategory={setCategory}
               categories={categories}
               suggestCategory={suggestCategory}
+              manualPlan={manualPlan}
+              setManualPlan={setManualPlan}
               storage={storage}
               setStorage={setStorage}
               storageTypes={storageTypes}
@@ -805,9 +806,6 @@ export default function App() {
                 setReminderDays={setReminderDays}
                 notificationSettings={notificationSettings}
                 setNotificationSettings={setNotificationSettings}
-                notificationStatus={notificationStatus}
-                refreshNotificationDiagnostics={refreshNotificationDiagnostics}
-                sendTestNotification={sendTestNotification}
                 shareFamilyDigest={shareFamilyDigest}
                 shareFamilyCode={shareFamilyCode}
                 familyCodeInput={familyCodeInput}

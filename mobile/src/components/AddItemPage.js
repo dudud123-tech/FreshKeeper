@@ -3,10 +3,12 @@ import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWi
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { typography } from "../theme/typography";
-import { ChoiceGroup, DateButton, Field, PrimaryButton } from "./CommonControls";
+import { ChoiceGroup, DateButton, Field, PrimaryButton, TimeField } from "./CommonControls";
 import { openCoupangOrderHistory } from "../utils/coupangLinks";
 import { daysUntil } from "../utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "../utils/expiryPresets";
+import { todayIso, weekdayLabel } from "../utils/date";
+import { DEFAULT_PLAN_TIME, planTimeFor, PLAN_REPEATS, repeatLabel } from "../utils/mealPlan";
 import { getFoodImageSource } from "../utils/foodImages";
 
 const cameraIcon = require("../../assets/actions/action-camera.png");
@@ -35,6 +37,8 @@ export default function AddItemPage({
   setStorage,
   storageTypes,
   expiry,
+  manualPlan,
+  setManualPlan,
   setExpiry,
   openCalendar,
   submitManual,
@@ -198,6 +202,15 @@ export default function AddItemPage({
                     <Field label={"\uc18c\ube44\uae30\ud55c"}>
                       <DateButton value={expiry} onPress={() => openCalendar(expiry, setExpiry)} />
                     </Field>
+                    {/* 등록하면서 바로 먹을 날을 잡을 수 있게 한다. 예전에는 등록한 뒤
+                        보관함 수정으로 다시 들어가야 했다(2026-08-26 피드백).
+                        기본은 접어 둔다 — 일정을 안 잡는 등록이 더 많은데 늘 펼쳐 두면
+                        직접등록 폼이 그만큼 길어진다. */}
+                    <ManualPlanSection
+                      plan={manualPlan}
+                      setPlan={setManualPlan}
+                      openCalendar={openCalendar}
+                    />
                     <PrimaryButton
                       label={manualSubmitting ? "\ub4f1\ub85d \uc911..." : "\ub4f1\ub85d\ud558\uae30"}
                       onPress={submitManual}
@@ -619,6 +632,82 @@ function ReceiptPreview({
   );
 }
 
+// 직접등록의 "챙겨 먹기" 묶음. 보관함 수정 시트와 같은 순서로 묻는다 —
+// 반복을 먼저 알아야 날짜를 물어볼지가 정해지기 때문이다(매일 반복은 날짜가 무의미).
+function ManualPlanSection({ plan, setPlan, openCalendar }) {
+  const enabled = Boolean(plan?.plannedDate);
+
+  function enable() {
+    setPlan({
+      plannedDate: todayIso(),
+      plannedMeal: "",
+      plannedTime: DEFAULT_PLAN_TIME,
+      planRepeat: ""
+    });
+  }
+
+  function disable() {
+    setPlan({ plannedDate: "", plannedMeal: "", plannedTime: "", planRepeat: "" });
+  }
+
+  if (!enabled) {
+    return (
+      <Pressable style={styles.planAddButton} onPress={enable} accessibilityRole="button">
+        <Text style={styles.planAddText}>{"\uff0b \uba39\uc744 \ub0a0 \uc815\ud558\uae30"}</Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={styles.planGroup}>
+      <View style={styles.planGroupHeader}>
+        <Text style={styles.planGroupTitle}>{"\ucc59\uaca8 \uba39\uae30"}</Text>
+        <Pressable onPress={disable} accessibilityRole="button">
+          <Text style={styles.planGroupRemove}>{"\uc0ac\uc6a9 \uc548 \ud568"}</Text>
+        </Pressable>
+      </View>
+      <ChoiceGroup
+        label={"\ubc18\ubcf5"}
+        options={PLAN_REPEATS.map((option) => option.id)}
+        value={plan.planRepeat || ""}
+        onChange={(value) =>
+          setPlan((current) => ({
+            ...current,
+            planRepeat: value,
+            // 매일 반복은 날짜를 안 물어보므로 시작일이 비면 오늘로 채운다.
+            plannedDate: value === "daily" && !current.plannedDate ? todayIso() : current.plannedDate
+          }))
+        }
+        formatLabel={(option) => repeatLabel(option)}
+        compact
+      />
+      {plan.planRepeat !== "daily" ? (
+        <Field label={plan.planRepeat === "weekly" ? "\uba39\uc744 \uc694\uc77c" : "\uba39\uc744 \ub0a0"}>
+          <DateButton
+            value={plan.plannedDate || todayIso()}
+            onPress={() =>
+              openCalendar(plan.plannedDate || todayIso(), (value) =>
+                setPlan((current) => ({ ...current, plannedDate: value }))
+              )
+            }
+          />
+          {plan.planRepeat === "weekly" ? (
+            <Text style={styles.planHint}>
+              {`매주 ${weekdayLabel(plan.plannedDate || todayIso())}요일에 알려드려요.`}
+            </Text>
+          ) : null}
+        </Field>
+      ) : null}
+      <Field label={"\uc54c\ub9bc \uc2dc\uac04"}>
+        <TimeField
+          value={planTimeFor(plan, DEFAULT_PLAN_TIME)}
+          onChange={(next) => setPlan((current) => ({ ...current, plannedTime: next }))}
+        />
+      </Field>
+    </View>
+  );
+}
+
 function ddayLabel(expiry) {
   // 소비기한을 D-day 형태로 화면에 표시한다.
   const days = daysUntil(expiry);
@@ -702,6 +791,51 @@ function ReceiptStep({ number, title, description, children }) {
 }
 
 const styles = StyleSheet.create({
+  // 직접등록의 "챙겨 먹기" 진입 버튼. 일정을 안 잡는 등록이 더 많아 기본은 접어
+  // 두고, 필요한 사람만 펼치게 한다.
+  planAddButton: {
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#d4e7df",
+    borderStyle: "dashed",
+    backgroundColor: "#f8fbf9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4
+  },
+  planAddText: {
+    ...typography.label,
+    color: "#1f7a5a"
+  },
+  // 펼쳤을 때의 묶음. 보관함 수정 시트의 같은 이름 스타일과 톤을 맞춘다.
+  planGroup: {
+    marginTop: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#d4e7df",
+    backgroundColor: "#f8fbf9",
+    padding: 12
+  },
+  planGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4
+  },
+  planGroupTitle: {
+    ...typography.label,
+    color: "#1f7a5a"
+  },
+  planGroupRemove: {
+    ...typography.caption,
+    color: "#77807a"
+  },
+  planHint: {
+    ...typography.caption,
+    color: "#3f8f6d",
+    marginTop: 6
+  },
   // 화면 최상단 스크롤 영역 전체.
   screen: {
     flex: 1,

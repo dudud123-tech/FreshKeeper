@@ -74,3 +74,16 @@
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
+
+# expo-notifications — 라이브러리가 android/proguard-rules.pro에 아래 규칙을 갖고
+# 있는데 build.gradle에 consumerProguardFiles로 등록해두지 않아 앱 R8에 적용되지
+# 않는다. 실제로 mapping.txt를 보면 NotificationRequest가 Ad.g로 난독화된다.
+#
+# 예약 알림은 SharedPreferences에 자바 직렬화(ObjectOutputStream)로 저장되는데,
+# 직렬화 바이트에는 클래스 이름과 serialVersionUID가 박힌다. NotificationRequest는
+# serialVersionUID를 선언하지 않아 UID가 멤버 이름에서 계산되므로, 난독화되면
+# 앱을 업데이트할 때마다 이름과 UID가 함께 바뀐다. 그러면 이전 버전이 저장해둔
+# 예약을 읽지 못하고, 라이브러리가 예외를 조용히 삼켜서(catch -> null) 에러 없이
+# 알림만 사라진다. 기기를 재부팅해 복원할 때도 같은 문제가 난다.
+# (2026-08-25, 알림 미수신 조사)
+-keep class expo.modules.notifications.** { *; }

@@ -256,3 +256,46 @@ function memoLines(items) {
     })
     .join("\n");
 }
+
+// 기기에서 알림이 왜 안 오는지 가려내기 위한 진단. 예약이 0건이면 앱 쪽 문제고,
+// 예약은 있는데 안 울리면 OS/제조사 절전 쪽 문제다. 이 둘을 구분하지 못하면
+// 계속 추측만 하게 된다(2026-08-25, 알림 미수신 조사).
+export async function getNotificationDiagnostics() {
+  if (Platform.OS === "web") return { supported: false };
+  const permission = await Notifications.getPermissionsAsync();
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const dates = scheduled
+    .map((entry) => entry?.trigger?.value ?? entry?.trigger?.date)
+    .map((value) => (typeof value === "number" ? value : Date.parse(value)))
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  return {
+    supported: true,
+    granted: permission.status === "granted",
+    count: scheduled.length,
+    nextAt: dates.length ? new Date(dates[0]) : null
+  };
+}
+
+// 1분 뒤 알림을 예약한다. 화면을 끄고 기다리면 실제 전달 경로를 그대로 확인할 수
+// 있다 — 앱이 떠 있을 때만 오는지, 백그라운드에서도 오는지가 갈린다.
+export async function scheduleTestNotification() {
+  const unavailableReason = await prepareNotifications();
+  if (unavailableReason) return unavailableReason;
+  const triggerDate = new Date(Date.now() + 60_000);
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "알림 테스트",
+      body: "이 알림이 보이면 알림 전달은 정상입니다.",
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      sound: "default",
+      data: { type: "diagnostic" }
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: triggerDate,
+      channelId: PLAN_NOTIFICATION_CHANNEL_ID
+    }
+  });
+  return `1분 뒤(${triggerDate.getHours()}:${String(triggerDate.getMinutes()).padStart(2, "0")}) 테스트 알림을 예약했습니다. 화면을 끄고 기다려 주세요.`;
+}

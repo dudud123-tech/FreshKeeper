@@ -228,7 +228,10 @@ export default function App() {
   const {
     notificationSettings,
     setNotificationSettings,
-    normalizeNotificationSettings
+    normalizeNotificationSettings,
+    notificationStatus,
+    refreshNotificationDiagnostics,
+    sendTestNotification
   } = useAppNotifications({ items, reminderDays, settingsReady });
   const {
     familySettings,
@@ -802,6 +805,9 @@ export default function App() {
                 setReminderDays={setReminderDays}
                 notificationSettings={notificationSettings}
                 setNotificationSettings={setNotificationSettings}
+                notificationStatus={notificationStatus}
+                refreshNotificationDiagnostics={refreshNotificationDiagnostics}
+                sendTestNotification={sendTestNotification}
                 shareFamilyDigest={shareFamilyDigest}
                 shareFamilyCode={shareFamilyCode}
                 familyCodeInput={familyCodeInput}

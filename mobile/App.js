@@ -43,11 +43,15 @@ import {
   todayIso,
 } from "./src/utils/date";
 import { suggestedExpiryDate, suggestedStorage } from "./src/utils/expiryPresets";
-import { chooseItemImage } from "./src/utils/itemImagePicker";
+import { pickItemImageFromLibrary, takeItemImagePhoto } from "./src/utils/itemImagePicker";
 
 const STORAGE_KEY = "fresh-keeper-mobile-items-v1";
 const SETTINGS_KEY = "fresh-keeper-mobile-settings-v1";
-const ONBOARDING_KEY = "fresh-keeper-onboarding-seen-v1";
+// 튜토리얼 영상을 새로 찍으면 이 키를 올린다. 안 올리면 기존 사용자는 v1 키가
+// 이미 박혀 있어 새 튜토리얼을 영영 못 본다(설정의 "튜토리얼 다시 보기"로만 가능).
+// 올리면 기존 사용자도 업데이트 후 첫 실행에서 한 번 다시 보게 된다.
+// v2: 보관함 카드 버튼 정리 + 상세 카드 개편에 맞춰 6장으로 재촬영(2026-08-29).
+const ONBOARDING_KEY = "fresh-keeper-onboarding-seen-v2";
 const LAST_SEEN_VERSION_KEY = "fresh-keeper-last-seen-version-code-v1";
 const storageTypes = ["냉장", "냉동", "실온"];
 const categoryFilters = ["전체", ...categories];
@@ -119,6 +123,7 @@ export default function App() {
     setFavoriteFilter,
     focusItemId,
     setFocusItemId,
+    resetInventoryView,
     sortedItems,
     summary,
     addItem,
@@ -429,6 +434,13 @@ export default function App() {
   }, [page]);
 
   function goToPage(nextPage) {
+    // 보관함에서 다른 화면으로 나가면 목록 보기 상태를 되돌린다. 그래야 다음에
+    // 보관함에 들어왔을 때 항상 전체 목록으로 시작한다(2026-08-27 피드백).
+    // 들어올 때가 아니라 나갈 때 지우는 이유: goToInventory가 필터를 정한 뒤
+    // goToPage를 부르므로, 진입 시점에 지우면 방금 정한 필터까지 날아간다.
+    if (page === PAGE_INVENTORY && nextPage !== PAGE_INVENTORY) {
+      resetInventoryView();
+    }
     sessionPage = nextPage;
     setPage(nextPage);
   }
@@ -482,11 +494,20 @@ export default function App() {
     );
   }
 
-  async function changeItemImage(itemId) {
-    chooseItemImage({
-      onSelected: (imageUri) => applyItemImage(itemId, imageUri),
-      libraryPermissionMessage: "상품 이미지를 바꾸려면 사진 접근 권한이 필요합니다.",
-      cameraPermissionMessage: "상품 사진을 촬영하려면 카메라 권한이 필요합니다."
+  // 상세 카드의 시트에서 촬영/갤러리를 이미 골라서 넘어온다. chooseItemImage
+  // (네이티브 선택 다이얼로그)는 시트를 그릴 자리가 없는 등록·영수증 흐름에만 남겼다.
+  async function changeItemImage(itemId, source) {
+    const onSelected = (imageUri) => applyItemImage(itemId, imageUri);
+    if (source === "camera") {
+      takeItemImagePhoto({
+        onSelected,
+        permissionMessage: "상품 사진을 촬영하려면 카메라 권한이 필요합니다."
+      });
+      return;
+    }
+    pickItemImageFromLibrary({
+      onSelected,
+      permissionMessage: "상품 이미지를 바꾸려면 사진 접근 권한이 필요합니다."
     });
   }
 
@@ -677,6 +698,10 @@ export default function App() {
               onOpenSchedule={() => goToPage(PAGE_SCHEDULE)}
               completePlanItem={completePlanOccurrence}
               onChangeItemImage={changeItemImage}
+              expiryType={DEFAULT_EXPIRY_TYPE}
+              startEdit={startEdit}
+              toggleFavorite={toggleFavorite}
+              removeItem={removeItem}
             />
 
             <AddItemPage
@@ -702,6 +727,8 @@ export default function App() {
               submitManual={submitManual}
               onScanBarcode={openBarcodeScanner}
               barcodeLookupPending={barcodeLookupPending}
+              pendingBarcode={pendingBarcode}
+              onClearBarcode={() => setPendingBarcode("")}
               pickManualImage={pickManualImage}
               takeManualImagePhoto={takeManualImagePhoto}
               changeManualImage={changeManualImage}
@@ -796,6 +823,10 @@ export default function App() {
               completeItem={completePlanOccurrence}
               openCalendar={openCalendar}
               startEdit={startEdit}
+              onChangeItemImage={changeItemImage}
+              toggleFavorite={toggleFavorite}
+              removeItem={removeItem}
+              expiryType={DEFAULT_EXPIRY_TYPE}
             />
 
             <ScrollView style={appShellStyles.screen} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">

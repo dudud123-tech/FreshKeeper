@@ -44,14 +44,17 @@ export async function takeItemImagePhoto({
   return imageUri;
 }
 
+// 등록·영수증 흐름은 화면에 시트를 그릴 자리가 없어 네이티브 다이얼로그를 쓴다.
+// 본문을 비우면 안드로이드가 빈 영역만큼 여백을 남기므로 짧은 한 줄을 채운다
+// (상세 카드는 대신 자체 시트를 그린다).
 export function chooseItemImage({
-  title = "상품 사진 변경",
-  message = "사진을 촬영하거나 갤러리에서 선택할 수 있습니다.",
+  title = "사진 바꾸기",
+  message = "어떻게 가져올까요?",
   onSelected,
   libraryPermissionMessage,
   cameraPermissionMessage
 }) {
-  Alert.alert(title, message, [
+  Alert.alert(title, message || undefined, [
     {
       text: "촬영하기",
       onPress: () => takeItemImagePhoto({ onSelected, permissionMessage: cameraPermissionMessage })

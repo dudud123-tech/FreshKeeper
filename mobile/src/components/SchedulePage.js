@@ -37,7 +37,11 @@ export default function SchedulePage({
   setItemPlan,
   completeItem,
   openCalendar,
-  startEdit
+  startEdit,
+  onChangeItemImage,
+  toggleFavorite,
+  removeItem,
+  expiryType
 }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerDate, setPickerDate] = useState(() => todayIso());
@@ -159,6 +163,11 @@ export default function SchedulePage({
           바뀐 값이 이 카드에 그대로 보여야 한다(2026-08-24). */}
       <ItemDetailModal
         item={detailItem}
+        onChangeImage={detailItem ? (source) => onChangeItemImage?.(detailItem.id, source) : undefined}
+        onToggleFavorite={detailItem ? () => toggleFavorite?.(detailItem.id) : undefined}
+        onComplete={detailItem ? () => completeItem?.(detailItem.id) : undefined}
+        onDelete={detailItem ? () => removeItem?.(detailItem.id) : undefined}
+        expiryType={expiryType}
         baseline={detailBaseline}
         completedScope={false}
         onClose={() => {

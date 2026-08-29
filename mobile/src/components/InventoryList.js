@@ -1,8 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
-import { Alert, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
 import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
-import { isCoupangUrl } from "../services/coupangApi";
 import { statusFor, timelineFor, todayIso, weekdayLabel } from "../utils/date";
 import { completionTimingLabel, createdDateLabel } from "../utils/itemLabels";
 import { DEFAULT_PLAN_TIME, planBadgeLabel, planTimeFor, PLAN_REPEATS, repeatLabel } from "../utils/mealPlan";
@@ -15,16 +14,6 @@ import BannerAdSlot from "./BannerAdSlot";
 
 const searchIcon = require("../../assets/actions/inventory-search.png");
 const filterIcon = require("../../assets/actions/inventory-filter.png");
-const expandContentIcon = require("../../assets/actions/expand_content.png");
-const collapseContentIcon = require("../../assets/actions/collapse_content_80dp.png");
-const shoppingCartIcon = require("../../assets/actions/shopping_cart_80dp.png");
-const coupangBadgeIcon = require("../../assets/actions/coupang.png");
-const undoIcon = require("../../assets/actions/undo.png");
-const editNoteIcon = require("../../assets/actions/edit_note_80dp.png");
-const deleteIcon = require("../../assets/actions/delete_80dp_.png");
-const forkSpoonIcon = require("../../assets/actions/fork_spoon_80dp.png");
-const bookmarkOffIcon = require("../../assets/actions/bookmark_off.png");
-const bookmarkOnIcon = require("../../assets/actions/bookmark_on.png");
 const COMPLETED_VISIBLE_DAYS = 90;
 export default function InventoryList({
   scrollRef,
@@ -67,7 +56,6 @@ export default function InventoryList({
 }) {
   const [query, setQuery] = useState("");
   const [controlsVisible, setControlsVisible] = useState(false);
-  const [editorVisible, setEditorVisible] = useState(true);
   // 편집 시트 탭. 기본(상품명·소비기한·일정) / 상세(카테고리·보관·구매링크).
   // 접기 방식은 한 번 더 눌러야 해서 접근이 불편하다는 피드백으로 탭으로 바꿨다(2026-08-23).
   const [editTab, setEditTab] = useState("basic");
@@ -97,21 +85,7 @@ export default function InventoryList({
   const listRenderKey = `inventory-list-${inventoryScope}-${sortMode}-${categoryFilter}-${storageFilter}-${favoriteFilter}-${focusItemId || "all"}`;
   const itemKeyPrefix = sortMode === "등록일순" ? "created" : "expiry";
 
-  async function openPurchaseUrl(url) {
-    const rawUrl = String(url || "").trim();
-    if (!rawUrl) return;
-    const nextUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-    try {
-      // canOpenURL은 Android 11+ 패키지 가시성 정책 때문에 실제로 열리는 링크도
-      // false를 반환하는 경우가 흔해서(false negative), 사전 체크 없이 바로 열고
-      // 실패하면 그때 안내한다.
-      await Linking.openURL(nextUrl);
-    } catch {
-      Alert.alert("링크 열기 실패", "이 링크를 열 수 없습니다.");
-    }
-  }
-
-  return (
+    return (
     <>
     <ScrollView
       ref={scrollRef}
@@ -134,13 +108,6 @@ export default function InventoryList({
           </View>
           <Pressable style={[styles.toolButton, controlsVisible && styles.toolButtonActive]} onPress={() => setControlsVisible((current) => !current)}>
             <Image source={filterIcon} resizeMode="contain" style={[styles.toolIcon, controlsVisible && styles.toolIconActive]} />
-          </Pressable>
-          <Pressable style={[styles.toolButton, editorVisible && styles.toolButtonActive]} onPress={() => setEditorVisible((current) => !current)}>
-            <Image
-              source={editorVisible ? expandContentIcon : collapseContentIcon}
-              resizeMode="contain"
-              style={[styles.toolIcon, editorVisible && styles.toolIconActive]}
-            />
           </Pressable>
         </View>
 
@@ -272,7 +239,14 @@ export default function InventoryList({
                   onLayout={(event) => onItemLayout(itemKey, event, isEditing)}
                 >
                   <View style={styles.itemContentRow}>
-                    <Pressable onPress={() => onChangeItemImage?.(item.id)}>
+                    {/* 썸네일을 누르면 상품명과 똑같이 상세 카드가 열린다. 예전에는
+                        여기서 갤러리가 바로 열렸는데, 작은 사진을 누르는 사람은
+                        "크게 보기"를 기대한다. 사진 바꾸기는 상세 카드 안으로 옮겼다. */}
+                    <Pressable
+                      onPress={() => setDetailItemId(String(item.id))}
+                      accessibilityRole="button"
+                      accessibilityLabel={displayName + " 자세히 보기"}
+                    >
                       <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
                     </Pressable>
                     <View style={styles.itemContent}>
@@ -299,64 +273,12 @@ export default function InventoryList({
                       {!isCompletedScope && planBadgeLabel(item) ? (
                         <Text style={styles.planBadge}>{"\uD83C\uDF7D\uFE0F " + planBadgeLabel(item)}</Text>
                       ) : null}
+                      {/* 조작 버튼은 전부 상세 카드로 옮겼다. 목록은 무엇이 있고
+                          언제까지인지 훑는 데만 쓰고, 누르면 상세 카드가 뜬다(2026-08-27). */}
                       {isCompletedScope ? (
-                        <>
-                          <Text style={styles.completedMeta}>{completionTimingLabel(item)}</Text>
-                          {editorVisible ? (
-                            <View style={styles.inlineActionRow}>
-                              <PurchaseIconButton purchaseUrl={item.purchaseUrl} onOpenPurchase={openPurchaseUrl} />
-                              <CardIconButton
-                                icon={undoIcon}
-                                onPress={() => restoreItem(item.id)}
-                                accessibilityLabel="보관함으로 되돌리기"
-                              />
-                              <FavoriteIconButton
-                                active={Boolean(item.favorite)}
-                                onPress={() => toggleFavorite(item.id)}
-                              />
-                              <CardIconButton
-                                icon={editNoteIcon}
-                                onPress={() => startEdit(item)}
-                                accessibilityLabel="상품 수정"
-                              />
-                              <CardIconButton
-                                icon={deleteIcon}
-                                onPress={() => removeItem(item.id)}
-                                danger
-                                accessibilityLabel="상품 삭제"
-                              />
-                            </View>
-                          ) : null}
-                        </>
+                        <Text style={styles.completedMeta}>{completionTimingLabel(item)}</Text>
                       ) : (
-                        <ExpiryTimeline timeline={timeline}>
-                          {editorVisible ? (
-                            <>
-                              <PurchaseIconButton purchaseUrl={item.purchaseUrl} onOpenPurchase={openPurchaseUrl} />
-                              <CardIconButton
-                                icon={forkSpoonIcon}
-                                onPress={() => completeItem(item.id)}
-                                complete
-                                accessibilityLabel="다 먹어서 완료"
-                              />
-                              <FavoriteIconButton
-                                active={Boolean(item.favorite)}
-                                onPress={() => toggleFavorite(item.id)}
-                              />
-                              <CardIconButton
-                                icon={editNoteIcon}
-                                onPress={() => startEdit(item)}
-                                accessibilityLabel="상품 수정"
-                              />
-                              <CardIconButton
-                                icon={deleteIcon}
-                                onPress={() => removeItem(item.id)}
-                                danger
-                                accessibilityLabel="상품 삭제"
-                              />
-                            </>
-                          ) : null}
-                        </ExpiryTimeline>
+                        <ExpiryTimeline timeline={timeline} />
                       )}
                     </View>
                   </View>
@@ -372,6 +294,14 @@ export default function InventoryList({
     </ScrollView>
     <ItemDetailModal
       item={detailItem}
+      onChangeImage={detailItem ? (source) => onChangeItemImage?.(detailItem.id, source) : undefined}
+      onToggleFavorite={detailItem ? () => toggleFavorite(detailItem.id) : undefined}
+      onComplete={
+        detailItem
+          ? () => (isCompletedScope ? restoreItem(detailItem.id) : completeItem(detailItem.id))
+          : undefined
+      }
+      onDelete={detailItem ? () => removeItem(detailItem.id) : undefined}
       expiryType={expiryType}
       completedScope={isCompletedScope}
       baseline={detailBaseline}
@@ -403,68 +333,6 @@ function ExpiryTimeline({ timeline, children }) {
       </View>
       {children}
     </View>
-  );
-}
-
-function PurchaseIconButton({ purchaseUrl, onOpenPurchase, style }) {
-  const hasPurchaseUrl = Boolean(String(purchaseUrl || "").trim());
-  const isCoupang = hasPurchaseUrl && isCoupangUrl(purchaseUrl);
-  return (
-    <Pressable
-      style={[
-        styles.purchaseIconButton,
-        isCoupang && styles.purchaseIconButtonCoupang,
-        style,
-        !hasPurchaseUrl && styles.purchaseIconButtonDisabled
-      ]}
-      onPress={() => hasPurchaseUrl && onOpenPurchase?.(purchaseUrl)}
-      disabled={!hasPurchaseUrl}
-      accessibilityRole="button"
-      accessibilityLabel={hasPurchaseUrl ? "구매 링크 열기" : "구매 링크 없음"}
-    >
-      <Image
-        source={isCoupang ? coupangBadgeIcon : shoppingCartIcon}
-        resizeMode="contain"
-        style={[
-          isCoupang ? styles.purchaseIconCoupang : styles.purchaseIcon,
-          !hasPurchaseUrl && styles.purchaseIconDisabled
-        ]}
-      />
-    </Pressable>
-  );
-}
-
-function FavoriteIconButton({ active, onPress }) {
-  return (
-    <Pressable
-      style={[styles.favoriteIconButton, active && styles.favoriteIconButtonActive]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={active ? "즐겨찾기 해제" : "즐겨찾기 등록"}
-    >
-      <Image
-        source={active ? bookmarkOnIcon : bookmarkOffIcon}
-        resizeMode="contain"
-        style={styles.favoriteIconImage}
-      />
-    </Pressable>
-  );
-}
-
-function CardIconButton({ icon, onPress, danger = false, complete = false, accessibilityLabel }) {
-  return (
-    <Pressable
-      style={[styles.cardIconButton, danger && styles.cardIconButtonDanger]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-    >
-      <Image
-        source={icon}
-        resizeMode="contain"
-        style={[styles.cardIcon, danger && styles.cardIconDanger, complete && styles.cardIconComplete]}
-      />
-    </Pressable>
   );
 }
 
@@ -992,105 +860,6 @@ const styles = StyleSheet.create({
   timelineFill: {
     height: "100%",
     borderRadius: 999
-  },
-  purchaseIconButton: {
-    // 활성/비활성이 옅은 파스텔 톤끼리라 잘 안 구분된다는 피드백(2026-08-08)으로
-    // 활성 상태를 홈 화면 "구매 링크 열기" 버튼과 같은 진초록 채움으로 바꿨다 —
-    // 비활성(테두리만)과 형태 자체가 달라져서 목록을 훑을 때도 바로 구분된다.
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#1f7a5a",
-    backgroundColor: "#1f7a5a",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  purchaseIconButtonDisabled: {
-    borderColor: "#d7dbd8",
-    backgroundColor: "transparent"
-  },
-  // coupang.png는 그 자체로 이미 빨간 원 배지라, 흰색 카트 아이콘용이던 진초록
-  // 채움 위에 얹으면 원 안에 원이 붕 뜬 것처럼 보인다(2026-08-15 피드백). 배경을
-  // 흰색으로 바꾸고 아래 purchaseIconCoupang에서 아이콘도 테두리에 닿을 만큼 키운다.
-  // 처음엔 32px 원 그대로 뒀는데 "조금 더 키워도 될 것 같다"는 피드백(2026-08-15
-  // 재확인)으로 버튼 자체도 같이 키웠다.
-  // 원 컨테이너는 다른 아이콘 버튼들(즐겨찾기, 수정, 삭제 등)과 크기를 맞춘다 —
-  // 색만 다르고 크기는 통일. 아이콘 자체는 purchaseIconCoupang에서 더 크게 키운다.
-  purchaseIconButtonCoupang: {
-    borderColor: "#e6e4df",
-    backgroundColor: "#fff"
-  },
-  purchaseIcon: {
-    width: 21,
-    height: 21,
-    tintColor: "#fff"
-  },
-  // coupang.png는 색을 가진 브랜드 배지라 tintColor를 주지 않는다. 컨테이너(32px 원)
-  // 테두리에 거의 닿도록 크게 키운다.
-  purchaseIconCoupang: {
-    width: 40,
-    height: 40
-  },
-  purchaseIconDisabled: {
-    opacity: 0.5,
-    tintColor: "#a2aaa5"
-  },
-  inlineActionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 8
-  },
-  favoriteIconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#ece8df",
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  favoriteIconButtonActive: {
-    borderColor: "#f0d88a",
-    backgroundColor: "#ffffff"
-  },
-  favoriteIconImage: {
-    width: 19,
-    height: 19
-  },
-  cardIconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#d4e7df",
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  cardIconButtonDanger: {
-    borderColor: "#efd8d3",
-    backgroundColor: "#fff7f5"
-  },
-  // fork_spoon_80dp.png는 새로 바뀐 체크 아이콘이 초록 원+흰 체크까지 이미 색이
-  // 입혀진 완성형 이미지라(쿠팡 배지와 같은 종류), 버튼 배경에 별도 초록 채움이
-  // 필요 없다 — 기본(흰 배경+테두리) 그대로 두고 아이콘만 키운다.
-  cardIcon: {
-    width: 21,
-    height: 21,
-    tintColor: "#1f7a5a"
-  },
-  cardIconDanger: {
-    tintColor: "#9f3929"
-  },
-  // 이미 색이 입혀진 완성형 아이콘이라 tintColor를 주지 않는다(주면 초록 원과
-  // 흰 체크가 전부 한 색으로 덮여 체크 모양이 안 보인다 — 2026-08-16 실기기로 확인).
-  // 컨테이너(32px 원, 테두리 1px)에 꽉 차도록 키운다.
-  cardIconComplete: {
-    width: 35,
-    height: 35
   },
   normalFill: {
     backgroundColor: "#1f7a5a"

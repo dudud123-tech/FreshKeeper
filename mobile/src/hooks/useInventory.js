@@ -384,6 +384,21 @@ export function useInventory({
     );
   }
 
+  // 보관함을 떠날 때 목록 보기 상태를 처음으로 되돌린다. 홈 타일(만료/냉장 등)로
+  // 들어오거나 등록 직후로 들어오면 필터와 focusItemId가 걸린 채로 남는데, 다른
+  // 화면을 갔다가 돌아오면 왜 일부만 보이는지 알 길이 없었다(2026-08-27 피드백).
+  //
+  // 정렬(sortMode)은 건드리지 않는다 — 화면 안에서 사용자가 직접 고르는 취향이라
+  // 진입 경로 때문에 걸리는 값이 아니다.
+  function resetInventoryView() {
+    setFocusItemId("");
+    setStatusFilter("all");
+    setInventoryScope(ITEM_STATUS_ACTIVE);
+    setCategoryFilter("전체");
+    setStorageFilter("전체");
+    setFavoriteFilter("all");
+  }
+
   function startEdit(item) {
     setEditingId(item.id);
     setEditForm({
@@ -494,6 +509,7 @@ export function useInventory({
     setFavoriteFilter,
     focusItemId,
     setFocusItemId,
+    resetInventoryView,
     sortedItems,
     summary,
     addItem,

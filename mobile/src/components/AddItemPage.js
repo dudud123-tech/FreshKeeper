@@ -45,6 +45,8 @@ export default function AddItemPage({
   changeManualImage,
   onScanBarcode,
   barcodeLookupPending,
+  pendingBarcode,
+  onClearBarcode,
   pickReceiptImage,
   selectReceiptImageForType,
   receiptImageTypeChooserVisible,
@@ -140,6 +142,27 @@ export default function AddItemPage({
                         {barcodeLookupPending ? "\ubc14\ucf54\ub4dc \ud655\uc778 \uc911..." : "\ubc14\ucf54\ub4dc\ub85c \uc2a4\uce94\ud558\uae30"}
                       </Text>
                     </Pressable>
+                    {/* 처음 보는 바코드는 팝업으로만 알려 주고 입력칸은 전부 비워 두기
+                        때문에, 팝업을 닫고 나면 화면이 스캔 전과 똑같아 보인다. 인식이
+                        됐는지 알 방법이 없다는 피드백(2026-08-27)으로 스캔한 번호를
+                        여기 남긴다. 다른 화면에 갔다 오면 pendingBarcode가 비워지는데
+                        (App.js의 useEffect) 그 사실도 이 칸이 사라지는 걸로 보인다. */}
+                    {pendingBarcode ? (
+                      <View style={styles.barcodeResult}>
+                        <View style={styles.barcodeResultBody}>
+                          <Text style={styles.barcodeResultNumber}>{pendingBarcode}</Text>
+                          <Text style={styles.barcodeResultHint}>이 바코드로 함께 등록돼요</Text>
+                        </View>
+                        <Pressable
+                          style={styles.barcodeResultClear}
+                          onPress={onClearBarcode}
+                          accessibilityRole="button"
+                          accessibilityLabel="스캔한 바코드 지우기"
+                        >
+                          <Text style={styles.barcodeResultClearText}>지우기</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
                     {/* 직접 등록에서는 상품명 왼쪽에 대표 이미지를 붙여 둔다. */}
                     <Field label={"\uc0c1\ud488\uba85"}>
                       <View style={styles.manualNameRow}>
@@ -1048,6 +1071,42 @@ const styles = StyleSheet.create({
   barcodeScanText: {
     ...typography.captionStrong,
     color: "#1f7a5a"
+  },
+  // 스캔한 바코드 표시. 위아래 여백이 넓으면 등록하기 버튼이 화면 밖으로 밀리므로
+  // (barcodeScanButton 주석 참고) 두 줄로 좁게 잡는다.
+  barcodeResult: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#d4e7df",
+    backgroundColor: "#f2f8f5"
+  },
+  barcodeResultBody: {
+    flex: 1
+  },
+  // 숫자만 13자리라 자간을 조금 벌려야 읽으면서 대조하기 쉽다.
+  barcodeResultNumber: {
+    ...typography.label,
+    color: "#18201c",
+    letterSpacing: 0.6
+  },
+  barcodeResultHint: {
+    ...typography.caption,
+    color: "#3f8f6d"
+  },
+  barcodeResultClear: {
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: 6
+  },
+  barcodeResultClearText: {
+    ...typography.caption,
+    color: "#77807a"
   },
   receiptHeroButton: {
     // 큰 영수증 안내 버튼이 있던 경우의 공통 스타일.

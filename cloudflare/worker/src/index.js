@@ -175,7 +175,7 @@ const MIN_SUPPORTED_ANDROID_VERSION_CODE = 20;
 // 띄운다(mobile/App.js의 SoftUpdatePrompt) — "나중에"를 눌러도 앱은 정상 실행되고,
 // 다음 실행 때 다시 물어본다(2026-08-08). 새 버전을 Play 콘솔에 올릴 때마다 이
 // 값을 그 versionCode로 갱신하고 배포할 것.
-const LATEST_ANDROID_VERSION_CODE = 26;
+const LATEST_ANDROID_VERSION_CODE = 28;
 const ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.palchonajae.freshkeeper";
 
 // 업데이트 직후 첫 실행에서 한 번 보여줄 "새로워진 점" 안내. versionCode가 앱의
@@ -183,14 +183,14 @@ const ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=co
 // 문구만 고칠 수 있게 서버 쪽에 둔 것 — 새 버전 낼 때마다 이 값을 그 versionCode로
 // 갱신하고 배포하면 된다.
 const ANDROID_WHATS_NEW = {
-  versionCode: 26,
+  versionCode: 28,
   title: "이번 업데이트에서 달라진 점",
   items: [
-    "보관함 목록이 깔끔해졌어요 — 상품을 누르면 큰 카드가 열려요",
-    "그 카드에서 사진 바꾸기, 즐겨찾기, 구매처, 먹었어요, 삭제를 한 번에",
-    "홈과 먹는 일정에서도 같은 카드가 열려요",
-    "바코드를 찍으면 인식한 번호를 보여드려요",
-    "튜토리얼을 새로 만들었어요"
+    "등록 화면이 직접등록으로 바로 열려요",
+    "오늘 먹은 것을 체크로 표시할 수 있어요",
+    "체크해도 목록에 남아서 챙겼는지 바로 보여요",
+    "상품 카드는 어디를 눌러도 자세히 보기가 열려요",
+    "지난 일정은 다음 날 알아서 정리돼요"
   ]
 };
 

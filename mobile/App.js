@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AppState,
@@ -22,6 +22,7 @@ import ForceUpdateScreen from "./src/components/ForceUpdateScreen";
 import HomePage from "./src/components/HomePage";
 import InventoryList from "./src/components/InventoryList";
 import ItemEditSheet from "./src/components/ItemEditSheet";
+import ItemDetailModal from "./src/components/ItemDetailModal";
 import LaunchScreen from "./src/components/LaunchScreen";
 import OnboardingScreen from "./src/components/OnboardingScreen";
 import ReceiptSelectorModal from "./src/components/ReceiptSelectorModal";
@@ -32,7 +33,6 @@ import WhatsNewModal from "./src/components/WhatsNewModal";
 import { useAuth } from "./src/hooks/useAuth";
 import { useAppNotifications } from "./src/hooks/useAppNotifications";
 import { useFamilySync } from "./src/hooks/useFamilySync";
-import { useGrowthSync } from "./src/hooks/useGrowthSync";
 import { useInventory } from "./src/hooks/useInventory";
 import { useReceiptFlow } from "./src/hooks/useReceiptFlow";
 import { fetchAndroidVersionRequirement } from "./src/services/appVersionApi";
@@ -42,6 +42,7 @@ import { normalizeProductName } from "./src/services/productClassificationApi";
 import {
   todayIso,
 } from "./src/utils/date";
+import { planDoneOn, planOccursOn } from "./src/utils/mealPlan";
 import { suggestedExpiryDate, suggestedStorage } from "./src/utils/expiryPresets";
 import { pickItemImageFromLibrary, takeItemImagePhoto } from "./src/utils/itemImagePicker";
 
@@ -136,7 +137,7 @@ export default function App() {
     restoreItem,
     toggleFavorite,
     setItemPlan,
-    completePlanOccurrence,
+    setPlanDoneToday,
     startEdit,
     cancelEdit,
     saveEdit
@@ -265,10 +266,19 @@ export default function App() {
     defaultExpiryType: DEFAULT_EXPIRY_TYPE,
     authUser
   });
-  // 성장 XP는 홈에서 더 이상 보여주지 않지만(성장 카드 제거, 2026-08-24) 서버
-  // 적립은 계속 돌린다 — growth_events가 끊기면 나중에 성장을 되살릴 때 그
-  // 공백 기간의 이력이 영영 비어버린다. 반환값은 쓰는 곳이 없어 받지 않는다.
-  useGrowthSync({ items, reminderDays, authUser });
+  // 상세 카드는 세 화면이 같이 쓴다. 예전에는 화면마다 상태와 렌더를 따로 들고
+  // 있어서 프롭 배선이 어긋나기 일쑤였다 — 홈에서만 버튼이 빠지는 식으로 두 번
+  // 겪었다. 수정 시트와 같은 방식으로 여기서 한 번만 그린다(2026-08-29).
+  //
+  // detailSource는 "어떤 맥락에서 열었나"다:
+  //   inventory - 보관함
+  //   home      - 홈의 "이번 주 먼저 먹을 것"(소비기한 기준)
+  //   plan      - 홈의 "오늘 먹기로 한 것" + 먹는 일정(일정 기준)
+  // 완료의 뜻이 화면마다 달라서 필요하다 — 보관함은 "다 먹었어요"(상품이 끝남),
+  // 홈·일정은 "오늘 먹었어요"(오늘 몫만). 삭제를 어디에 띄울지도 여기로 가른다.
+  const [detailItemId, setDetailItemId] = useState("");
+  const [detailSource, setDetailSource] = useState("inventory");
+  const [detailBaseline, setDetailBaseline] = useState(null);
   const [launchVisible, setLaunchVisible] = useState(!launchScreenShown);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [updateRequired, setUpdateRequired] = useState(false);
@@ -432,6 +442,52 @@ export default function App() {
 
     return () => subscription.remove();
   }, [page]);
+
+  const detailItem = useMemo(
+    () => (detailItemId ? items.find((item) => String(item.id) === detailItemId) || null : null),
+    [items, detailItemId]
+  );
+  const detailCompleted = detailItem?.status === "completed";
+  // "오늘 먹었어요"는 오늘 먹기로 한 상품에만 뜻이 있다. 홈의 "이번 주 먼저 먹을
+  // 것"이나 일정 화면의 다음 주 항목처럼 오늘 몫이 없는 상품에는 그 문구가 맞지
+  // 않아서, 화면만 보고 정하지 않고 상품에 오늘 일정이 있는지까지 본다.
+  //
+  // 먹었다고 planOccursOn이 false가 되지는 않는다(목록에 계속 남겨야 해서). 먹은
+  // 여부는 planDoneOn으로 따로 본다.
+  //
+  // 오늘 몫이 있는 상품만 체크박스를 띄운다. 홈의 "이번 주 먼저 먹을 것"처럼
+  // 일정이 없는 상품에는 오늘 몫이라는 게 없어서, 그때는 보관함과 같은
+  // "다 먹었어요"를 준다(2026-08-29).
+  const detailPlanDone = detailItem ? planDoneOn(detailItem, todayIso()) : false;
+  const detailPlanScope =
+    detailSource !== "inventory" && detailItem ? planOccursOn(detailItem, todayIso()) : false;
+  // 일정을 짜는 맥락에서는 상품을 지우는 자리가 아니다. 먹는 일정 화면과 홈의
+  // "오늘 먹기로 한 것"이 여기 해당한다(2026-08-29 피드백).
+  const detailShowDelete = detailSource !== "plan";
+  const detailCompleteLabel = detailCompleted ? "되돌리기" : "다 먹었어요";
+
+  function openDetail(itemId, source = "inventory") {
+    setDetailSource(source);
+    setDetailBaseline(null);
+    setDetailItemId(String(itemId));
+  }
+
+  function closeDetail() {
+    setDetailItemId("");
+    setDetailBaseline(null);
+  }
+
+  // 상품 자체를 끝내는 동작. 오늘 몫만 끝내는 건 체크박스(togglePlanDone)다.
+  function completeFromDetail() {
+    if (!detailItem) return;
+    if (detailCompleted) restoreItem(detailItem.id);
+    else completeItem(detailItem.id);
+  }
+
+  function togglePlanDoneFromDetail() {
+    if (!detailItem) return;
+    setPlanDoneToday(detailItem.id, !detailPlanDone);
+  }
 
   function goToPage(nextPage) {
     // 보관함에서 다른 화면으로 나가면 목록 보기 상태를 되돌린다. 그래야 다음에
@@ -645,6 +701,26 @@ export default function App() {
             storageTypes={storageTypes}
             suggestCategory={suggestCategory}
           />
+          {/* 상세 카드도 수정 시트와 같은 이유로 여기서 한 번만 그린다. 시트가
+              이 카드 위에 뜨도록 시트보다 뒤에 둔다 — 수정 중에도 카드가 닫히지
+              않아야 저장 후 바뀐 값을 바로 확인할 수 있다. */}
+          <ItemDetailModal
+            item={detailItem}
+            baseline={detailBaseline}
+            expiryType={DEFAULT_EXPIRY_TYPE}
+            completeLabel={detailCompleteLabel}
+            onChangeImage={detailItem ? (source) => changeItemImage(detailItem.id, source) : undefined}
+            onToggleFavorite={detailItem ? () => toggleFavorite(detailItem.id) : undefined}
+            planDone={detailPlanDone}
+            onTogglePlanDone={detailPlanScope ? togglePlanDoneFromDetail : undefined}
+            onDelete={detailItem && detailShowDelete ? () => removeItem(detailItem.id) : undefined}
+            onComplete={detailItem && !detailPlanScope ? completeFromDetail : undefined}
+            onClose={closeDetail}
+            onEdit={() => {
+              setDetailBaseline(detailItem);
+              startEdit(detailItem);
+            }}
+          />
           <CalendarModal
             visible={calendar.visible}
             value={calendar.value}
@@ -696,12 +772,7 @@ export default function App() {
               reminderDays={reminderDays}
               onOpenInventory={goToInventory}
               onOpenSchedule={() => goToPage(PAGE_SCHEDULE)}
-              completePlanItem={completePlanOccurrence}
-              onChangeItemImage={changeItemImage}
-              expiryType={DEFAULT_EXPIRY_TYPE}
-              startEdit={startEdit}
-              toggleFavorite={toggleFavorite}
-              removeItem={removeItem}
+              onOpenDetail={(itemId, source) => openDetail(itemId, source || "home")}
             />
 
             <AddItemPage
@@ -798,12 +869,6 @@ export default function App() {
               openCalendar={openCalendar}
               cancelEdit={cancelEdit}
               saveEdit={saveEdit}
-              startEdit={startEdit}
-              removeItem={removeItem}
-              completeItem={completeItem}
-              restoreItem={restoreItem}
-              toggleFavorite={toggleFavorite}
-              onChangeItemImage={changeItemImage}
               onItemLayout={(itemId, event, isEditing) => {
                 itemLayoutMapRef.current[itemId] = {
                   y: event.nativeEvent.layout.y,
@@ -815,18 +880,14 @@ export default function App() {
               }}
               reminderDays={reminderDays}
               expiryType={DEFAULT_EXPIRY_TYPE}
+              onOpenDetail={(itemId) => openDetail(itemId, "inventory")}
             />
 
             <SchedulePage
               items={items}
               setItemPlan={setItemPlan}
-              completeItem={completePlanOccurrence}
               openCalendar={openCalendar}
-              startEdit={startEdit}
-              onChangeItemImage={changeItemImage}
-              toggleFavorite={toggleFavorite}
-              removeItem={removeItem}
-              expiryType={DEFAULT_EXPIRY_TYPE}
+              onOpenDetail={(itemId) => openDetail(itemId, "plan")}
             />
 
             <ScrollView style={appShellStyles.screen} contentContainerStyle={appShellStyles.page} keyboardShouldPersistTaps="handled">

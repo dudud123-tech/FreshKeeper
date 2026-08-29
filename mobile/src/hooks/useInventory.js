@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { categories } from "../categories";
@@ -14,7 +14,7 @@ import { registerBarcodeProduct } from "../services/barcodeApi";
 import { setCachedBarcodeImage } from "../services/barcodeImageCache";
 import { sendProductClassificationFeedback } from "../services/productClassificationApi";
 import { normalizeFeedbackSettings } from "./useReceiptFlow";
-import { isRepeating, nextOccurrenceDate } from "../utils/mealPlan";
+import { hasPlan, isRepeating } from "../utils/mealPlan";
 
 // App.js가 설정을 저장하는 키와 반드시 같아야 한다(App.js의 SETTINGS_KEY). 보관함
 // 수정 시 분류 피드백을 보낼지 말지 확인하는 용도로만 여기서 직접 읽는다 — 이 훅과
@@ -364,23 +364,26 @@ export function useInventory({
     if (!plannedDate) return;
     setItems((current) =>
       current.map((item) =>
-        item.id === id ? { ...item, plannedDate, plannedMeal, plannedTime, planRepeat } : item
+        // 일정을 새로 잡으면 "오늘 몫 끝냄" 기록은 지운다 — 예전 날짜의 기록이
+        // 남아 있으면 새 일정이 그날 안 뜨는 일이 생긴다.
+        item.id === id
+          ? { ...item, plannedDate, plannedMeal, plannedTime, planRepeat, planDoneDate: "" }
+          : item
       )
     );
   }
 
-  // 일정 화면의 체크. 반복 상품(비타민 등)은 오늘 몫을 먹었다고 보관함에서 없애면
-  // 안 되므로 완료 처리 대신 다음 회차로 넘긴다. 반복이 아니면 기존 완료와 동일하다.
-  function completePlanOccurrence(id) {
-    const item = normalizedItems.find((target) => target.id === id);
-    if (!isRepeating(item)) {
-      completeItem(id);
-      return;
-    }
-
-    const nextDate = nextOccurrenceDate(item);
+  // 홈·먹는 일정의 "오늘 먹었어요". 상품 상태는 건드리지 않는다 — 매일 마시는
+  // 우유를 오늘 한 컵 마셨다고 보관함에서 없애면 안 된다. 오늘 몫만 끝났다고
+  // 적어두면 planOccursOn이 오늘 목록과 오늘 알림에서 같이 빼준다.
+  //
+  // 상품 자체를 끝내는 "다 먹었어요"는 보관함 상세 카드의 completeItem이다.
+  // done을 false로 주면 되돌린다. 이 동작은 확인 팝업이 없어서(완료와 달리
+  // 상품 상태를 안 건드리므로 굳이 물을 일이 아니다) 되돌릴 길은 있어야 한다.
+  function setPlanDoneToday(id, done = true) {
+    const value = done ? todayIso() : "";
     setItems((current) =>
-      current.map((target) => (target.id === id ? { ...target, plannedDate: nextDate } : target))
+      current.map((item) => (item.id === id ? { ...item, planDoneDate: value } : item))
     );
   }
 
@@ -398,6 +401,35 @@ export function useInventory({
     setStorageFilter("전체");
     setFavoriteFilter("all");
   }
+
+  // 날짜가 지난 일정은 앱을 켤 때(그리고 상품 목록이 바뀔 때) 조용히 비운다.
+  //
+  // 예전에는 "먹었어요" 체크를 눌러야만 없어져서, 안 누르면 홈과 일정 화면에
+  // "지난 일정"으로 영원히 남았다. 그런데 지난 일정은 알림도 안 온다 —
+  // schedulePlanReminders가 오늘부터 앞으로만 예약하기 때문이다. 화면만 채우고
+  // 아무 일도 안 하는 셈이었다(2026-08-29 피드백).
+  //
+  // 상품을 완료 처리하지는 않는다. 안 먹었는데 먹었다고 기록하면 완료 목록과
+  // 랭킹이 거짓이 된다. 일정 필드만 비우고 상품은 보관함에 그대로 둔다 —
+  // 소비기한 알림은 계속 온다.
+  //
+  // 반복 상품은 대상이 아니다. planOccursOn이 원래 날짜와 반복 규칙으로 계산하므로
+  // plannedDate를 옮길 필요 없이 알아서 다음 회차에 다시 뜬다.
+  useEffect(() => {
+    const today = todayIso();
+    const stale = items.filter(
+      (item) => hasPlan(item) && !isRepeating(item) && item.plannedDate < today
+    );
+    if (!stale.length) return;
+    const staleIds = new Set(stale.map((item) => item.id));
+    setItems((current) =>
+      current.map((item) =>
+        staleIds.has(item.id)
+          ? { ...item, plannedDate: "", plannedTime: "", plannedMeal: "", planRepeat: "", planDoneDate: "" }
+          : item
+      )
+    );
+  }, [items, setItems]);
 
   function startEdit(item) {
     setEditingId(item.id);
@@ -522,7 +554,7 @@ export function useInventory({
     restoreItem,
     toggleFavorite,
     setItemPlan,
-    completePlanOccurrence,
+    setPlanDoneToday,
     startEdit,
     cancelEdit,
     saveEdit

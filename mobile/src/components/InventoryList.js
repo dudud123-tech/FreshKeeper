@@ -1,12 +1,9 @@
 import { Fragment, useMemo, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { typography } from "../theme/typography";
-import { DEFAULT_PURCHASE_URL } from "../constants/purchase";
-import { statusFor, timelineFor, todayIso, weekdayLabel } from "../utils/date";
+import { statusFor, timelineFor } from "../utils/date";
 import { completionTimingLabel, createdDateLabel } from "../utils/itemLabels";
-import { DEFAULT_PLAN_TIME, planBadgeLabel, planTimeFor, PLAN_REPEATS, repeatLabel } from "../utils/mealPlan";
-import { TabButton, TimeField } from "./CommonControls";
-import ItemDetailModal from "./ItemDetailModal";
+import { planBadgeLabel } from "../utils/mealPlan";
 
 
 import { getFoodImageSource } from "../utils/foodImages";
@@ -44,15 +41,10 @@ export default function InventoryList({
   openCalendar,
   cancelEdit,
   saveEdit,
-  startEdit,
-  removeItem,
-  completeItem,
-  restoreItem,
-  toggleFavorite,
-  onChangeItemImage,
   onItemLayout,
   reminderDays,
-  expiryType
+  expiryType,
+  onOpenDetail
 }) {
   const [query, setQuery] = useState("");
   const [controlsVisible, setControlsVisible] = useState(false);
@@ -62,15 +54,11 @@ export default function InventoryList({
   // 상품명을 누르면 뜨는 큰 카드 팝업. 항목을 통째로 담아두면 수정 후에도 옛
   // 값이 남으므로 id만 들고 매번 현재 목록에서 찾는다. 완료/삭제로 목록에서
   // 빠지면 자연히 null이 되어 팝업도 닫힌다(2026-08-24).
-  const [detailItemId, setDetailItemId] = useState("");
+
   // 수정 시트를 열기 직전의 값. 돌아왔을 때 무엇이 바뀌었는지 빨간색으로
   // 표시하려면 비교 대상이 있어야 한다(2026-08-24).
-  const [detailBaseline, setDetailBaseline] = useState(null);
+
   const isCompletedScope = inventoryScope === "completed";
-  const detailItem = useMemo(
-    () => (detailItemId ? sortedItems.find((item) => String(item.id) === detailItemId) || null : null),
-    [sortedItems, detailItemId]
-  );
   const normalizedQuery = query.trim().toLowerCase();
   const searchedItems = sortedItems.filter((item) => String(item.name || "").toLowerCase().includes(normalizedQuery));
   const completedStats = useMemo(() => summarizeCompletedItems(sortedItems), [sortedItems]);
@@ -86,7 +74,6 @@ export default function InventoryList({
   const itemKeyPrefix = sortMode === "등록일순" ? "created" : "expiry";
 
     return (
-    <>
     <ScrollView
       ref={scrollRef}
       style={styles.screen}
@@ -234,32 +221,23 @@ export default function InventoryList({
               return (
                 <Fragment key={renderKey}>
                 {index % 10 === 8 ? <BannerAdSlot /> : null}
-                <View
+                {/* 카드 어디를 눌러도 상세 카드가 열린다. 예전에는 사진과 상품명만
+                    눌려서, 소비기한이나 여백을 누른 사람은 아무 반응이 없었다.
+                    홈은 이미 카드 전체가 눌렸던 터라 화면마다 다르기도 했다
+                    (2026-08-29 피드백). 카드 안에 다른 조작 요소는 없다. */}
+                <Pressable
                   style={[styles.itemCard, isEditing && styles.itemCardEditing]}
                   onLayout={(event) => onItemLayout(itemKey, event, isEditing)}
+                  onPress={() => onOpenDetail(item.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={displayName + " 자세히 보기"}
                 >
                   <View style={styles.itemContentRow}>
-                    {/* 썸네일을 누르면 상품명과 똑같이 상세 카드가 열린다. 예전에는
-                        여기서 갤러리가 바로 열렸는데, 작은 사진을 누르는 사람은
-                        "크게 보기"를 기대한다. 사진 바꾸기는 상세 카드 안으로 옮겼다. */}
-                    <Pressable
-                      onPress={() => setDetailItemId(String(item.id))}
-                      accessibilityRole="button"
-                      accessibilityLabel={displayName + " 자세히 보기"}
-                    >
-                      <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
-                    </Pressable>
+                    <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.itemImage} />
                     <View style={styles.itemContent}>
                       <View style={styles.itemHeader}>
                         <View style={styles.itemTitleRow}>
-                          <Pressable
-                            style={styles.itemNamePress}
-                            onPress={() => setDetailItemId(String(item.id))}
-                            accessibilityRole="button"
-                            accessibilityLabel={displayName + " 자세히 보기"}
-                          >
-                            <Text style={styles.itemName} numberOfLines={1}>{displayName}</Text>
-                          </Pressable>
+                          <Text style={[styles.itemName, styles.itemNamePress]} numberOfLines={1}>{displayName}</Text>
                           <Text style={[styles.storagePill, getStoragePillStyle(storageLabel)]}>{storageLabel}</Text>
                         </View>
                         <Text style={[styles.badge, isCompletedScope ? styles.completedBadge : styles[status.tone]]}>
@@ -282,7 +260,7 @@ export default function InventoryList({
                       )}
                     </View>
                   </View>
-                </View>
+                </Pressable>
                 </Fragment>
               );
             })
@@ -292,31 +270,6 @@ export default function InventoryList({
         {visibleItems.length > 0 && visibleItems.length < 10 ? <BannerAdSlot /> : null}
       </View>
     </ScrollView>
-    <ItemDetailModal
-      item={detailItem}
-      onChangeImage={detailItem ? (source) => onChangeItemImage?.(detailItem.id, source) : undefined}
-      onToggleFavorite={detailItem ? () => toggleFavorite(detailItem.id) : undefined}
-      onComplete={
-        detailItem
-          ? () => (isCompletedScope ? restoreItem(detailItem.id) : completeItem(detailItem.id))
-          : undefined
-      }
-      onDelete={detailItem ? () => removeItem(detailItem.id) : undefined}
-      expiryType={expiryType}
-      completedScope={isCompletedScope}
-      baseline={detailBaseline}
-      onClose={() => {
-        setDetailItemId("");
-        setDetailBaseline(null);
-      }}
-      onEdit={() => {
-        // 상세 카드를 닫지 않는다 — 수정 시트는 App.js의 overlays에서 이 위에
-        // 뜨고, 저장/취소로 시트가 닫히면 바뀐 값이 이 카드에 그대로 보인다.
-        setDetailBaseline(detailItem);
-        startEdit(detailItem);
-      }}
-    />
-    </>
   );
 }
 

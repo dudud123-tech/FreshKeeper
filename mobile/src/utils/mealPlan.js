@@ -111,6 +111,9 @@ export function upcomingScheduleDates(days = SCHEDULE_LOOKAHEAD_DAYS) {
 
 // 이 상품이 그 날짜에 해당하는가. 반복이 없으면 지정한 날 하루뿐이고,
 // 반복이 있으면 시작일(plannedDate) 이후로 매일/매주 같은 요일에 걸린다.
+// 그날 일정이 있는지만 답한다. 이미 먹었는지는 여기서 보지 않는다 — 먹었다고
+// 목록에서 사라지면 체크한 게 맞는지 확인할 방법이 없다는 피드백(2026-08-29)으로,
+// 화면은 계속 보여주고 표시만 바꾼다. 알림 예약은 아래 planDoneOn으로 따로 거른다.
 export function planOccursOn(item, dateIso) {
   if (!hasPlan(item)) return false;
   if (dateIso < item.plannedDate) return false;
@@ -120,15 +123,6 @@ export function planOccursOn(item, dateIso) {
     return parseIsoDate(dateIso).getDay() === parseIsoDate(item.plannedDate).getDay();
   }
   return dateIso === item.plannedDate;
-}
-
-// 반복 상품을 "오늘 먹었다"고 체크했을 때 옮겨갈 다음 날짜.
-export function nextOccurrenceDate(item, fromDate = todayIso()) {
-  if (!isRepeating(item)) return "";
-  const step = item.planRepeat === "weekly" ? 7 : 1;
-  const base = parseIsoDate(fromDate > item.plannedDate ? fromDate : item.plannedDate);
-  base.setDate(base.getDate() + step);
-  return toIsoDate(base);
 }
 
 // 일정이 잡힌 상품을 날짜 → 끼니 순서로 묶는다. 완료된 상품은 일정에서 빠진다 —
@@ -160,15 +154,6 @@ export function groupPlannedItemsByDate(items, dates) {
 // 지난 날짜에 잡혀 있는데 아직 완료 안 된 일정. 조용히 사라지면 사용자가 놓치므로
 // 일정 화면 맨 위에서 따로 보여준다. 반복 상품은 오늘 몫이 항상 다시 잡히므로
 // "밀린 일정"으로 쌓지 않는다.
-export function overduePlannedItems(items, fromDate = todayIso()) {
-  return items
-    .filter(
-      (item) =>
-        hasPlan(item) && isPlannableItem(item) && !isRepeating(item) && item.plannedDate < fromDate
-    )
-    .sort(comparePlannedItems);
-}
-
 export function scheduleDateLabel(dateIso) {
   const date = parseIsoDate(dateIso);
   const base = `${date.getMonth() + 1}/${date.getDate()}(${weekdayLabel(dateIso)})`;
@@ -179,6 +164,11 @@ export function scheduleDateLabel(dateIso) {
 }
 
 // 보관함 카드에 붙는 짧은 일정 뱃지("8/19 저녁").
+// 그날 몫을 이미 끝냈는가.
+export function planDoneOn(item, dateIso) {
+  return Boolean(item?.planDoneDate) && item.planDoneDate === dateIso;
+}
+
 export function planBadgeLabel(item) {
   if (!hasPlan(item)) return "";
   const date = parseIsoDate(item.plannedDate);
@@ -186,7 +176,11 @@ export function planBadgeLabel(item) {
   const when = isRepeating(item) ? repeatLabel(item.planRepeat) : `${date.getMonth() + 1}/${date.getDate()}`;
   const meal = item.plannedMeal ? ` ${mealLabel(item.plannedMeal)}` : "";
   const time = isValidPlanTime(item.plannedTime) ? ` ${formatPlanTime(item.plannedTime)}` : "";
-  return `${when}${meal}${time}`;
+  // 오늘 몫을 끝냈으면 그 사실을 같이 보여준다. 버튼만 바뀌면 눌러도 화면이
+  // 그대로인 것처럼 보인다는 피드백(2026-08-29)으로 상세 카드와 보관함 뱃지에
+  // 다 나오도록 여기에 붙인다.
+  const done = item.planDoneDate && item.planDoneDate === todayIso() ? " · 오늘 먹음" : "";
+  return `${when}${meal}${time}${done}`;
 }
 
 // 알림 예약용으로 "같은 날 같은 시각"인 상품을 한 건으로 묶는다. 상품마다 알림을
@@ -197,6 +191,8 @@ export function groupPlannedItemsByTime(items, dateIso, fallbackTime) {
   items.forEach((item) => {
     if (!hasPlan(item) || !isPlannableItem(item)) return;
     if (!planOccursOn(item, dateIso)) return;
+    // 이미 먹은 날은 알림을 걸지 않는다. 목록에는 남지만 알림은 필요 없다.
+    if (planDoneOn(item, dateIso)) return;
     const time = planTimeFor(item, fallbackTime);
     if (!isValidPlanTime(time)) return;
     if (!buckets.has(time)) buckets.set(time, []);

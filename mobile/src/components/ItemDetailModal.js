@@ -27,13 +27,21 @@ export default function ItemDetailModal({
   item,
   baseline = null,
   expiryType = "소비기한",
-  completedScope = false,
   editLabel = "수정하기",
+  // 같은 카드를 보관함과 일정 화면이 같이 쓰는데 완료의 뜻이 다르다. 보관함에서는
+  // "다 먹었어요"(상품이 끝남), 홈·일정에서는 "오늘 먹었어요"(오늘 몫만 끝남).
+  // 어느 쪽인지는 App.js가 정해서 문구와 동작을 같이 넘긴다(2026-08-29).
+  completeLabel = "먹었어요",
   onClose,
   onEdit,
   onChangeImage,
   onToggleFavorite,
   onComplete,
+  // 오늘 몫을 먹었는지는 버튼이 아니라 체크박스로 받는다. 버튼 라벨은 "누르면
+  // 무슨 일이 일어나는가"를 말해야 하는데 여기 담을 건 "오늘 먹었는가"라는
+  // 상태여서, 무슨 문구를 넣어도 사실 서술인지 지시인지 모호했다(2026-08-29).
+  planDone = false,
+  onTogglePlanDone,
   onDelete
 }) {
   // 촬영/갤러리를 고르는 시트를 여기서 직접 그린다. Alert.alert로 띄우면 안드로이드
@@ -71,6 +79,9 @@ export default function ItemDetailModal({
   const hasPurchaseUrl = Boolean(String(item.purchaseUrl || "").trim());
   const favorite = Boolean(item.favorite);
 
+  // 완료 여부는 상품 자신이 들고 있다. 예전에는 화면이 "지금 완료 탭인가"를
+  // 넘겨줬는데, 화면마다 따로 넘기다 보니 값이 어긋나기 쉬웠다.
+  const completedScope = item.status === "completed";
   const rows = buildRows(item, expiryType, completedScope);
   // baseline은 수정 시트를 열기 직전의 값이다. 방금 무엇을 고쳤는지 빨간색으로
   // 짚어주면 저장이 제대로 됐는지 눈으로 바로 확인할 수 있다(2026-08-24).
@@ -182,9 +193,23 @@ export default function ItemDetailModal({
                 <Text style={[styles.memoText, memoChanged && styles.changed]} numberOfLines={3}>{item.memo.trim()}</Text>
               </View>
             ) : null}
-            {/* 되돌릴 수 없는 유일한 동작이라 초록 버튼들과 떨어뜨린다. 하단 줄은
-                항상 화면에 고정이지만 여기는 스크롤 영역이라, 글자를 크게 쓰는
-                기기에서는 스크롤해야 닿는다 — 삭제에겐 그게 장점이다. */}
+            {onTogglePlanDone ? (
+              <Pressable
+                style={styles.planDoneRow}
+                onPress={onTogglePlanDone}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: planDone }}
+                accessibilityLabel="오늘 먹었어요"
+              >
+                <View style={[styles.planDoneBox, planDone && styles.planDoneBoxOn]}>
+                  {planDone ? <Text style={styles.planDoneMark}>✓</Text> : null}
+                </View>
+                <Text style={[styles.planDoneLabel, planDone && styles.planDoneLabelOn]}>오늘 먹었어요</Text>
+              </Pressable>
+            ) : null}
+            {/* 삭제는 카드 안에 그대로 둔다 — 수정 시트로 옮겨봤더니 단계를 너무
+                숨긴다는 피드백이었다(2026-08-29). 대신 스크롤 영역 맨 끝, 초록
+                요소들에서 가장 먼 자리에 글자로만 둔다. */}
             {onDelete ? (
               <Pressable
                 style={styles.deleteLink}
@@ -204,7 +229,7 @@ export default function ItemDetailModal({
                 accessibilityRole="button"
               >
                 <Text style={styles.buttonCompleteText}>
-                  {completedScope ? "되돌리기" : "먹었어요"}
+                  {completeLabel}
                 </Text>
               </Pressable>
             ) : null}
@@ -428,14 +453,49 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: "right"
   },
-  // 글자만 두어 시각적 무게를 가장 낮게 가져간다. 채운 버튼으로 만들면 초록
-  // 버튼들과 같은 급으로 보인다.
+  // 체크박스 줄. 라벨은 늘 "오늘 먹었어요"로 고정이고 네모만 상태를 말한다.
+  planDoneRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minHeight: 48,
+    marginTop: 6
+  },
+  planDoneBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#c3cbc6",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  planDoneBoxOn: {
+    borderColor: "#1f7a5a",
+    backgroundColor: "#1f7a5a"
+  },
+  planDoneMark: {
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: "800",
+    color: "#ffffff"
+  },
+  planDoneLabel: {
+    ...typography.body,
+    color: "#18201c"
+  },
+  planDoneLabelOn: {
+    ...typography.bodyStrong,
+    color: "#1f7a5a"
+  },
+  // 글자만 두어 시각적 무게를 가장 낮게 가져간다. 채운 버튼으로 만들면 하단의
+  // 초록 버튼들과 같은 급으로 보인다.
   deleteLink: {
     alignSelf: "center",
     minHeight: 44,
     justifyContent: "center",
     paddingHorizontal: 16,
-    marginTop: 8
+    marginTop: 4
   },
   deleteLinkText: {
     ...typography.label,

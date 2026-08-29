@@ -2,15 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from "react-native-reanimated";
 import BannerAdSlot from "./BannerAdSlot";
-import ItemDetailModal from "./ItemDetailModal";
 import { typography } from "../theme/typography";
 import { daysUntil, todayIso } from "../utils/date";
 import {
   DEFAULT_PLAN_TIME,
   formatPlanTime,
   isRepeating,
-  overduePlannedItems,
   planOccursOn,
+  planDoneOn,
   planTimeFor,
   repeatLabel
 } from "../utils/mealPlan";
@@ -18,7 +17,6 @@ import { getFoodImageSource } from "../utils/foodImages";
 import { fetchBestCategoryProducts, isCoupangUrl } from "../services/coupangApi";
 import { computePersonalRankings } from "../utils/personalRankings";
 
-const planCompleteIcon = require("../../assets/actions/fork_spoon_80dp.png");
 
 // "나의 랭킹" 배지 위를 사선으로 스쳐 지나가는 은은한 흰색 하이라이트.
 function ShimmerHighlight() {
@@ -78,26 +76,16 @@ export default function HomePage({
   reminderDays,
   onOpenInventory,
   onOpenSchedule,
-  completePlanItem,
-  onChangeItemImage,
-  expiryType,
-  startEdit,
-  toggleFavorite,
-  removeItem
+  // 두 번째 인자는 "어떤 맥락에서 열었나"다. 이 화면에는 성격이 다른 두 목록이
+  // 있다 — 오늘 먹기로 한 것(일정)과 이번 주 먼저 먹을 것(소비기한). 상세 카드가
+  // 무엇을 보여줄지가 갈려서 목록마다 다르게 넘긴다(2026-08-29).
+  onOpenDetail
 }) {
   const [repurchasePanelVisible, setRepurchasePanelVisible] = useState(false);
   const [layoutWidth, setLayoutWidth] = useState(0);
   const [bestCategoryProducts, setBestCategoryProducts] = useState([]);
   const [rankingModalVisible, setRankingModalVisible] = useState(false);
-  // 만료/임박/이번 주/전체 칸은 보관함으로 보내지만, 상품 한 건을 누른 것은
-  // "이게 뭐였지"에 가깝다. 목록으로 보내지 않고 상세 카드를 띄운다.
-  const [detailItemId, setDetailItemId] = useState("");
-  const [detailBaseline, setDetailBaseline] = useState(null);
   const personalRankings = useMemo(() => computePersonalRankings(items), [items]);
-  const detailItem = useMemo(
-    () => (detailItemId ? items.find((item) => String(item.id) === detailItemId) || null : null),
-    [items, detailItemId]
-  );
 
   useEffect(() => {
     if (!repurchasePanelVisible || bestCategoryProducts.length) return;
@@ -111,16 +99,12 @@ export default function HomePage({
   }, [repurchasePanelVisible, bestCategoryProducts.length]);
   const activeItems = items.filter((item) => item.status !== "completed");
   const completedItems = items.filter((item) => item.status === "completed");
-  // 오늘 먹기로 한 것 + 아직 안 챙긴 지난 일정. 지난 일정을 빼면 그냥 조용히
-  // 사라져서 놓치기 쉬워, 일정 화면과 같은 기준으로 위에 같이 얹는다.
+  // 오늘 해당하는 일정만 올린다. 날짜가 지난 일정은 useInventory가 앱을 켤 때
+  // 알아서 비우므로 여기서 따로 챙길 게 없다(2026-08-29).
   const todayPlans = useMemo(() => {
     // activeItems는 렌더마다 새로 만들어지는 배열이라 의존성으로 쓰면 메모가 안 된다.
     const today = todayIso();
-    const planned = items.filter((item) => item.status !== "completed");
-    return [
-      ...overduePlannedItems(planned).map((item) => ({ item, overdue: true })),
-      ...planned.filter((item) => planOccursOn(item, today)).map((item) => ({ item, overdue: false }))
-    ];
+    return items.filter((item) => item.status !== "completed" && planOccursOn(item, today));
   }, [items]);
   const urgentItems = [...activeItems]
     .filter((item) => {
@@ -176,7 +160,6 @@ export default function HomePage({
   ];
 
   return (
-    <>
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.page}
@@ -261,13 +244,12 @@ export default function HomePage({
             </Pressable>
           </View>
           <View style={styles.recentList}>
-            {todayPlans.map(({ item, overdue }) => (
+            {todayPlans.map((item) => (
               <PlanItem
                 key={item.id}
                 item={item}
-                overdue={overdue}
-                onComplete={() => completePlanItem?.(item.id)}
-                onOpenDetail={() => setDetailItemId(String(item.id))}
+                done={planDoneOn(item, todayIso())}
+                onOpenDetail={() => onOpenDetail(item.id, "plan")}
               />
             ))}
           </View>
@@ -291,7 +273,7 @@ export default function HomePage({
               key={item.id}
               item={item}
               width={priorityCardWidth}
-              onPress={() => setDetailItemId(String(item.id))}
+              onPress={() => onOpenDetail(item.id, "home")}
             />
           ))}
         </ScrollView>
@@ -308,33 +290,6 @@ export default function HomePage({
 
       <BannerAdSlot />
     </ScrollView>
-    {/* 보관함·먹는 일정과 같은 카드다. 수정 시트는 App.js의 overlays에서 이 위에
-        뜨므로 카드를 닫지 않는다 — 저장하고 나오면 바뀐 값이 그대로 보인다.
-
-        구성도 보관함 카드와 똑같이 맞춘다 — 같은 상품인데 어디서 들어왔느냐에
-        따라 버튼이 다르면 안 된다(2026-08-27 피드백). 다만 완료는 이 화면의 일정
-        체크 버튼과 같은 completePlanItem을 쓴다. 반복 없는 상품은 보관함의
-        "먹었어요"와 동일하게 완료 처리되고, 반복 상품만 다음 회차로 넘어간다 —
-        한 화면 안에서 두 버튼이 다르게 동작하는 쪽이 더 나쁘다. */}
-    <ItemDetailModal
-      item={detailItem}
-      expiryType={expiryType}
-      baseline={detailBaseline}
-      completedScope={false}
-      onChangeImage={detailItem ? (source) => onChangeItemImage?.(detailItem.id, source) : undefined}
-      onToggleFavorite={detailItem ? () => toggleFavorite?.(detailItem.id) : undefined}
-      onComplete={detailItem ? () => completePlanItem?.(detailItem.id) : undefined}
-      onDelete={detailItem ? () => removeItem?.(detailItem.id) : undefined}
-      onClose={() => {
-        setDetailItemId("");
-        setDetailBaseline(null);
-      }}
-      onEdit={() => {
-        setDetailBaseline(detailItem);
-        startEdit(detailItem);
-      }}
-    />
-    </>
   );
 }
 
@@ -558,38 +513,35 @@ function PriorityCard({ item, width, onPress }) {
   );
 }
 
-// 오늘 먹기로 한 상품 한 줄.
-function PlanItem({ item, overdue, onComplete, onOpenDetail }) {
+// 오늘 먹기로 한 상품 한 줄. 완료 처리는 여기 없다 — 보관함 상세 카드에서만
+// 한다(2026-08-29). 초록 아이콘 하나가 라벨도 없이 되돌리기 어려운 동작을 해서
+// 무엇을 하라는 건지 알 수 없다는 피드백이었다.
+function PlanItem({ item, done, onOpenDetail }) {
   const timeLabel = formatPlanTime(planTimeFor(item, DEFAULT_PLAN_TIME));
   const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)}` : "";
   return (
-    <View style={styles.recentItem}>
-      {/* 사진과 이름/시각까지가 "이게 뭐지"를 누르는 영역이다. 오른쪽 먹었어요
-          버튼만 따로 남겨 둔다 — 상세 카드를 열려다 완료 처리되면 안 된다. */}
-      <Pressable
-        style={styles.planDetailPress}
-        onPress={onOpenDetail}
-        accessibilityRole="button"
-        accessibilityLabel={`${item.name} 자세히 보기`}
-      >
-        <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.recentImage} />
-        <View style={styles.recentBody}>
-          <Text style={styles.recentName} numberOfLines={1}>{item.name}</Text>
-          <Text style={[styles.recentMeta, overdue && styles.planMetaOverdue]}>
-            {overdue ? `지난 일정 · ${item.plannedDate}` : timeLabel ? `${timeLabel} 알림` : "오늘"}
-            {repeatSuffix}
-          </Text>
-        </View>
-      </Pressable>
-      <Pressable
-        style={styles.planCompleteButton}
-        onPress={onComplete}
-        accessibilityRole="button"
-        accessibilityLabel={`${item.name} 먹었어요`}
-      >
-        <Image source={planCompleteIcon} resizeMode="contain" style={styles.planCompleteIcon} />
-      </Pressable>
-    </View>
+    <Pressable
+      style={styles.recentItem}
+      onPress={onOpenDetail}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}${done ? ", 먹음" : ""} 자세히 보기`}
+    >
+      <Image
+        source={getFoodImageSource(item)}
+        resizeMode="cover"
+        style={[styles.recentImage, done && styles.planDoneImage]}
+      />
+      <View style={styles.recentBody}>
+        <Text style={[styles.recentName, done && styles.planDoneText]} numberOfLines={1}>{item.name}</Text>
+        <Text style={[styles.recentMeta, done && styles.planDoneText]}>
+          {timeLabel ? `${timeLabel} 알림` : "오늘"}
+          {repeatSuffix}
+        </Text>
+      </View>
+      {/* 먹었다고 목록에서 지우지 않는다. 지우면 체크가 됐는지 확인할 길이
+          없다(2026-08-29 피드백). 대신 흐리게 하고 표를 붙인다. */}
+      {done ? <Text style={styles.planDoneChip}>먹음</Text> : null}
+    </Pressable>
   );
 }
 
@@ -600,15 +552,21 @@ function labelForDays(days) {
 }
 
 const styles = StyleSheet.create({
-  // 오늘 일정 한 줄에서 상세 카드를 여는 영역. 오른쪽 완료 버튼을 뺀 나머지를
-  // 전부 차지하도록 flex: 1을 준다.
-  planDetailPress: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    // recentItem의 gap은 이제 이 영역과 완료 버튼 사이에만 걸린다.
-    // 사진과 글자 사이 간격은 여기서 다시 준다.
-    gap: 12
+  // 오늘 몫을 끝낸 줄. 지우지 않고 흐리게 + "먹음" 표로 남긴다.
+  planDoneChip: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+    backgroundColor: "#e8f4ee",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    overflow: "hidden"
+  },
+  planDoneText: {
+    color: "#a2aaa5"
+  },
+  planDoneImage: {
+    opacity: 0.45
   },
   screen: {
     flex: 1,
@@ -1186,23 +1144,6 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: "#68716b",
     marginTop: 4
-  },
-  // 지난 일정 줄의 강조색. 소비기한 임박과 같은 계열로 맞춘다.
-  planMetaOverdue: {
-    color: "#c2553c",
-  },
-  // 오늘 일정 줄 오른쪽 "먹었어요" 버튼입니다.
-  planCompleteButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#eef5f1",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  planCompleteIcon: {
-    width: 30,
-    height: 30
   },
   emptyCard: {
     flex: 1,

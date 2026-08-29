@@ -12,16 +12,14 @@ import {
   isRepeating,
   PLAN_REPEATS,
   repeatLabel,
-  overduePlannedItems,
+  planDoneOn,
   planTimeFor,
   scheduleDateLabel,
   upcomingScheduleDates
 } from "../utils/mealPlan";
 import { ChoiceGroup, DateButton, TimeField } from "./CommonControls";
-import ItemDetailModal from "./ItemDetailModal";
 import BannerAdSlot from "./BannerAdSlot";
 
-const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
 
 
 // 먹는 일정 화면. 오늘부터 30일(SCHEDULE_LOOKAHEAD_DAYS)을 날짜별 세로 목록으로
@@ -35,13 +33,8 @@ const completeIcon = require("../../assets/actions/fork_spoon_80dp.png");
 export default function SchedulePage({
   items,
   setItemPlan,
-  completeItem,
   openCalendar,
-  startEdit,
-  onChangeItemImage,
-  toggleFavorite,
-  removeItem,
-  expiryType
+  onOpenDetail
 }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerDate, setPickerDate] = useState(() => todayIso());
@@ -51,18 +44,13 @@ export default function SchedulePage({
   const [editingItem, setEditingItem] = useState(null);
   // 상품명을 누르면 뜨는 상세 카드. 보관함과 같은 팝업을 쓴다. 스냅샷 대신
   // id만 들고 매번 목록에서 찾아, 완료·해제로 빠지면 저절로 닫힌다(2026-08-24).
-  const [detailItemId, setDetailItemId] = useState("");
+
   // 수정 시트를 열기 직전의 값. 돌아왔을 때 무엇이 바뀌었는지 빨간색으로
   // 표시하려면 비교 대상이 있어야 한다(2026-08-24).
-  const [detailBaseline, setDetailBaseline] = useState(null);
-  const detailItem = useMemo(
-    () => (detailItemId ? items.find((item) => String(item.id) === detailItemId) || null : null),
-    [items, detailItemId]
-  );
+
 
   const dates = useMemo(() => upcomingScheduleDates(), []);
   const days = useMemo(() => groupPlannedItemsByDate(items, dates), [items, dates]);
-  const overdue = useMemo(() => overduePlannedItems(items), [items]);
   const unplannedItems = useMemo(
     () => items.filter((item) => isPlannableItem(item) && !hasPlan(item)),
     [items]
@@ -106,22 +94,6 @@ export default function SchedulePage({
   return (
     <>
       <ScrollView style={styles.screen} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-        {/* 지난 날짜에 잡힌 채 완료 안 된 일정. 그냥 사라지면 놓치기 쉬워 맨 위에 따로 모은다. */}
-        {overdue.length > 0 ? (
-          <View style={styles.overdueCard}>
-            <Text style={styles.overdueTitle}>날짜가 지난 일정 {overdue.length}개</Text>
-            {overdue.map((item) => (
-              <ScheduleRow
-                key={item.id}
-                item={item}
-                onComplete={() => completeItem(item.id)}
-                onOpenDetail={() => setDetailItemId(String(item.id))}
-                showPlannedDate
-              />
-            ))}
-          </View>
-        ) : null}
-
         {plannedDays.map((day) => (
           <View key={day.date} style={styles.dayBlock}>
             <View style={styles.dayHeader}>
@@ -138,8 +110,8 @@ export default function SchedulePage({
                   <ScheduleRow
                     key={item.id}
                     item={item}
-                    onComplete={() => completeItem(item.id)}
-                    onOpenDetail={() => setDetailItemId(String(item.id))}
+                    done={planDoneOn(item, day.date)}
+                    onOpenDetail={() => onOpenDetail(item.id)}
                   />
                 ))}
               </View>
@@ -147,7 +119,7 @@ export default function SchedulePage({
           </View>
         ))}
 
-        {plannedCount === 0 && overdue.length === 0 ? (
+        {plannedCount === 0 ? (
           <Text style={styles.emptyText}>상품을 골라 언제 먹을지 정해두면 그날 알려드릴게요.</Text>
         ) : null}
 
@@ -157,28 +129,6 @@ export default function SchedulePage({
 
         <BannerAdSlot />
       </ScrollView>
-
-      {/* 보관함과 같은 상품 수정 시트를 연다. 시트는 App.js의 overlays에 있어
-          이 화면 위에도 뜬다. 상세 카드는 닫지 않는다 — 수정을 마치고 돌아오면
-          바뀐 값이 이 카드에 그대로 보여야 한다(2026-08-24). */}
-      <ItemDetailModal
-        item={detailItem}
-        onChangeImage={detailItem ? (source) => onChangeItemImage?.(detailItem.id, source) : undefined}
-        onToggleFavorite={detailItem ? () => toggleFavorite?.(detailItem.id) : undefined}
-        onComplete={detailItem ? () => completeItem?.(detailItem.id) : undefined}
-        onDelete={detailItem ? () => removeItem?.(detailItem.id) : undefined}
-        expiryType={expiryType}
-        baseline={detailBaseline}
-        completedScope={false}
-        onClose={() => {
-          setDetailItemId("");
-          setDetailBaseline(null);
-        }}
-        onEdit={() => {
-          setDetailBaseline(detailItem);
-          startEdit(detailItem);
-        }}
-      />
 
       <Modal visible={pickerVisible} transparent animationType="fade" onRequestClose={() => setPickerVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -254,24 +204,33 @@ export default function SchedulePage({
 
 // 일정 한 줄. 소비기한 D-day를 같이 보여줘서 "언제 먹을지"와 "언제까지 먹어야 하는지"
 // 두 축을 한눈에 비교할 수 있게 한다.
-function ScheduleRow({ item, onComplete, onOpenDetail, showPlannedDate = false }) {
+// 완료 처리는 여기 없다 — 보관함 상세 카드에서만 한다(2026-08-29).
+function ScheduleRow({ item, done, onOpenDetail, showPlannedDate = false }) {
   const status = statusFor(item);
   const timeLabel = formatPlanTime(planTimeFor(item, DEFAULT_PLAN_TIME));
   const repeatSuffix = isRepeating(item) ? ` · ${repeatLabel(item.planRepeat)} 반복` : "";
   return (
-    <View style={styles.row}>
-      <Image source={getFoodImageSource(item)} resizeMode="cover" style={styles.rowImage} />
-      {/* 줄 전체를 눌러 일정 바꾸기로 가던 동작은 뺐다 — 상품명 탭(상세 카드)과
-          함께 같은 목적지로 가는 문이 여러 개가 되어 헷갈렸다. 이제 상품명만
-          누를 수 있고, 거기서 "수정하기"로 들어간다(2026-08-24). */}
+    // 줄 어디를 눌러도 상세 카드가 열린다. 상품명만 눌리던 시절에는 다른 화면과
+    // 달라서 어디를 눌러야 하는지 매번 찾아야 했다(2026-08-29 피드백).
+    <Pressable
+      style={styles.row}
+      onPress={onOpenDetail}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}${done ? ", 먹음" : ""} 자세히 보기`}
+    >
+      <Image
+        source={getFoodImageSource(item)}
+        resizeMode="cover"
+        style={[styles.rowImage, done && styles.rowDoneImage]}
+      />
       <View style={styles.rowBody}>
-        <Pressable
-          onPress={onOpenDetail}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.name} 자세히 보기`}
+        <Text
+          style={[styles.rowName, done && styles.rowDoneText]}
+          maxFontSizeMultiplier={1.3}
+          numberOfLines={1}
         >
-          <Text style={styles.rowName} maxFontSizeMultiplier={1.3} numberOfLines={1}>{item.name}</Text>
-        </Pressable>
+          {item.name}
+        </Text>
         {/* D-day를 별도 칸으로 두면 글자를 키운 기기에서 그 칸이 넓어지고,
             남는 폭이 없어 이 텍스트가 한 글자씩 세로로 접힌다. 상세 카드와
             같은 방식으로 소비기한 옆 괄호에 넣어 칸 하나를 없앤다(2026-08-24). */}
@@ -289,14 +248,29 @@ function ScheduleRow({ item, onComplete, onOpenDetail, showPlannedDate = false }
           </Text>
         ) : null}
       </View>
-      <Pressable style={styles.rowAction} onPress={onComplete} accessibilityRole="button" accessibilityLabel="먹었어요">
-        <Image source={completeIcon} resizeMode="contain" style={styles.rowCompleteIcon} />
-      </Pressable>
-    </View>
+      {/* 홈과 같은 이유로 먹은 줄도 지우지 않고 표만 붙인다. */}
+      {done ? <Text style={styles.rowDoneChip}>먹음</Text> : null}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  rowDoneChip: {
+    ...typography.captionStrong,
+    color: "#1f7a5a",
+    backgroundColor: "#e8f4ee",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginLeft: 8,
+    overflow: "hidden"
+  },
+  rowDoneText: {
+    color: "#a2aaa5"
+  },
+  rowDoneImage: {
+    opacity: 0.45
+  },
   screen: {
     flex: 1
   },
@@ -314,19 +288,6 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: "#3f8f6d",
     marginTop: 6
-  },
-  overdueCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#efd8d3",
-    backgroundColor: "#fff7f5",
-    padding: 12,
-    marginTop: 12,
-    gap: 8
-  },
-  overdueTitle: {
-    ...typography.captionStrong,
-    color: "#9f3929",
   },
   dayBlock: {
     marginTop: 18
@@ -419,19 +380,6 @@ const styles = StyleSheet.create({
   },
   tone_expired: {
     color: "#a73727"
-  },
-  rowAction: {
-    width: 32,
-    height: 32,
-    flexShrink: 0,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  // fork_spoon_80dp.png는 초록 원+흰 체크가 이미 그려진 완성형 아이콘이라 tintColor를 주지 않는다.
-  rowCompleteIcon: {
-    width: 34,
-    height: 34
   },
   addButton: {
     minHeight: 50,

@@ -102,7 +102,9 @@ export function useInventory({
   onBarcodeRegistered
 }) {
   const [items, setItems] = useState([]);
-  const [mode, setMode] = useState("receipt");
+  // 등록 화면은 직접등록으로 열린다. 영수증 흐름은 useReceiptFlow가 실제로
+  // 영수증 이미지를 받았을 때 setMode("receipt")로 알아서 전환한다.
+  const [mode, setMode] = useState("manual");
   const [name, setName] = useState("");
   const [manualImageUri, setManualImageUri] = useState("");
   const [manualSubmitting, setManualSubmitting] = useState(false);
